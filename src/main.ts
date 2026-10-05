@@ -8,18 +8,21 @@ import { loadConditions, type Conditions } from './data/conditions';
 import { geoPermission, getPosition } from './data/geolocate';
 import { GridController } from './data/gridController';
 import { Animator, type LayerFlags } from './layers/animator';
-import { addRadar, createCrosshair, createMap, refreshRadar, setRadarStyle, setRadarVisible } from './map/map';
+import { createCrosshair, createMap } from './map/map';
+import { addImagery, refreshImagery, setBasemap, setColorMode, setImageryVisible } from './map/imagery';
 import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, svg } from './ui/dom';
 import { renderAlertTag, renderHud } from './ui/hud';
-import { gearIcon, rainIcon, thunderIcon, windIcon } from './ui/icons';
+import { cloudsIcon, gearIcon, rainIcon, thunderIcon, windIcon } from './ui/icons';
 import { showNote } from './ui/note';
 import { alertsPanel, forecastPanel, settingsPanel } from './ui/panels';
 import { Sheet } from './ui/sheet';
 
-const LAYER_ICONS: Record<keyof LayerFlags, string> = { wind: windIcon, rain: rainIcon, thunder: thunderIcon };
+type Layer = keyof AppState['layers'];
+const LAYERS: Layer[] = ['wind', 'rain', 'thunder', 'clouds'];
+const LAYER_ICONS: Record<Layer, string> = { wind: windIcon, rain: rainIcon, thunder: thunderIcon, clouds: cloudsIcon };
 
 async function main(): Promise<void> {
   // Geolocation: use it right away if already granted; otherwise start at the
@@ -42,14 +45,18 @@ async function main(): Promise<void> {
   // Static chrome.
   $('#gear').append(svg(gearIcon));
   document.querySelectorAll<HTMLButtonElement>('.layer-toggle').forEach((btn) => {
-    const layer = btn.dataset.layer as keyof LayerFlags;
+    const layer = btn.dataset.layer as Layer;
     btn.append(svg(LAYER_ICONS[layer]));
     btn.setAttribute('aria-pressed', String(store.get().layers[layer]));
   });
   renderHud(null, store.get());
+  renderCredits(store.get());
 
   const map = await createMap($('#map'), start);
-  map.once('load', () => addRadar(map, store.get().layers.rain, store.get().radarStyle));
+  map.once('load', () => {
+    const s = store.get();
+    addImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
+  });
   const crosshair = createCrosshair(map, start);
 
   const css = getComputedStyle(document.documentElement);
@@ -139,7 +146,8 @@ async function main(): Promise<void> {
     if (document.hidden) return;
     if (Date.now() - lastLoaded >= CONDITIONS_REFRESH_MS) loadSelected(false);
     grids.refreshIfOlderThan(GRID_MAX_AGE_MS);
-    if (store.get().layers.rain) refreshRadar(map);
+    const s = store.get();
+    refreshImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds });
   };
   setInterval(refreshIfStale, 60_000);
   document.addEventListener('visibilitychange', refreshIfStale);
@@ -148,7 +156,7 @@ async function main(): Promise<void> {
 
   document.querySelectorAll<HTMLButtonElement>('.layer-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const layer = btn.dataset.layer as keyof LayerFlags;
+      const layer = btn.dataset.layer as Layer;
       // Turning Thunder on is the user gesture that unlocks audio.
       if (layer === 'thunder' && !store.get().layers.thunder) primeAudio();
       store.toggleLayer(layer);
@@ -156,11 +164,12 @@ async function main(): Promise<void> {
   });
 
   store.subscribe((s, prev) => {
-    for (const layer of ['wind', 'rain', 'thunder'] as const) {
+    for (const layer of LAYERS) {
       const on = s.layers[layer];
       if (on === prev.layers[layer]) continue;
       document.querySelector(`.layer-toggle[data-layer="${layer}"]`)?.setAttribute('aria-pressed', String(on));
-      if (layer === 'rain') setRadarVisible(map, on);
+      if (layer === 'rain') setImageryVisible(map, 'radar', on);
+      else if (layer === 'clouds') setImageryVisible(map, 'clouds', on);
       else animator.layerChanged(layer, on);
       if (layer === 'thunder' && on) {
         if (!grids.current) showNote('Storm data loading');
@@ -168,7 +177,12 @@ async function main(): Promise<void> {
       }
     }
     if (streaksOn(s) !== streaksOn(prev)) animator.layerChanged('rain', streaksOn(s));
-    if (s.radarStyle !== prev.radarStyle) setRadarStyle(map, s.radarStyle);
+    if (s.layers.rain !== prev.layers.rain || s.layers.clouds !== prev.layers.clouds) {
+      refreshImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds });
+    }
+    if (s.colorMode !== prev.colorMode) setColorMode(map, s.colorMode);
+    if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
+    if (s.basemap !== prev.basemap || s.layers.clouds !== prev.layers.clouds) renderCredits(s);
     if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit) {
       renderHud(conditions, s);
       refreshSheet();
@@ -211,6 +225,12 @@ async function main(): Promise<void> {
   readout.addEventListener('click', () => {
     if (conditions) sheet.open('forecast', conditions.place ?? 'Forecast', forecastPanel(conditions, store.get()), readout);
   });
+}
+
+/** Credits for optional imagery appear only while that imagery is on screen. */
+function renderCredits(s: AppState): void {
+  $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
+  $('[data-credit="goes"]').hidden = !s.layers.clouds;
 }
 
 function alertsTitle(c: Conditions): string {

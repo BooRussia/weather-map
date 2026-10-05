@@ -118,18 +118,25 @@ export function settingsPanel(store: Store, actions: SettingsActions): HTMLEleme
       ),
     ),
     section(
-      'Rain',
-      segmented('Radar colors', [{ value: 'mono', label: 'Mono' }, { value: 'color', label: 'Color' }], s.radarStyle, (v) =>
-        store.set({ radarStyle: v }),
+      'Map',
+      segmented('Style', [{ value: 'dark', label: 'Dark' }, { value: 'satellite', label: 'Satellite' }], s.basemap, (v) =>
+        store.set({ basemap: v }),
       ),
-      segmented('Falling rain', [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], s.rainStreaks ? 'on' : 'off', (v) =>
-        store.set({ rainStreaks: v === 'on' }),
+      segmented('Colors', [{ value: 'mono', label: 'Mono' }, { value: 'color', label: 'Color' }], s.colorMode, (v) =>
+        store.set({ colorMode: v }),
       ),
       h(
         'p',
         { class: 'muted-text' },
-        'Color shows NWS radar intensity: blue and green are light, yellow and orange moderate, red heavy. Turn falling rain off to see only the radar.',
+        'Color shows real ground on Satellite and radar intensity: blue and green are light, yellow and orange moderate, red heavy.',
       ),
+    ),
+    section(
+      'Rain',
+      segmented('Falling rain', [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], s.rainStreaks ? 'on' : 'off', (v) =>
+        store.set({ rainStreaks: v === 'on' }),
+      ),
+      h('p', { class: 'muted-text' }, 'Turn falling rain off to see only the radar.'),
     ),
     section(
       'Thunder',
@@ -147,7 +154,7 @@ export function settingsPanel(store: Store, actions: SettingsActions): HTMLEleme
       h(
         'p',
         { class: 'meta-text' },
-        'Wind and rain fields: Open-Meteo (CC BY 4.0), model data. Place, observations, forecast, alerts, and radar: NWS. Map © CARTO © OpenStreetMap contributors.',
+        'Wind and rain fields: Open-Meteo (CC BY 4.0), model data. Place, observations, forecast, alerts, and radar: NWS. Clouds: NOAA GOES infrared via nowCOAST, minutes old. Satellite imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.',
       ),
     ),
   );

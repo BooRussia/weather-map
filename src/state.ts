@@ -1,13 +1,15 @@
-import type { LatLon, RadarStyle } from './config';
+import type { Basemap, ColorMode, LatLon } from './config';
 import type { TempUnit, WindUnit } from './util/units';
 
 export interface AppState {
-  layers: { wind: boolean; rain: boolean; thunder: boolean };
+  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean };
   tempUnit: TempUnit;
   windUnit: WindUnit;
   sound: boolean;
-  /** Radar look: grayscale (default) or the NWS color intensity scale. */
-  radarStyle: RadarStyle;
+  /** Base map: dark vector (default) or aerial imagery. */
+  basemap: Basemap;
+  /** Imagery colors: grayscale (default) or real colors on radar and aerial imagery. */
+  colorMode: ColorMode;
   /** Falling rain streaks on top of the radar. The Rain button still hides both. */
   rainStreaks: boolean;
   /** The point the HUD describes. */
@@ -22,7 +24,8 @@ interface Prefs {
   tempUnit?: TempUnit;
   windUnit?: WindUnit;
   sound?: boolean;
-  radarStyle?: RadarStyle;
+  basemap?: Basemap;
+  colorMode?: ColorMode;
   rainStreaks?: boolean;
 }
 
@@ -40,7 +43,8 @@ function writePrefs(s: AppState): void {
       tempUnit: s.tempUnit,
       windUnit: s.windUnit,
       sound: s.sound,
-      radarStyle: s.radarStyle,
+      basemap: s.basemap,
+      colorMode: s.colorMode,
       rainStreaks: s.rainStreaks,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
@@ -53,11 +57,12 @@ function writePrefs(s: AppState): void {
 export function createStore(selected: LatLon) {
   const prefs = readPrefs();
   let state: AppState = {
-    layers: { wind: true, rain: true, thunder: false },
+    layers: { wind: true, rain: true, thunder: false, clouds: false },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
-    radarStyle: prefs.radarStyle === 'color' ? 'color' : 'mono',
+    basemap: prefs.basemap === 'satellite' ? 'satellite' : 'dark',
+    colorMode: prefs.colorMode === 'color' ? 'color' : 'mono',
     rainStreaks: prefs.rainStreaks ?? true,
     selected,
   };
@@ -71,7 +76,8 @@ export function createStore(selected: LatLon) {
       if (
         patch.tempUnit ||
         patch.windUnit ||
-        patch.radarStyle ||
+        patch.basemap ||
+        patch.colorMode ||
         patch.sound !== undefined ||
         patch.rainStreaks !== undefined
       ) {

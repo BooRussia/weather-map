@@ -15,8 +15,8 @@ Neutrals only besides `accent`. No second chromatic color. `#000` and `#fff` are
 - `accent` fills the active NWS alert tag and nothing else. Not links, not focus rings, not lightning, not data, not icons.
 - HUD control surface: `background` at 0.85 opacity (`rgba(0,0,0,0.85)`).
 - Status remap: errors, loading, offline, and "no storms in view" all use `muted` text. Only an active alert uses `accent`.
-- Data layers are neutral: wind particles in `foreground`, rain streaks in `foreground`/`muted` at reduced alpha, lightning in `foreground`, radar rendered grayscale. The basemap is desaturated to grayscale at load. Alpha varies with data; hue never does.
-- Data exception (owner-requested, 2026-10-05): Settings → Rain → Radar colors → Color shows the NWS reflectivity scale in its published colors (blue/green light through yellow, orange, red heavy). It applies to the radar raster only, only when the viewer picks it, and the default stays Mono. It is a data key, not a palette: no UI element may borrow these hues, and NWS orange is never a second accent.
+- Data layers are neutral by default: wind particles in `foreground`, rain streaks in `foreground`/`muted` at reduced alpha, lightning in `foreground`, radar grayscale, clouds (GOES infrared) grayscale. The dark basemap is desaturated to grayscale at load; the satellite basemap is grayscale and dimmed. Alpha varies with data; hue does not, except under the one exception below.
+- Imagery exception (owner-requested, 2026-10-05): Settings → Map → Colors → Color shows imagery in its own colors: the NWS reflectivity scale on radar (blue/green light through yellow, orange, red heavy) and true color on the satellite basemap, dimmed so particles and HUD type stay readable. It applies to those raster layers only, only when the viewer picks it, and the default stays Mono. These are data, not a palette: no UI element may borrow these hues, and NWS orange is never a second accent.
 
 ## Type
 - text: IBM Plex Sans (self-hosted, weights 300 / 400 / 500). D-DIN Exp is the preferred face if it is ever self-hosted; it would replace Plex everywhere, not alongside it.
@@ -28,7 +28,7 @@ One family. Basemap labels come from the tile provider's glyphs; they are map or
 ## Radius
 - family: all-sharp
 - value: 0
-- exception: Pill (9999px) on the three bottom layer toggle buttons (Wind, Rain, Thunder) only; every other radius stays 0, including the alert tag, the gear button, the sheet, inputs, and segmented controls.
+- exception: Pill (9999px) on the bottom layer toggle buttons (Wind, Rain, Thunder, Clouds) only; every other radius stays 0, including the alert tag, the gear button, the sheet, inputs, and segmented controls.
 
 The brief calls the alert an "alert pill". It is a sharp tag: the radius lock wins over the word.
 
@@ -52,8 +52,8 @@ No linear. No ease-in. No bounce. No elastic.
 - No glass, frost, or backdrop blur. No gradients on chrome. No equal feature grids.
 
 ## Components
-- Layer toggle (pill, the one radius exception): 64×48. Active: `rgba(0,0,0,0.85)` fill, 1px `foreground` outline, filled `foreground` icon. Inactive: transparent black, 1px `muted` outline, outline `muted` icon.
+- Layer toggle (pill, the one radius exception): 64×48, 12px apart; 56×48, 8px apart below 360px wide. Active: `rgba(0,0,0,0.85)` fill, 1px `foreground` outline, filled `foreground` icon. Inactive: transparent black, 1px `muted` outline, outline `muted` icon.
 - Alert tag: `accent` fill, `accent-on` text, meta size, uppercase, sharp. Shown only while an NWS alert is active for the selected point.
 - Gear: 44×44 square, `rgba(0,0,0,0.85)`, `foreground` icon.
-- Attribution strip: meta size or smaller, `muted`, bottom-left.
+- Attribution strip: meta size or smaller, `muted`, bottom-left. Credits for optional imagery (Esri, NOAA GOES) appear only while that imagery is on screen; the strip may wrap to two lines.
 - Selected point: a 1px `foreground` crosshair on the map, no dot, no fill.

@@ -298,7 +298,8 @@ button {
 }
 
 .layer-toggle[aria-pressed='true'] .icon-rain,
-.layer-toggle[aria-pressed='true'] .icon-thunder {
+.layer-toggle[aria-pressed='true'] .icon-thunder,
+.layer-toggle[aria-pressed='true'] .icon-clouds {
   fill: currentColor;
 }
 
@@ -308,12 +309,24 @@ button {
 
 .attribution {
   align-self: flex-start;
+  max-width: 100%;
   font-size: 10px;
   letter-spacing: 0.02em;
+  line-height: 1.5;
   color: var(--muted);
   text-shadow: var(--halo);
   pointer-events: auto;
-  white-space: nowrap;
+}
+
+/* Four pills at 64px don't fit a 320px phone; tighten below 360px. */
+@media (max-width: 359px) {
+  .layer-bar {
+    gap: var(--s2);
+  }
+
+  .layer-toggle {
+    width: 56px;
+  }
 }
 
 .attribution a {
@@ -343,6 +356,8 @@ button {
     position: absolute;
     left: calc(var(--safe-l) + var(--s4));
     bottom: calc(var(--safe-b) + var(--s2));
+    /* Stay clear of the centered layer bar (4 × 64px + gaps). */
+    max-width: calc(50% - 170px - var(--s4));
   }
 }
 

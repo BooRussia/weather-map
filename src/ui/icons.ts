@@ -21,6 +21,10 @@ export const thunderIcon = `${svgOpen('icon icon-thunder')}
   <path d="M13.2 2.5 5 13.6h6l-1.2 7.9 8.2-11.1h-6z" />
 </svg>`;
 
+export const cloudsIcon = `${svgOpen('icon icon-clouds')}
+  <path d="M7.2 18.5h10.1a3.9 3.9 0 0 0 .5-7.77 5.6 5.6 0 0 0-10.8-1.2A4.5 4.5 0 0 0 7.2 18.5z" />
+</svg>`;
+
 export const closeIcon = `${svgOpen('icon icon-close')}
   <path d="M6 6l12 12M18 6 6 18" />
 </svg>`;
