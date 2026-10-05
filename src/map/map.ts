@@ -2,7 +2,7 @@ import * as maplibregl from 'maplibre-gl';
 import type { Map as MlMap, StyleSpecification } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { BASEMAP_STYLE_URL, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, RADAR_REFRESH_MS, RADAR_TILE_URL, type LatLon } from '../config';
+import { BASEMAP_STYLE_URL, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, RADAR_REFRESH_MS, RADAR_TILE_URL, type LatLon, type RadarStyle } from '../config';
 import { fetchJson } from '../util/http';
 import { desaturateStyle } from './style';
 
@@ -51,8 +51,19 @@ export async function createMap(container: HTMLElement, center: LatLon): Promise
   return map;
 }
 
-/** NWS reflectivity mosaic, drawn grayscale beneath the basemap labels. Call after `load`. */
-export function addRadar(map: MlMap, visible: boolean): void {
+/**
+ * Mono: grayscale, quiet (the DESIGN.md default). Color: the NWS reflectivity
+ * scale as published (blue/green light → yellow/orange → red heavy), opaque
+ * enough to read intensity.
+ */
+const RADAR_PAINT: Record<RadarStyle, { saturation: number; opacity: number; brightnessMax: number }> = {
+  mono: { saturation: -1, opacity: 0.3, brightnessMax: 0.75 },
+  color: { saturation: 0, opacity: 0.7, brightnessMax: 1 },
+};
+
+/** NWS reflectivity mosaic, drawn beneath the basemap labels. Call after `load`. */
+export function addRadar(map: MlMap, visible: boolean, style: RadarStyle): void {
+  const p = RADAR_PAINT[style];
   map.addSource(RADAR_SOURCE, {
     type: 'raster',
     tiles: [radarTiles()],
@@ -68,9 +79,9 @@ export function addRadar(map: MlMap, visible: boolean): void {
       source: RADAR_SOURCE,
       layout: { visibility: visible ? 'visible' : 'none' },
       paint: {
-        'raster-saturation': -1,
-        'raster-opacity': 0.3,
-        'raster-brightness-max': 0.75,
+        'raster-saturation': p.saturation,
+        'raster-opacity': p.opacity,
+        'raster-brightness-max': p.brightnessMax,
         'raster-fade-duration': 0,
       },
     },
@@ -96,6 +107,14 @@ export function refreshRadar(map: MlMap): void {
 
 export function setRadarVisible(map: MlMap, visible: boolean): void {
   if (map.getLayer(RADAR_LAYER)) map.setLayoutProperty(RADAR_LAYER, 'visibility', visible ? 'visible' : 'none');
+}
+
+export function setRadarStyle(map: MlMap, style: RadarStyle): void {
+  if (!map.getLayer(RADAR_LAYER)) return;
+  const p = RADAR_PAINT[style];
+  map.setPaintProperty(RADAR_LAYER, 'raster-saturation', p.saturation);
+  map.setPaintProperty(RADAR_LAYER, 'raster-opacity', p.opacity);
+  map.setPaintProperty(RADAR_LAYER, 'raster-brightness-max', p.brightnessMax);
 }
 
 /** Thin crosshair marking the point the HUD describes. */

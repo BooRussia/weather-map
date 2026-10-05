@@ -8,8 +8,8 @@ import { loadConditions, type Conditions } from './data/conditions';
 import { geoPermission, getPosition } from './data/geolocate';
 import { GridController } from './data/gridController';
 import { Animator, type LayerFlags } from './layers/animator';
-import { addRadar, createCrosshair, createMap, refreshRadar, setRadarVisible } from './map/map';
-import { createStore } from './state';
+import { addRadar, createCrosshair, createMap, refreshRadar, setRadarStyle, setRadarVisible } from './map/map';
+import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, svg } from './ui/dom';
@@ -49,13 +49,19 @@ async function main(): Promise<void> {
   renderHud(null, store.get());
 
   const map = await createMap($('#map'), start);
-  map.once('load', () => addRadar(map, store.get().layers.rain));
+  map.once('load', () => addRadar(map, store.get().layers.rain, store.get().radarStyle));
   const crosshair = createCrosshair(map, start);
 
   const css = getComputedStyle(document.documentElement);
   const fg = css.getPropertyValue('--fg').trim() || '#f0f0fa';
   const muted = css.getPropertyValue('--muted').trim() || '#8a8a96';
-  const animator = new Animator(map, $('#wind-canvas'), $('#fx-canvas'), () => store.get().layers, {
+  // Rain streaks need the Rain layer on AND the falling-rain setting on; radar needs only the layer.
+  const streaksOn = (s: AppState) => s.layers.rain && s.rainStreaks;
+  const flags = (): LayerFlags => {
+    const s = store.get();
+    return { ...s.layers, rain: streaksOn(s) };
+  };
+  const animator = new Animator(map, $('#wind-canvas'), $('#fx-canvas'), flags, {
     wind: fg,
     rain: muted,
     lightning: fg,
@@ -154,13 +160,15 @@ async function main(): Promise<void> {
       const on = s.layers[layer];
       if (on === prev.layers[layer]) continue;
       document.querySelector(`.layer-toggle[data-layer="${layer}"]`)?.setAttribute('aria-pressed', String(on));
-      animator.layerChanged(layer, on);
       if (layer === 'rain') setRadarVisible(map, on);
+      else animator.layerChanged(layer, on);
       if (layer === 'thunder' && on) {
         if (!grids.current) showNote('Storm data loading');
         else if (!animator.stormsInView()) showNote('No thunderstorms in view');
       }
     }
+    if (streaksOn(s) !== streaksOn(prev)) animator.layerChanged('rain', streaksOn(s));
+    if (s.radarStyle !== prev.radarStyle) setRadarStyle(map, s.radarStyle);
     if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit) {
       renderHud(conditions, s);
       refreshSheet();

@@ -1,4 +1,4 @@
-import type { LatLon } from './config';
+import type { LatLon, RadarStyle } from './config';
 import type { TempUnit, WindUnit } from './util/units';
 
 export interface AppState {
@@ -6,6 +6,10 @@ export interface AppState {
   tempUnit: TempUnit;
   windUnit: WindUnit;
   sound: boolean;
+  /** Radar look: grayscale (default) or the NWS color intensity scale. */
+  radarStyle: RadarStyle;
+  /** Falling rain streaks on top of the radar. The Rain button still hides both. */
+  rainStreaks: boolean;
   /** The point the HUD describes. */
   selected: LatLon;
 }
@@ -18,6 +22,8 @@ interface Prefs {
   tempUnit?: TempUnit;
   windUnit?: WindUnit;
   sound?: boolean;
+  radarStyle?: RadarStyle;
+  rainStreaks?: boolean;
 }
 
 function readPrefs(): Prefs {
@@ -30,7 +36,13 @@ function readPrefs(): Prefs {
 
 function writePrefs(s: AppState): void {
   try {
-    const p: Prefs = { tempUnit: s.tempUnit, windUnit: s.windUnit, sound: s.sound };
+    const p: Prefs = {
+      tempUnit: s.tempUnit,
+      windUnit: s.windUnit,
+      sound: s.sound,
+      radarStyle: s.radarStyle,
+      rainStreaks: s.rainStreaks,
+    };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
     // Private mode or storage blocked: preferences last for this visit only.
@@ -45,6 +57,8 @@ export function createStore(selected: LatLon) {
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
+    radarStyle: prefs.radarStyle === 'color' ? 'color' : 'mono',
+    rainStreaks: prefs.rainStreaks ?? true,
     selected,
   };
   const listeners = new Set<Listener>();
@@ -54,7 +68,15 @@ export function createStore(selected: LatLon) {
     set(patch: Partial<AppState>) {
       const prev = state;
       state = { ...state, ...patch };
-      if (patch.tempUnit || patch.windUnit || patch.sound !== undefined) writePrefs(state);
+      if (
+        patch.tempUnit ||
+        patch.windUnit ||
+        patch.radarStyle ||
+        patch.sound !== undefined ||
+        patch.rainStreaks !== undefined
+      ) {
+        writePrefs(state);
+      }
       listeners.forEach((l) => l(state, prev));
     },
     toggleLayer(layer: keyof AppState['layers']) {

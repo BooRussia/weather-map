@@ -16,6 +16,7 @@ Neutrals only besides `accent`. No second chromatic color. `#000` and `#fff` are
 - HUD control surface: `background` at 0.85 opacity (`rgba(0,0,0,0.85)`).
 - Status remap: errors, loading, offline, and "no storms in view" all use `muted` text. Only an active alert uses `accent`.
 - Data layers are neutral: wind particles in `foreground`, rain streaks in `foreground`/`muted` at reduced alpha, lightning in `foreground`, radar rendered grayscale. The basemap is desaturated to grayscale at load. Alpha varies with data; hue never does.
+- Data exception (owner-requested, 2026-10-05): Settings → Rain → Radar colors → Color shows the NWS reflectivity scale in its published colors (blue/green light through yellow, orange, red heavy). It applies to the radar raster only, only when the viewer picks it, and the default stays Mono. It is a data key, not a palette: no UI element may borrow these hues, and NWS orange is never a second accent.
 
 ## Type
 - text: IBM Plex Sans (self-hosted, weights 300 / 400 / 500). D-DIN Exp is the preferred face if it is ever self-hosted; it would replace Plex everywhere, not alongside it.

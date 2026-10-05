@@ -3,7 +3,7 @@
 Live wind and rain over a dark map, phone first. One screen: the map is the app.
 
 - **Wind**: particles that follow the wind direction; speed and brightness scale with wind speed.
-- **Rain**: falling streaks, denser where precipitation is heavier and more likely, over the NWS radar drawn in grayscale.
+- **Rain**: falling streaks, denser where precipitation is heavier and more likely, over the NWS radar. In Settings → Rain, **Radar colors** switches the radar between grayscale (default) and the NWS color intensity scale, and **Falling rain → Off** hides the streaks so only the radar shows. Both choices are remembered.
 - **Thunder**: approximate lightning (see below) with a short procedural crackle; the sound can be turned off in Settings.
 - Tap the map to read conditions for that point. Tap the temperature for the forecast. An amber tag appears only while an NWS alert is active for the selected point.
 

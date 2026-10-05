@@ -118,6 +118,20 @@ export function settingsPanel(store: Store, actions: SettingsActions): HTMLEleme
       ),
     ),
     section(
+      'Rain',
+      segmented('Radar colors', [{ value: 'mono', label: 'Mono' }, { value: 'color', label: 'Color' }], s.radarStyle, (v) =>
+        store.set({ radarStyle: v }),
+      ),
+      segmented('Falling rain', [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], s.rainStreaks ? 'on' : 'off', (v) =>
+        store.set({ rainStreaks: v === 'on' }),
+      ),
+      h(
+        'p',
+        { class: 'muted-text' },
+        'Color shows NWS radar intensity: blue and green are light, yellow and orange moderate, red heavy. Turn falling rain off to see only the radar.',
+      ),
+    ),
+    section(
       'Thunder',
       segmented('Sound', [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], s.sound ? 'on' : 'off', (v) =>
         store.set({ sound: v === 'on' }),

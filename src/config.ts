@@ -3,6 +3,9 @@ export interface LatLon {
   lon: number;
 }
 
+/** Radar look: grayscale (DESIGN.md default) or the NWS color intensity scale. */
+export type RadarStyle = 'mono' | 'color';
+
 /** Used when geolocation is denied, unavailable, or slow. */
 export const DEFAULT_LOCATION: LatLon = { lat: 29.0491, lon: -82.4612 };
 export const DEFAULT_PLACE_LABEL = 'Dunnellon, FL';
