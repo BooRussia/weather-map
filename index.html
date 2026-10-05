@@ -20,19 +20,32 @@
 
     <header class="hud">
       <button id="hud-readout" class="hud-readout" type="button">
-        <span id="hud-place" class="hud-place"></span>
+        <span class="hud-place-row">
+          <span id="hud-gps" class="hud-mark" hidden></span>
+          <span id="hud-place" class="hud-place"></span>
+          <span id="hud-chevron" class="hud-mark"></span>
+        </span>
         <span id="hud-temp" class="hud-temp"></span>
         <span id="hud-cond" class="hud-cond"></span>
+        <span id="hud-hilo" class="hud-hilo"></span>
       </button>
     </header>
 
     <div class="top-right">
       <button id="gear" class="gear" type="button" aria-label="Settings"></button>
-      <button id="alert-tag" class="alert-tag" type="button" hidden></button>
+      <button id="alert-tag" class="alert-tag" type="button" hidden><span id="alert-tag-text"></span></button>
     </div>
 
     <div class="bottom">
       <p id="note" class="note" role="status" aria-live="polite"></p>
+      <div id="radar-bar" class="radar-bar" hidden>
+        <button id="radar-play" class="radar-play" type="button" aria-label="Play the last hour of radar"></button>
+        <span id="radar-time" class="radar-time" aria-live="off">Radar now</span>
+        <span id="radar-ticks" class="radar-ticks" aria-hidden="true"></span>
+        <span id="radar-legend" class="radar-legend" role="img" aria-label="Radar intensity scale: blue and green light, yellow and orange moderate, red heavy" hidden>
+          <span>Light</span><i id="radar-legend-bar"></i><span>Heavy</span>
+        </span>
+      </div>
       <nav class="layer-bar" aria-label="Map layers">
         <button class="layer-toggle" data-layer="wind" type="button" aria-label="Wind" title="Wind"></button>
         <button class="layer-toggle" data-layer="rain" type="button" aria-label="Rain" title="Rain"></button>

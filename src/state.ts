@@ -12,8 +12,12 @@ export interface AppState {
   colorMode: ColorMode;
   /** Falling rain streaks on top of the radar. The Rain button still hides both. */
   rainStreaks: boolean;
+  /** NWS warning/watch areas drawn on the map in the accent. */
+  alertAreas: boolean;
   /** The point the HUD describes. */
   selected: LatLon;
+  /** The selected point came from the device location (shows the GPS arrow). */
+  gps: boolean;
 }
 
 type Listener = (s: AppState, prev: AppState) => void;
@@ -27,6 +31,7 @@ interface Prefs {
   basemap?: Basemap;
   colorMode?: ColorMode;
   rainStreaks?: boolean;
+  alertAreas?: boolean;
 }
 
 function readPrefs(): Prefs {
@@ -46,6 +51,7 @@ function writePrefs(s: AppState): void {
       basemap: s.basemap,
       colorMode: s.colorMode,
       rainStreaks: s.rainStreaks,
+      alertAreas: s.alertAreas,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
@@ -54,7 +60,7 @@ function writePrefs(s: AppState): void {
 }
 
 /** Tiny observable store. Layer toggles are deliberately not persisted. */
-export function createStore(selected: LatLon) {
+export function createStore(selected: LatLon, gps: boolean) {
   const prefs = readPrefs();
   let state: AppState = {
     layers: { wind: true, rain: true, thunder: false, clouds: false },
@@ -64,7 +70,9 @@ export function createStore(selected: LatLon) {
     basemap: prefs.basemap === 'satellite' ? 'satellite' : 'dark',
     colorMode: prefs.colorMode === 'color' ? 'color' : 'mono',
     rainStreaks: prefs.rainStreaks ?? true,
+    alertAreas: prefs.alertAreas ?? true,
     selected,
+    gps,
   };
   const listeners = new Set<Listener>();
 
@@ -79,7 +87,8 @@ export function createStore(selected: LatLon) {
         patch.basemap ||
         patch.colorMode ||
         patch.sound !== undefined ||
-        patch.rainStreaks !== undefined
+        patch.rainStreaks !== undefined ||
+        patch.alertAreas !== undefined
       ) {
         writePrefs(state);
       }

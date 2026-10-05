@@ -152,3 +152,24 @@ export function refreshImagery(map: MlMap, visible: { radar: boolean; clouds: bo
     (map.getSource(id) as RasterTileSource | undefined)?.setTiles([liveTiles(id)]);
   }
 }
+
+/* ---------- shared with the radar loop ---------- */
+
+/** Radar raster paint for a color mode, so loop frames look like the live layer. */
+export function radarPaint(mode: ColorMode): Record<string, number> {
+  const p = PAINT[RADAR][mode];
+  return {
+    'raster-saturation': p.saturation,
+    'raster-opacity': p.opacity,
+    'raster-brightness-max': p.brightnessMax,
+    'raster-contrast': p.contrast,
+    'raster-fade-duration': 0,
+  };
+}
+
+/** Id of the layer drawn just above the live radar (new layers go here to sit in its slot). */
+export function aboveRadar(map: MlMap): string | undefined {
+  const layers = map.getStyle().layers;
+  const i = layers.findIndex((l) => l.id === RADAR);
+  return i >= 0 ? layers[i + 1]?.id : undefined;
+}

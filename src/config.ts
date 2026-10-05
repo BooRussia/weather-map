@@ -38,6 +38,11 @@ export const RADAR_TILE_URL =
   'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer/export' +
   '?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&f=image';
 
+/** Same mosaic, time-enabled (last ~2 hours), for the radar loop. Append &time=<epoch ms>. */
+export const RADAR_TIME_URL =
+  'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer/exportImage' +
+  '?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&f=image';
+
 /** Live clouds: NOAA nowCOAST GOES East + West longwave infrared (works day and night, minutes old). */
 export const CLOUDS_TILE_URL =
   'https://nowcoast.noaa.gov/geoserver/satellite/wms?service=WMS&version=1.3.0&request=GetMap' +

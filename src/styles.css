@@ -44,6 +44,11 @@
   box-sizing: border-box;
 }
 
+/* `hidden` always wins over component display rules. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -165,11 +170,41 @@ button {
   text-shadow: var(--halo);
 }
 
+.hud-place-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 1.4em;
+}
+
 .hud-place {
   font-size: var(--size-meta);
   font-weight: 500;
   letter-spacing: var(--tracking-meta);
   text-transform: uppercase;
+}
+
+.hud-mark {
+  display: inline-flex;
+}
+
+.hud-mark .icon {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.25;
+}
+
+#hud-gps .icon {
+  fill: currentColor;
+}
+
+#hud-chevron {
+  color: var(--muted);
+}
+
+.hud-hilo {
+  font-size: var(--size-body);
+  white-space: pre;
   min-height: 1.4em;
 }
 
@@ -212,6 +247,10 @@ button {
 }
 
 .alert-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  --cut: var(--accent);
   height: 40px;
   max-width: min(64vw, 300px);
   padding: 0 var(--s4);
@@ -228,8 +267,10 @@ button {
   animation: appear var(--dur) var(--ease);
 }
 
-.alert-tag[hidden] {
-  display: none;
+.alert-tag .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
 }
 
 @keyframes appear {
@@ -273,6 +314,79 @@ button {
   display: flex;
   gap: var(--s3);
   pointer-events: auto;
+}
+
+/* ---------- radar loop bar ---------- */
+
+.radar-bar {
+  width: calc(4 * 64px + 3 * var(--s3));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s2);
+  pointer-events: auto;
+  text-shadow: var(--halo);
+}
+
+.radar-play {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--muted);
+  background: transparent;
+  color: var(--fg);
+}
+
+.radar-play[aria-pressed='true'] {
+  border-color: var(--fg);
+  background: var(--surface);
+}
+
+.radar-play .icon-play {
+  fill: currentColor;
+}
+
+.radar-play .icon-pause {
+  stroke-width: 2.5;
+}
+
+.radar-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-ticks {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-left: auto;
+  height: 16px;
+}
+
+.radar-ticks i {
+  width: 2px;
+  height: 8px;
+  background: var(--muted);
+}
+
+.radar-ticks i.on {
+  height: 16px;
+  background: var(--fg);
+}
+
+.radar-legend {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--size-meta);
+  color: var(--muted);
+}
+
+.radar-legend i {
+  flex: 1;
+  height: 4px;
 }
 
 .layer-toggle {
@@ -326,6 +440,10 @@ button {
 
   .layer-toggle {
     width: 56px;
+  }
+
+  .radar-bar {
+    width: calc(4 * 56px + 3 * var(--s2));
   }
 }
 
@@ -612,6 +730,254 @@ button {
 
 .prose + .meta-text {
   margin-top: var(--s3);
+}
+
+/* ---------- detail sheet ---------- */
+
+.body-text {
+  margin: 0 0 var(--s3);
+  line-height: 1.45;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.icon-warning path:first-child {
+  fill: currentColor;
+}
+
+.icon-warning .cut {
+  stroke: var(--cut, var(--bg));
+  stroke-width: 2.25;
+}
+
+.alert-row {
+  display: grid;
+  grid-template-columns: 18px auto 1fr 16px;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  --cut: var(--bg);
+}
+
+.alert-row + .alert-row {
+  border-top: 1px solid var(--hairline);
+}
+
+.alert-row .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.alert-row-event {
+  font-weight: 500;
+}
+
+.alert-row-until {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.alert-row .icon-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.rain-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 64px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.rain-bar {
+  flex: 1;
+  background: var(--fg);
+}
+
+.rain-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--s2);
+  font-size: var(--size-meta);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hour-strip {
+  list-style: none;
+  display: flex;
+  gap: var(--s1);
+  margin: 0 calc(-1 * var(--s5));
+  padding: 0 var(--s5) var(--s1);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.hour-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.hour-cell {
+  flex: 0 0 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) 0;
+  scroll-snap-align: start;
+}
+
+.hour-cell.is-sun {
+  flex-basis: 64px;
+}
+
+.hour-time,
+.hour-pop {
+  font-size: var(--size-meta);
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.hour-pop {
+  min-height: 1.5em;
+}
+
+.hour-temp {
+  font-variant-numeric: tabular-nums;
+}
+
+.is-sun .hour-temp {
+  font-size: var(--size-meta);
+  color: var(--muted);
+}
+
+.week-nws {
+  margin-bottom: var(--s2);
+}
+
+.week {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.week-row {
+  display: grid;
+  grid-template-columns: 2.8em 20px 2.2em 2.2em minmax(56px, 1fr) 2.2em;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  border-bottom: 1px solid var(--hairline);
+  font-variant-numeric: tabular-nums;
+}
+
+.week-row:last-child {
+  border-bottom: 0;
+}
+
+.week-row .glyph {
+  width: 20px;
+  height: 20px;
+}
+
+.week-pop {
+  font-size: var(--size-meta);
+  color: var(--muted);
+  text-align: right;
+}
+
+/* Narrow phones: the range bar needs the room more than the rain chance does (it stays in the row label). */
+@media (max-width: 359px) {
+  .week-row {
+    grid-template-columns: 2.8em 20px 2.2em minmax(56px, 1fr) 2.2em;
+  }
+
+  .week-pop {
+    display: none;
+  }
+}
+
+.week-lo {
+  color: var(--muted);
+  text-align: right;
+}
+
+.week-hi {
+  text-align: right;
+}
+
+.range {
+  position: relative;
+  height: 4px;
+  background: var(--hairline);
+}
+
+.range-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--fg);
+}
+
+.range-now {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--fg);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.spec {
+  margin: 0;
+}
+
+.spec-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 36px;
+}
+
+.spec-row dt {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--size-meta);
+  letter-spacing: var(--tracking-meta);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The leader line: a solid hairline from label to value. */
+.spec-row dt::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.spec-row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (prefers-reduced-motion: reduce) {

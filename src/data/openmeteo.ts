@@ -13,6 +13,14 @@ export interface PointCurrent {
   weatherCode: number;
   windMph: number;
   windFromDeg: number;
+  gustMph: number;
+  feelsF: number;
+  humidity: number;
+  dewF: number;
+  pressureHpa: number;
+  visibilityM: number;
+  uv: number;
+  isDay: boolean;
 }
 
 export interface HourlyPoint {
@@ -24,11 +32,35 @@ export interface HourlyPoint {
   windMph: number;
   windFromDeg: number;
   gustMph: number;
+  isDay: boolean;
+}
+
+export interface DailyPoint {
+  /** Local date, YYYY-MM-DD. */
+  date: string;
+  hiF: number;
+  loF: number;
+  precipProbability: number;
+  weatherCode: number;
+  /** Local times, YYYY-MM-DDTHH:MM. */
+  sunrise: string;
+  sunset: string;
+  uvMax: number;
+}
+
+export interface MinutelyPoint {
+  /** Local time at the start of the 15-minute slot. */
+  time: string;
+  /** mm in that 15 minutes. */
+  precipitation: number;
 }
 
 export interface PointForecast {
   current: PointCurrent;
   hourly: HourlyPoint[];
+  daily: DailyPoint[];
+  /** Next 2 hours in 15-minute slots. */
+  minutely: MinutelyPoint[];
   utcOffsetSeconds: number;
 }
 
@@ -42,6 +74,14 @@ interface PointResponse {
     weather_code: number;
     wind_speed_10m: number;
     wind_direction_10m: number;
+    wind_gusts_10m: number;
+    apparent_temperature: number;
+    relative_humidity_2m: number;
+    dew_point_2m: number;
+    pressure_msl: number;
+    visibility: number;
+    uv_index: number;
+    is_day: number;
   };
   hourly: {
     time: string[];
@@ -52,34 +92,67 @@ interface PointResponse {
     wind_speed_10m: number[];
     wind_direction_10m: number[];
     wind_gusts_10m: number[];
+    is_day: number[];
   };
+  daily: {
+    time: string[];
+    temperature_2m_max: number[];
+    temperature_2m_min: number[];
+    precipitation_probability_max: (number | null)[];
+    weather_code: number[];
+    sunrise: string[];
+    sunset: string[];
+    uv_index_max: (number | null)[];
+  };
+  minutely_15: { time: string[]; precipitation: (number | null)[] };
 }
 
-/** Point forecast for the HUD (the URL from the brief, trimmed to the next 24 hours). */
+/**
+ * Point forecast for the HUD and detail sheet: the URL from the brief, trimmed
+ * to the next 24 hours, plus 7 days, the next 2 hours in 15-minute slots, and
+ * the current details (feels like, humidity, pressure…). One request.
+ */
 export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSignal): Promise<PointForecast> {
   const q = new URLSearchParams({
     latitude: c4(lat),
     longitude: c4(wrapLon(lon)),
     hourly:
-      'temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
-    current: 'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m',
+      'temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day',
+    current:
+      'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,' +
+      'apparent_temperature,relative_humidity_2m,dew_point_2m,pressure_msl,visibility,uv_index,is_day',
+    daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset,uv_index_max',
+    minutely_15: 'precipitation',
+    forecast_minutely_15: '8',
     temperature_unit: 'fahrenheit',
     wind_speed_unit: 'mph',
     timezone: 'auto',
     forecast_hours: '24',
+    forecast_days: '7',
   });
   const r = await fetchJson<PointResponse>(`${OPEN_METEO_FORECAST}?${q}`, { signal });
+  const c = r.current;
   const h = r.hourly;
+  const d = r.daily;
+  const m = r.minutely_15;
   return {
     utcOffsetSeconds: r.utc_offset_seconds,
     current: {
-      time: r.current.time,
-      tempF: r.current.temperature_2m,
-      precipitation: r.current.precipitation,
-      intervalS: r.current.interval,
-      weatherCode: r.current.weather_code,
-      windMph: r.current.wind_speed_10m,
-      windFromDeg: r.current.wind_direction_10m,
+      time: c.time,
+      tempF: c.temperature_2m,
+      precipitation: c.precipitation,
+      intervalS: c.interval,
+      weatherCode: c.weather_code,
+      windMph: c.wind_speed_10m,
+      windFromDeg: c.wind_direction_10m,
+      gustMph: c.wind_gusts_10m,
+      feelsF: c.apparent_temperature,
+      humidity: c.relative_humidity_2m,
+      dewF: c.dew_point_2m,
+      pressureHpa: c.pressure_msl,
+      visibilityM: c.visibility,
+      uv: c.uv_index,
+      isDay: c.is_day === 1,
     },
     hourly: h.time.map((time, i) => ({
       time,
@@ -90,7 +163,19 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
       windMph: h.wind_speed_10m[i],
       windFromDeg: h.wind_direction_10m[i],
       gustMph: h.wind_gusts_10m[i],
+      isDay: h.is_day[i] === 1,
     })),
+    daily: d.time.map((date, i) => ({
+      date,
+      hiF: d.temperature_2m_max[i],
+      loF: d.temperature_2m_min[i],
+      precipProbability: d.precipitation_probability_max[i] ?? 0,
+      weatherCode: d.weather_code[i],
+      sunrise: d.sunrise[i],
+      sunset: d.sunset[i],
+      uvMax: d.uv_index_max[i] ?? 0,
+    })),
+    minutely: (m?.time ?? []).map((time, i) => ({ time, precipitation: m.precipitation[i] ?? 0 })),
   };
 }
 

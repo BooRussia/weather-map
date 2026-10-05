@@ -10,14 +10,17 @@ import { GridController } from './data/gridController';
 import { Animator, type LayerFlags } from './layers/animator';
 import { createCrosshair, createMap } from './map/map';
 import { addImagery, refreshImagery, setBasemap, setColorMode, setImageryVisible } from './map/imagery';
+import { AlertAreas } from './map/alertAreas';
+import { RadarLoop, type LoopFrame } from './map/radarLoop';
 import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, svg } from './ui/dom';
 import { renderAlertTag, renderHud } from './ui/hud';
-import { cloudsIcon, gearIcon, rainIcon, thunderIcon, windIcon } from './ui/icons';
+import { chevronIcon, cloudsIcon, gearIcon, gpsIcon, rainIcon, thunderIcon, warningIcon, windIcon } from './ui/icons';
 import { showNote } from './ui/note';
-import { alertsPanel, forecastPanel, settingsPanel } from './ui/panels';
+import { alertsPanel, detailPanel, settingsPanel } from './ui/panels';
+import { initRadarBar, renderRadarBar } from './ui/radarBar';
 import { Sheet } from './ui/sheet';
 
 type Layer = keyof AppState['layers'];
@@ -38,12 +41,16 @@ async function main(): Promise<void> {
     }
   }
 
-  const store = createStore(start);
+  const store = createStore(start, located);
   const sheet = new Sheet();
   let conditions: Conditions | null = null;
 
   // Static chrome.
   $('#gear').append(svg(gearIcon));
+  $('#hud-gps').append(svg(gpsIcon));
+  $('#hud-chevron').append(svg(chevronIcon));
+  $('#alert-tag').prepend(svg(warningIcon));
+  initRadarBar();
   document.querySelectorAll<HTMLButtonElement>('.layer-toggle').forEach((btn) => {
     const layer = btn.dataset.layer as Layer;
     btn.append(svg(LAYER_ICONS[layer]));
@@ -52,16 +59,44 @@ async function main(): Promise<void> {
   renderHud(null, store.get());
   renderCredits(store.get());
 
-  const map = await createMap($('#map'), start);
-  map.once('load', () => {
-    const s = store.get();
-    addImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
-  });
-  const crosshair = createCrosshair(map, start);
-
   const css = getComputedStyle(document.documentElement);
   const fg = css.getPropertyValue('--fg').trim() || '#f0f0fa';
   const muted = css.getPropertyValue('--muted').trim() || '#8a8a96';
+  const accent = css.getPropertyValue('--accent').trim() || '#f5a623';
+
+  const map = await createMap($('#map'), start);
+  const alertAreas = new AlertAreas(map, accent, store.get().alertAreas);
+  map.once('load', () => {
+    const s = store.get();
+    addImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
+    alertAreas.install();
+  });
+  const crosshair = createCrosshair(map, start);
+
+  /* ---------- radar loop ---------- */
+
+  let loopFrame: LoopFrame | null = null;
+  const radarLoop = new RadarLoop(map, (f) => {
+    loopFrame = f;
+    drawRadarBar();
+  });
+  const drawRadarBar = () => {
+    const s = store.get();
+    renderRadarBar({ rainOn: s.layers.rain, colorMode: s.colorMode, playing: radarLoop.playing, frame: loopFrame });
+  };
+  let loopIdle = 0;
+  $('#radar-play').addEventListener('click', () => {
+    clearTimeout(loopIdle);
+    if (radarLoop.playing) {
+      radarLoop.pause();
+      // A paused loop returns to live radar after a minute, so the map never sits on old radar unnoticed.
+      loopIdle = window.setTimeout(() => radarLoop.stop(store.get().layers.rain), 60_000);
+    } else {
+      radarLoop.play(store.get().colorMode);
+    }
+    drawRadarBar();
+  });
+  drawRadarBar();
   // Rain streaks need the Rain layer on AND the falling-rain setting on; radar needs only the layer.
   const streaksOn = (s: AppState) => s.layers.rain && s.rainStreaks;
   const flags = (): LayerFlags => {
@@ -89,9 +124,15 @@ async function main(): Promise<void> {
   /* ---------- conditions for the selected point ---------- */
 
   let loadCtrl: AbortController | null = null;
+  // The detail sheet's alert rows open the full alert text in the same sheet.
+  const detailActions = {
+    openAlerts: () => {
+      if (conditions) sheet.open('alerts', alertsTitle(conditions), alertsPanel(conditions.alerts), null);
+    },
+  };
   const refreshSheet = () => {
     if (!conditions) return;
-    if (sheet.current === 'forecast') sheet.update(conditions.place ?? 'Forecast', forecastPanel(conditions, store.get()));
+    if (sheet.current === 'forecast') sheet.update(conditions.place ?? 'Forecast', detailPanel(conditions, store.get(), detailActions));
     if (sheet.current === 'alerts') sheet.update(alertsTitle(conditions), alertsPanel(conditions.alerts));
   };
   let lastLoaded = 0;
@@ -114,8 +155,8 @@ async function main(): Promise<void> {
   };
 
   let userPicked = false;
-  const select = (p: LatLon, opts: { jump: boolean }) => {
-    store.set({ selected: { lat: p.lat, lon: wrapLon(p.lon) } });
+  const select = (p: LatLon, opts: { jump: boolean; gps?: boolean }) => {
+    store.set({ selected: { lat: p.lat, lon: wrapLon(p.lon) }, gps: !!opts.gps });
     // Marker keeps the raw longitude so it stays on the world copy that was tapped.
     crosshair.setLngLat([p.lon, p.lat]);
     if (opts.jump) map.jumpTo({ center: [p.lon, p.lat] });
@@ -127,7 +168,7 @@ async function main(): Promise<void> {
 
   if (!located && permission !== 'denied') {
     void getPosition(10_000).then((p) => {
-      if (p && !userPicked) select(p, { jump: true });
+      if (p && !userPicked) select(p, { jump: true, gps: true });
       else if (!p) showNote(`Location unavailable. Showing ${DEFAULT_PLACE_LABEL}.`);
     });
   } else if (permission === 'denied') {
@@ -148,6 +189,7 @@ async function main(): Promise<void> {
     grids.refreshIfOlderThan(GRID_MAX_AGE_MS);
     const s = store.get();
     refreshImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds });
+    alertAreas.refreshIfStale();
   };
   setInterval(refreshIfStale, 60_000);
   document.addEventListener('visibilitychange', refreshIfStale);
@@ -168,7 +210,10 @@ async function main(): Promise<void> {
       const on = s.layers[layer];
       if (on === prev.layers[layer]) continue;
       document.querySelector(`.layer-toggle[data-layer="${layer}"]`)?.setAttribute('aria-pressed', String(on));
-      if (layer === 'rain') setImageryVisible(map, 'radar', on);
+      if (layer === 'rain') {
+        if (on) setImageryVisible(map, 'radar', true);
+        else radarLoop.stop(false);
+      }
       else if (layer === 'clouds') setImageryVisible(map, 'clouds', on);
       else animator.layerChanged(layer, on);
       if (layer === 'thunder' && on) {
@@ -180,7 +225,12 @@ async function main(): Promise<void> {
     if (s.layers.rain !== prev.layers.rain || s.layers.clouds !== prev.layers.clouds) {
       refreshImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds });
     }
-    if (s.colorMode !== prev.colorMode) setColorMode(map, s.colorMode);
+    if (s.colorMode !== prev.colorMode) {
+      setColorMode(map, s.colorMode);
+      radarLoop.setColorMode(s.colorMode);
+    }
+    if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode) drawRadarBar();
+    if (s.alertAreas !== prev.alertAreas) alertAreas.setVisible(s.alertAreas);
     if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
     if (s.basemap !== prev.basemap || s.layers.clouds !== prev.layers.clouds) renderCredits(s);
     if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit) {
@@ -207,7 +257,7 @@ async function main(): Promise<void> {
           const p = await getPosition(10_000);
           if (!p) return false;
           userPicked = true;
-          select(p, { jump: true });
+          select(p, { jump: true, gps: true });
           sheet.close();
           return true;
         },
@@ -223,7 +273,7 @@ async function main(): Promise<void> {
 
   const readout = $('#hud-readout');
   readout.addEventListener('click', () => {
-    if (conditions) sheet.open('forecast', conditions.place ?? 'Forecast', forecastPanel(conditions, store.get()), readout);
+    if (conditions) sheet.open('forecast', conditions.place ?? 'Forecast', detailPanel(conditions, store.get(), detailActions), readout);
   });
 }
 

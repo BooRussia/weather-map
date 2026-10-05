@@ -9,7 +9,12 @@ Live wind and rain over a dark map, phone first. One screen: the map is the app.
 - **Thunder**: approximate lightning (see below) with a short procedural crackle; the sound can be turned off in Settings.
 - **Clouds**: live GOES weather-satellite imagery (infrared, so it works at night), a few minutes old.
 - **Map style**: Settings → Map → Style switches between the dark map and **Satellite** aerial imagery, with place names and state lines kept on top. **Colors: Mono / Color** applies to both the radar and the satellite imagery.
-- Tap the map to read conditions for that point. Tap the temperature for the forecast. An amber tag appears only while an NWS alert is active for the selected point.
+- **Radar loop**: the play button above the layer buttons plays the last hour of radar (7 frames, 10 minutes apart) with the frame time. In Color mode a legend shows the intensity scale.
+- **Alert areas**: active NWS warnings are outlined on the map in amber and watches are lightly tinted (Settings → Map → Alert areas). Amber only ever means an active alert.
+- **HUD**: place (with an arrow when it's your GPS location), temperature, condition, and today's high/low. Tap the map to read conditions for that point. An amber ⚠ tag appears only while an NWS alert is active there.
+- **Detail sheet** (tap the temperature): alert rows with end times, a plain-language next-2-hours rain line with 15-minute bars, a 24-hour strip with sunrise/sunset, 7 days with temperature range bars, and a spec-sheet list of details (feels like, humidity, dew point, wind, gusts, pressure, visibility, UV, sunrise, sunset).
+
+Which ideas came from which apps, and what was left out, is logged in `docs/inspiration.md`.
 
 `PRODUCT.md` is the brief. `DESIGN.md` is the locked visual language; read it before changing any UI.
 
@@ -43,9 +48,11 @@ How it's sent: every NWS request includes `User-Agent: <your value>`. NWS allows
 | --- | --- | --- |
 | [NWS api.weather.gov](https://www.weather.gov/documentation/services-web-api) | Place name (`/points`), latest observation, forecast, active alerts | U.S. government data, no key. **User-Agent required** (above). |
 | [NWS radar mosaic](https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer) | Radar under the Rain layer (grayscale or color) | U.S. government data, no key. US coverage only. |
+| [NWS warnings map service](https://mapservices.weather.noaa.gov/eventdriven/rest/services/WWA/watch_warn_adv/MapServer) | Alert areas (warnings and watches; marine and advisories filtered out) | U.S. government data, no key. |
+| [NWS radar, time-enabled](https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer) | Radar loop (last hour) | U.S. government data, no key. Frames load only when you press play. |
 | [NOAA nowCOAST](https://nowcoast.noaa.gov/) | Clouds layer: GOES East + West longwave infrared | U.S. government data, no key. Covers the Americas and eastern Pacific. |
 | [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) | Satellite map style | Credit: Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Fine for personal and non-commercial use; check Esri's terms (or get a free ArcGIS Location Platform key) before a commercial launch. |
-| [Open-Meteo](https://open-meteo.com/) | Wind + precipitation grid for the particles; point temperature/hourly fallback; place search | **CC BY 4.0**, attribution required. Free tier: non-commercial, 10,000 calls/day. |
+| [Open-Meteo](https://open-meteo.com/) | Wind + precipitation grid for the particles; hourly, 7-day, next-2-hours, and details for the detail sheet; temperature fallback; place search | **CC BY 4.0**, attribution required. Free tier: non-commercial, 10,000 calls/day. |
 | [CARTO Dark Matter](https://carto.com/basemaps) | Basemap (converted to grayscale at load) | © CARTO © OpenStreetMap contributors. Check CARTO's basemap terms before commercial use. |
 | [IBM Plex Sans](https://github.com/IBM/plex) | UI type, self-hosted via `@fontsource` | SIL Open Font License. |
 

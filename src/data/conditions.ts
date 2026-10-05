@@ -28,6 +28,8 @@ export interface Conditions {
   alerts: Alert[];
   periods: ForecastPeriod[];
   hourly: HourlyPoint[];
+  /** Full Open-Meteo point forecast: daily, next 2 hours, current details. */
+  om: PointForecast | null;
   observation: Observation | null;
   /** Set when nothing at all could be loaded. */
   failed: boolean;
@@ -45,6 +47,7 @@ const empty = (point: LatLon): Conditions => ({
   alerts: [],
   periods: [],
   hourly: [],
+  om: null,
   observation: null,
   failed: false,
 });
@@ -95,7 +98,12 @@ export async function loadConditions(
 
   const [forecast, observation] = await Promise.all([om, obs]);
   // On a refresh where both sources failed, keep the last good readout.
-  if (forecast || observation || !previous) emit(readout(forecast, observation));
+  if (forecast || observation || !previous) {
+    const r = readout(forecast, observation);
+    // Open-Meteo failed on a refresh: keep the last forecast for the sheet.
+    if (!forecast && previous) Object.assign(r, { om: previous.om, hourly: previous.hourly });
+    emit(r);
+  }
 
   await Promise.all([placeDone, alertsDone, periodsDone]);
   if (c.tempF == null && c.condition == null) emit({ failed: true });
@@ -112,8 +120,9 @@ export function readout(om: PointForecast | null, obs: Observation | null): Part
     condition,
     windMph: om?.current.windMph ?? fresh?.windMph ?? null,
     windFromDeg: om?.current.windFromDeg ?? fresh?.windFromDeg ?? null,
-    gustMph: om?.hourly[0]?.gustMph ?? null,
+    gustMph: om?.current.gustMph ?? null,
     hourly: om?.hourly ?? [],
+    om,
     observation: fresh,
   };
 }

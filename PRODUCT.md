@@ -13,6 +13,8 @@ Open the app and see moving wind and rain over a dark map right away, then read 
 - Layers: Wind, Rain, Thunder, and Clouds (live satellite, added at the owner's request on 2026-10-05). Independent toggles. First load: Wind on, Rain on, Thunder off, Clouds off. Layer state is not persisted, so every cold load starts the same way.
 - Map style: Dark (default) or Satellite (aerial imagery). Imagery colors: Mono (default) or Color. Falling rain can be turned off to watch only the radar. These settings are remembered.
 - Toggling a layer never moves the map camera.
+- HUD: place, temperature, one condition line of 12 words or fewer, and a high/low line (owner-requested from the inspiration screenshots, 2026-10-05). Tapping it opens the detail sheet: alerts, next 2 hours of rain, hourly, 7 days, details.
+- Map shows active NWS alert areas (warnings and watches, not marine or minor advisories). The radar can loop the last hour.
 - Dark mode only in v1.
 - Free data, no API keys: NWS api.weather.gov (place, observations, forecast, alerts, radar), Open-Meteo (wind and precipitation fields, CC BY 4.0), NOAA nowCOAST (GOES clouds), and Esri World Imagery (satellite basemap). Attribution is always on screen.
 - Apple Maps (MapKit) belongs in the future native iPhone app, where it is free and built in. On the web it would need a paid Apple Developer account and a map-engine swap.
@@ -32,4 +34,5 @@ Open the app and see moving wind and rain over a dark map right away, then read 
 - The brief names a Windy-style reference and SpaceX-level restraint.
 - Follow-up from the owner: build the website first, phone is the priority, port to a native app later.
 - The owner likes the monochrome look but wants to switch to radar colors (green to red), turn off the falling rain to read the radar, and see satellite, both aerial and live clouds.
+- The owner shared screenshots of MyRadar, (Not Boring) Weather, Apple Weather, and another weather app they like and asked to bring over what fits. Take/skip decisions are logged in `docs/inspiration.md`.
 - No user research yet. Unknown: real usage split between phone and desktop; assumed phone-first.

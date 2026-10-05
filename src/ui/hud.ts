@@ -25,35 +25,47 @@ export function conditionLine(c: Pick<Conditions, 'condition' | 'windMph' | 'win
   return limitWords(parts.join(' · '), MAX_CONDITION_WORDS);
 }
 
+/** "H 78°  L 72°" from today's Open-Meteo high/low (Apple puts this right under the condition). */
+export function hiLoLine(c: Conditions, s: AppState): string {
+  const today = c.om?.daily[0];
+  if (!today) return '';
+  return `H ${formatTemp(today.hiF, s.tempUnit)}  L ${formatTemp(today.loF, s.tempUnit)}`;
+}
+
 export function renderHud(c: Conditions | null, s: AppState): void {
   const place = $('#hud-place');
   const temp = $('#hud-temp');
   const cond = $('#hud-cond');
+  const hilo = $('#hud-hilo');
+  $('#hud-gps').hidden = !s.gps;
   if (!c) {
     place.textContent = 'Locating';
     temp.textContent = '--°';
     cond.textContent = '';
+    hilo.textContent = '';
     return;
   }
   place.textContent = c.place ?? 'Locating';
   temp.textContent = c.tempF != null ? formatTemp(c.tempF, s.tempUnit) : '--°';
   cond.textContent = c.failed ? 'Weather data unavailable. Map still works.' : conditionLine(c, s.windUnit);
+  hilo.textContent = hiLoLine(c, s);
   $('#hud-readout').setAttribute(
     'aria-label',
-    `${c.place ?? 'Current location'}, ${temp.textContent} ${cond.textContent}. Open forecast.`,
+    `${c.place ?? 'Current location'}${s.gps ? ' (your location)' : ''}, ${temp.textContent} ${cond.textContent} ${hilo.textContent}. Open forecast.`,
   );
 }
 
 /** Amber tag: the top alert's event name, plus a count when there are more. */
 export function renderAlertTag(alerts: Alert[]): void {
   const tag = $<HTMLButtonElement>('#alert-tag');
+  const text = $('#alert-tag-text');
   if (!alerts.length) {
     tag.hidden = true;
-    tag.textContent = '';
+    text.textContent = '';
     return;
   }
   const more = alerts.length > 1 ? ` +${alerts.length - 1}` : '';
-  tag.textContent = `${alerts[0].event}${more}`;
+  text.textContent = `${alerts[0].event}${more}`;
   tag.setAttribute('aria-label', `${alerts.length} active alert${alerts.length > 1 ? 's' : ''}: ${alerts[0].event}. Open details.`);
   tag.hidden = false;
 }
