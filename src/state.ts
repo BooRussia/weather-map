@@ -22,7 +22,9 @@ export interface AppState {
 
 type Listener = (s: AppState, prev: AppState) => void;
 
-const PREFS_KEY = 'weather-map:prefs';
+/** v2: the owner changed the defaults (Satellite, Color, falling rain off) on 2026-10-05. */
+const PREFS_KEY = 'weather-map:prefs:v2';
+const PREFS_KEY_V1 = 'weather-map:prefs';
 
 interface Prefs {
   tempUnit?: TempUnit;
@@ -36,7 +38,11 @@ interface Prefs {
 
 function readPrefs(): Prefs {
   try {
-    return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Prefs;
+    const v2 = localStorage.getItem(PREFS_KEY);
+    if (v2) return JSON.parse(v2) as Prefs;
+    // From v1, keep personal choices; the map look resets to the new defaults.
+    const v1 = JSON.parse(localStorage.getItem(PREFS_KEY_V1) ?? '{}') as Prefs;
+    return { tempUnit: v1.tempUnit, windUnit: v1.windUnit, sound: v1.sound, alertAreas: v1.alertAreas };
   } catch {
     return {};
   }
@@ -67,9 +73,9 @@ export function createStore(selected: LatLon, gps: boolean) {
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
-    basemap: prefs.basemap === 'satellite' ? 'satellite' : 'dark',
-    colorMode: prefs.colorMode === 'color' ? 'color' : 'mono',
-    rainStreaks: prefs.rainStreaks ?? true,
+    basemap: prefs.basemap === 'dark' ? 'dark' : 'satellite',
+    colorMode: prefs.colorMode === 'mono' ? 'mono' : 'color',
+    rainStreaks: prefs.rainStreaks ?? false,
     alertAreas: prefs.alertAreas ?? true,
     selected,
     gps,

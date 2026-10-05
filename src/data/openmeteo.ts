@@ -197,29 +197,65 @@ interface GridItem {
     precipitation_probability: number | null;
     weather_code: number | null;
   };
+  hourly: {
+    time: string[];
+    wind_speed_10m: (number | null)[];
+    wind_direction_10m: (number | null)[];
+    precipitation: (number | null)[];
+    precipitation_probability: (number | null)[];
+    weather_code: (number | null)[];
+  };
+}
+
+export interface GridData {
+  /** Now (15-minute data where available), one sample per point. */
+  current: GridSample[];
+  /** UTC hour keys (YYYY-MM-DDTHH:00), shared by every point. */
+  hours: string[];
+  /** samplesAt[hourIndex][pointIndex]. */
+  samplesAt: GridSample[][];
 }
 
 /**
- * Current conditions for many points in ONE request (Open-Meteo accepts
- * comma-separated coordinate lists). Results come back in input order.
+ * Current conditions plus hourly data (past 24 h, next 19 h) for many points
+ * in ONE request (Open-Meteo accepts comma-separated coordinate lists).
+ * Results come back in input order. ~12 kB gzipped for 40 points.
  */
-export async function getGridSamples(points: LatLon[], signal?: AbortSignal): Promise<GridSample[]> {
+export async function getGridSamples(points: LatLon[], pastHours: number, signal?: AbortSignal): Promise<GridData> {
+  const vars = 'wind_speed_10m,wind_direction_10m,precipitation,precipitation_probability,weather_code';
   const q = new URLSearchParams({
     latitude: points.map((p) => c4(p.lat)).join(','),
     longitude: points.map((p) => c4(wrapLon(p.lon))).join(','),
-    current: 'wind_speed_10m,wind_direction_10m,precipitation,precipitation_probability,weather_code',
+    current: vars,
+    hourly: vars,
+    past_hours: String(pastHours),
+    forecast_hours: '19',
     wind_speed_unit: 'mph',
     timezone: 'GMT',
   });
   const r = await fetchJson<GridItem[] | GridItem>(`${OPEN_METEO_FORECAST}?${q}`, { signal, timeoutMs: 15_000 });
   const items = Array.isArray(r) ? r : [r];
-  return items.map(({ current: c }) => ({
-    windMph: c.wind_speed_10m ?? 0,
-    windFromDeg: c.wind_direction_10m ?? 0,
-    precipRate: ((c.precipitation ?? 0) * 3600) / (c.interval || 3600),
-    precipProbability: c.precipitation_probability ?? 0,
-    weatherCode: c.weather_code ?? 0,
-  }));
+  const hours = items[0]?.hourly.time ?? [];
+  return {
+    current: items.map(({ current: c }) => ({
+      windMph: c.wind_speed_10m ?? 0,
+      windFromDeg: c.wind_direction_10m ?? 0,
+      precipRate: ((c.precipitation ?? 0) * 3600) / (c.interval || 3600),
+      precipProbability: c.precipitation_probability ?? 0,
+      weatherCode: c.weather_code ?? 0,
+    })),
+    hours,
+    samplesAt: hours.map((_, hi) =>
+      items.map(({ hourly: h }) => ({
+        windMph: h.wind_speed_10m[hi] ?? 0,
+        windFromDeg: h.wind_direction_10m[hi] ?? 0,
+        // Hourly precipitation is already mm over the hour.
+        precipRate: h.precipitation[hi] ?? 0,
+        precipProbability: h.precipitation_probability[hi] ?? 0,
+        weatherCode: h.weather_code[hi] ?? 0,
+      })),
+    ),
+  };
 }
 
 export interface GeocodeResult {

@@ -159,7 +159,7 @@ export function settingsPanel(store: Store, actions: SettingsActions): HTMLEleme
       h(
         'p',
         { class: 'meta-text' },
-        'Wind and rain fields: Open-Meteo (CC BY 4.0), model data. Place, observations, forecast, alerts, and radar: NWS. Clouds: NOAA GOES infrared via nowCOAST, minutes old. Satellite imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.',
+        'Wind and rain fields: Open-Meteo (CC BY 4.0), model data. Place, observations, forecast, alerts, and live radar: NWS. Timeline radar: archived NEXRAD and HRRR forecast via Iowa Environmental Mesonet. Clouds: NOAA GOES infrared via nowCOAST, minutes old. Satellite imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.',
       ),
     ),
   );

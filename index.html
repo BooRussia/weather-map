@@ -38,13 +38,19 @@
 
     <div class="bottom">
       <p id="note" class="note" role="status" aria-live="polite"></p>
-      <div id="radar-bar" class="radar-bar" hidden>
-        <button id="radar-play" class="radar-play" type="button" aria-label="Play the last hour of radar"></button>
-        <span id="radar-time" class="radar-time" aria-live="off">Radar now</span>
-        <span id="radar-ticks" class="radar-ticks" aria-hidden="true"></span>
-        <span id="radar-legend" class="radar-legend" role="img" aria-label="Radar intensity scale: blue and green light, yellow and orange moderate, red heavy" hidden>
-          <span>Light</span><i id="radar-legend-bar"></i><span>Heavy</span>
-        </span>
+      <div id="timeline" class="timeline">
+        <div class="tl-row">
+          <button id="tl-play" class="tl-play" type="button" aria-label="Play radar timeline" title="Play / pause (Space)"></button>
+          <span class="tl-label">
+            <span id="tl-time" class="tl-time">Now</span>
+            <span id="tl-kind" class="tl-kind">Live radar</span>
+          </span>
+          <span id="radar-legend" class="radar-legend" role="img" aria-label="Radar intensity scale: blue and green light, yellow and orange moderate, red heavy" hidden>
+            <span>Light</span><i id="radar-legend-bar"></i><span>Heavy</span>
+          </span>
+        </div>
+        <input id="tl-range" class="tl-range" type="range" min="-24" max="0" step="1" value="0" aria-label="Radar time" title="Drag, or use ← → to step an hour" />
+        <div id="tl-scale" class="tl-scale" aria-hidden="true"></div>
       </div>
       <nav class="layer-bar" aria-label="Map layers">
         <button class="layer-toggle" data-layer="wind" type="button" aria-label="Wind" title="Wind"></button>
@@ -55,12 +61,21 @@
       <footer class="attribution">
         <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
         <span> · <a href="https://www.weather.gov/" target="_blank" rel="noopener">NWS</a></span>
+        <span data-credit="iem" hidden> · <a href="https://mesonet.agron.iastate.edu/" target="_blank" rel="noopener">IEM</a></span>
         <span data-credit="goes" hidden> · <a href="https://nowcoast.noaa.gov/" target="_blank" rel="noopener">NOAA GOES</a></span>
         <span data-credit="esri" hidden> · <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri, Vantor, Earthstar Geographics, GIS User Community</a></span>
         <span> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></span>
         <span> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></span>
       </footer>
     </div>
+
+    <aside id="side" class="side" aria-labelledby="side-title" hidden>
+      <header class="sheet-head">
+        <h2 id="side-title" class="sheet-title"></h2>
+        <button id="side-close" class="sheet-close" type="button" aria-label="Close details"></button>
+      </header>
+      <div id="side-body" class="sheet-body"></div>
+    </aside>
 
     <div id="scrim" class="scrim"></div>
     <section id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">

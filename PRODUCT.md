@@ -11,12 +11,14 @@ Open the app and see moving wind and rain over a dark map right away, then read 
 - Website first. The phone is the priority (portrait, one-handed, thumb reach, safe-area insets); desktop must also work well.
 - Layer and data logic stays framework-free so a later native app (Swift or a wrapped port) can reuse or mirror it.
 - Layers: Wind, Rain, Thunder, and Clouds (live satellite, added at the owner's request on 2026-10-05). Independent toggles. First load: Wind on, Rain on, Thunder off, Clouds off. Layer state is not persisted, so every cold load starts the same way.
-- Map style: Dark (default) or Satellite (aerial imagery). Imagery colors: Mono (default) or Color. Falling rain can be turned off to watch only the radar. These settings are remembered.
+- First load (owner's choice, 2026-10-05): Satellite map, Color radar, falling rain off. Settings switch to Dark, Mono, or falling rain on, and the choices are remembered.
+- Timeline: one play bar scrubs or plays radar from 24 hours ago, through now, into the HRRR forecast (as far as the latest run reaches, about 15–18 hours). Wind and falling-rain particles follow the same hour.
+- Desktop (1100px and wider): the detail panel stays docked on the right. Keyboard: Space plays/pauses, ←/→ step an hour, Home returns to now.
 - Toggling a layer never moves the map camera.
 - HUD: place, temperature, one condition line of 12 words or fewer, and a high/low line (owner-requested from the inspiration screenshots, 2026-10-05). Tapping it opens the detail sheet: alerts, next 2 hours of rain, hourly, 7 days, details.
-- Map shows active NWS alert areas (warnings and watches, not marine or minor advisories). The radar can loop the last hour.
+- Map shows active NWS alert areas (warnings and watches, not marine or minor advisories).
 - Dark mode only in v1.
-- Free data, no API keys: NWS api.weather.gov (place, observations, forecast, alerts, radar), Open-Meteo (wind and precipitation fields, CC BY 4.0), NOAA nowCOAST (GOES clouds), and Esri World Imagery (satellite basemap). Attribution is always on screen.
+- Free data, no API keys: NWS api.weather.gov (place, observations, forecast, alerts, radar), Iowa Environmental Mesonet (archived NEXRAD radar and HRRR forecast radar), Open-Meteo (wind and precipitation fields, CC BY 4.0), NOAA nowCOAST (GOES clouds), and Esri World Imagery (satellite basemap). Attribution is always on screen.
 - Apple Maps (MapKit) belongs in the future native iPhone app, where it is free and built in. On the web it would need a paid Apple Developer account and a map-engine swap.
 - Open-Meteo free tier is 10k calls/day, non-commercial. One batched grid request per view, throttled and cached.
 - Lightning in v1 is approximate (forecast thunderstorm cells plus random strike timing). The app says so in settings.

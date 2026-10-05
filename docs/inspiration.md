@@ -12,7 +12,7 @@ What it does:
 
 Take:
 - **Alert areas on the map.** Warnings outlined, watches tinted. Drawn in our one accent (amber already means "active NWS alert").
-- **Radar loop.** Play the last hour of radar with a timestamp; it shows where storms are heading.
+- **Radar loop → timeline.** First built as a one-hour loop; the owner then asked for past *and* future, so it became a play bar from 24 hours ago into the HRRR forecast (Windy-style), with particles following the same hour.
 - **Radar legend.** A thin intensity bar, shown only in Color mode.
 
 Skip:
@@ -84,5 +84,5 @@ Skip:
 | 7-day range bars with now tick | Apple | detail sheet |
 | Spec-sheet rows with leader lines | Not Boring + Apple's facts | detail sheet |
 | Alert areas (warnings outlined, watches tinted) | MyRadar | map, amber |
-| Radar loop with timestamp | MyRadar | above the layer buttons |
-| Radar color legend | MyRadar | with the loop, Color mode only |
+| Radar timeline (−24 h → HRRR forecast) with frame time | MyRadar, Windy | above the layer buttons |
+| Radar color legend | MyRadar | in the timeline row, Color mode only |

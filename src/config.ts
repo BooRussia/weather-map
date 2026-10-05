@@ -62,3 +62,19 @@ export const GRID_MAX_AGE_MS = 15 * 60_000;
 export const CONDITIONS_REFRESH_MS = 10 * 60_000;
 /** Radar and cloud tiles are re-requested once per bucket of this length. */
 export const IMAGERY_REFRESH_MS = 5 * 60_000;
+
+/* ---------- radar timeline ---------- */
+
+/** Hours of past radar on the timeline (hourly stops). */
+export const TIMELINE_PAST_HOURS = 24;
+/** HRRR forecasts run 18 hours from each hourly init. */
+export const HRRR_MAX_MINUTES = 18 * 60;
+
+/** Archived NEXRAD composite (IEM): `{stamp}` = UTC YYYYMMDDHHMM. */
+export const PAST_RADAR_TILE_URL =
+  'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-{stamp}/{z}/{x}/{y}.png';
+/** HRRR simulated reflectivity (IEM): `{minutes}` = 4-digit forecast minute, `{init}` = UTC YYYYMMDDHHMM. */
+export const FUTURE_RADAR_TILE_URL =
+  'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFD-F{minutes}-{init}/{z}/{x}/{y}.png';
+/** Latest HRRR run time (IEM). */
+export const HRRR_META_URL = 'https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_0000.json';
