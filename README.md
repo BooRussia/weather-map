@@ -2,6 +2,8 @@
 
 Live wind and rain over a dark map, phone first. One screen: the map is the app.
 
+**Live:** https://boorussia.github.io/weather-map/
+
 - **Wind**: particles that follow the wind direction; speed and brightness scale with wind speed.
 - **Rain**: falling streaks, denser where precipitation is heavier and more likely, over the NWS radar. Settings → Map → **Colors → Color** shows the NWS intensity scale (blue/green light, yellow/orange moderate, red heavy). Settings → Rain → **Falling rain → Off** hides the streaks so only the radar shows. These choices are remembered.
 - **Thunder**: approximate lightning (see below) with a short procedural crackle; the sound can be turned off in Settings.
@@ -61,6 +63,7 @@ There's no free, keyless live lightning feed. When Thunder is on, strikes are pl
 
 It's a static site: build, then host `dist/` anywhere.
 
+- **GitHub Pages** (live now): `.github/workflows/pages.yml` tests, builds, and deploys on every push to `master`. It sets `BASE_PATH=/<repo>/` because Pages serves the site from a sub-path, and sets the NWS User-Agent contact to the repo URL. To use your email instead, edit `VITE_NWS_USER_AGENT` in the workflow.
 - **Netlify**: `netlify.toml` is included (build `npm run build`, publish `dist`). Add `VITE_NWS_USER_AGENT` under Site settings → Environment variables.
 - **Vercel**: import the repo; it detects Vite (build `npm run build`, output `dist`). Add `VITE_NWS_USER_AGENT` in Project → Settings → Environment Variables.
 
