@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Live wind and rain over a dark map." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Weather Map" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Weather Map</title>
+  </head>
+  <body>
+    <div id="map" class="map"></div>
+    <canvas id="wind-canvas" class="layer-canvas" aria-hidden="true"></canvas>
+    <canvas id="fx-canvas" class="layer-canvas" aria-hidden="true"></canvas>
+
+    <header class="hud">
+      <button id="hud-readout" class="hud-readout" type="button">
+        <span id="hud-place" class="hud-place"></span>
+        <span id="hud-temp" class="hud-temp"></span>
+        <span id="hud-cond" class="hud-cond"></span>
+      </button>
+    </header>
+
+    <div class="top-right">
+      <button id="gear" class="gear" type="button" aria-label="Settings"></button>
+      <button id="alert-tag" class="alert-tag" type="button" hidden></button>
+    </div>
+
+    <div class="bottom">
+      <p id="note" class="note" role="status" aria-live="polite"></p>
+      <nav class="layer-bar" aria-label="Map layers">
+        <button class="layer-toggle" data-layer="wind" type="button" aria-label="Wind" title="Wind"></button>
+        <button class="layer-toggle" data-layer="rain" type="button" aria-label="Rain" title="Rain"></button>
+        <button class="layer-toggle" data-layer="thunder" type="button" aria-label="Thunder" title="Thunder"></button>
+      </nav>
+      <footer class="attribution">
+        <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> ·
+        <a href="https://www.weather.gov/" target="_blank" rel="noopener">NWS</a> ·
+        <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a> ·
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
+      </footer>
+    </div>
+
+    <div id="scrim" class="scrim"></div>
+    <section id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <header id="sheet-head" class="sheet-head">
+        <h2 id="sheet-title" class="sheet-title"></h2>
+      </header>
+      <div id="sheet-body" class="sheet-body"></div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
