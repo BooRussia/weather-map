@@ -44,7 +44,9 @@ export const gaugeIcon = `${open('i-gauge')}<path d="M4.5 17.5a8.5 8.5 0 1 1 15 
 export const rainMark = `${open('i-rainmark')}<path d="M6.8 13.5h10a3.6 3.6 0 0 0 .4-7.17 5.1 5.1 0 0 0-9.8-1.1A4.1 4.1 0 0 0 6.8 13.5z" /><path d="M8.5 17 7.5 20M12.5 17l-1 3M16.5 17l-1 3" /></svg>`;
 export const boltMark = `${open('i-bolt')}<path d="M13.2 2.5 5 13.6h6l-1.2 7.9 8.2-11.1h-6z" /></svg>`;
 export const cloudMark = `${open('i-cloud')}<path d="M6.6 18.5h10.6a4 4 0 0 0 .5-7.97 5.7 5.7 0 0 0-11-1.2A4.6 4.6 0 0 0 6.6 18.5z" /></svg>`;
-export const alertMark = `${open('i-alertmark')}<path d="M12 3.5 2.5 20h19z" /><path d="M12 10v4.5M12 17.2v.3" /></svg>`;
+/** The hurricane symbol: an eye with two curled arms. */
+export const hurricaneMark = `${open('i-hurricane')}<circle cx="12" cy="12" r="3" /><path d="M12 9c-.9-3.6 1.6-6 6.2-6.4" /><path d="M12 15c.9 3.6-1.6 6-6.2 6.4" /></svg>`;
+export const alertMark =`${open('i-alertmark')}<path d="M12 3.5 2.5 20h19z" /><path d="M12 10v4.5M12 17.2v.3" /></svg>`;
 
 /* ---------- weather glyphs (multicolor in Liquid) ---------- */
 

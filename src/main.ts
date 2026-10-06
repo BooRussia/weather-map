@@ -18,12 +18,15 @@ import { AlertAreas } from './map/alertAreas';
 import { LocationDot } from './map/location';
 import { RadarLayer } from './map/radarLayer';
 import { TripLayer } from './map/tripLayer';
+import { TropicalLayer } from './map/tropicalLayer';
+import { getOutlook, getStormGIS, getStorms, type ModelGroup, type Outlook, type Storm, type StormGIS } from './data/tropical';
+import { DEFAULT_GROUPS, stormPanel, stormShort, stormTitle } from './ui/storm';
 import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule } from './ui/capsule';
-import { locateIcon, routeIcon, warningIcon } from './ui/icons';
+import { hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
 import { LayersMenu } from './ui/layersMenu';
 import { showNote } from './ui/note';
 import { WeatherPage } from './ui/page';
@@ -34,7 +37,8 @@ import { TimelineBar } from './ui/timelineBar';
 import { TripPanel } from './ui/trip';
 
 type Layer = keyof AppState['layers'];
-const LAYERS: Layer[] = ['wind', 'rain', 'thunder', 'clouds'];
+/** Layers with their own handling below (hurricanes have theirs). */
+const LAYERS = ['wind', 'rain', 'thunder', 'clouds'] as const satisfies readonly Layer[];
 /** Wait this long after the map settles before loading weather for its center. */
 const SETTLE_MS = 350;
 
@@ -244,15 +248,20 @@ async function main(): Promise<void> {
   if (located) dot.set(start);
 
   // A gesture stops the camera following you and, if the weather follows the map, hands the readout to the cross.
+  // Only your moves pick a new point: a gesture, or a tap's glide. Camera moves the app makes
+  // (framing a storm, a trip stop, a route) leave the readout alone.
+  let pickOnSettle = false;
   map.on('movestart', (e) => {
     if (!(e as { originalEvent?: Event }).originalEvent) return;
+    pickOnSettle = true;
     following = false;
     if (mode === 'gps' && followsMap()) setMode('center');
     else renderLocate();
   });
   let settleTimer = 0;
   map.on('moveend', () => {
-    if (mode !== 'center' || !followsMap()) return;
+    if (!pickOnSettle || mode !== 'center' || !followsMap()) return;
+    pickOnSettle = false;
     clearTimeout(settleTimer);
     settleTimer = window.setTimeout(() => {
       const c = map.getCenter();
@@ -265,9 +274,12 @@ async function main(): Promise<void> {
 
   // Tap: bring that spot under the cross. (With the weather pinned, a tap changes nothing.)
   map.on('click', (e) => {
+    // A storm's own click handler opens it; the map stays put.
+    if (tropical.hit(e.point)) return;
     if (!followsMap()) return;
     following = false;
     setMode('center');
+    pickOnSettle = true;
     map.easeTo({ center: e.lngLat, duration: 450 });
   });
 
@@ -360,6 +372,98 @@ async function main(): Promise<void> {
   });
   $('#trip-btn').addEventListener('click', () => trip.toggle());
 
+  /* ---------- hurricanes ---------- */
+
+  const GROUPS_KEY = 'weather-map:models:v1';
+  const readGroups = (): Set<ModelGroup> => {
+    try {
+      const v = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? 'null') as ModelGroup[] | null;
+      if (Array.isArray(v)) return new Set(v);
+    } catch {
+      // Storage blocked: defaults.
+    }
+    return new Set(DEFAULT_GROUPS);
+  };
+  let modelGroups = readGroups();
+  let storms: Storm[] = [];
+  let stormGIS = new Map<string, StormGIS>();
+  let outlook: Outlook | null = null;
+  let tropicsGenerated: string | null = null;
+  let selectedStorm: string | null = null;
+  let tropicsAt = 0;
+  const tropical = new TropicalLayer(map, (id) => openStorm(id));
+  const drawTropics = () => tropical.set(storms, stormGIS, outlook, modelGroups);
+  const strongest = () => [...storms].sort((a, b) => b.intensityKt - a.intensityKt)[0];
+
+  const stormPill = $<HTMLButtonElement>('#storm-pill');
+  $('#storm-pill-icon').append(svg(hurricaneMark));
+  const renderStormPill = () => {
+    const on = store.get().layers.tropics && storms.length > 0;
+    stormPill.hidden = !on;
+    if (!on) return;
+    const top = strongest();
+    $('#storm-pill-text').textContent = storms.length > 1 ? `${storms.length} tropical systems` : stormShort(top);
+    stormPill.setAttribute('aria-label', `${storms.length > 1 ? `${storms.length} active tropical systems` : stormTitle(top)}. Open storm details.`);
+  };
+
+  const stormContent = () =>
+    stormPanel(storms, stormGIS, tropicsGenerated, selectedStorm ?? storms[0].id, {
+      state: () => store.get(),
+      groups: () => modelGroups,
+      setGroup: (group, on) => {
+        modelGroups = new Set(modelGroups);
+        if (on) modelGroups.add(group);
+        else modelGroups.delete(group);
+        try {
+          localStorage.setItem(GROUPS_KEY, JSON.stringify([...modelGroups]));
+        } catch {
+          // The choice lasts for this visit.
+        }
+        drawTropics();
+        rerenderStorm();
+      },
+      select: (id) => {
+        selectedStorm = id;
+        rerenderStorm();
+      },
+      showOnMap: (id) => {
+        sheet.close();
+        const s = storms.find((x) => x.id === id);
+        if (s) tropical.fit(s, stormGIS.get(id), modelGroups, { top: 90, bottom: 170, left: 40, right: 70 });
+      },
+    });
+  const rerenderStorm = () => {
+    if (sheet.current !== 'storm' || !storms.length) return;
+    const s = storms.find((x) => x.id === selectedStorm) ?? storms[0];
+    sheet.update(stormTitle(s), stormContent());
+  };
+  const openStorm = (id: string) => {
+    if (!storms.length) return;
+    selectedStorm = id;
+    const s = storms.find((x) => x.id === id) ?? storms[0];
+    sheet.open('storm', stormTitle(s), stormContent(), stormPill);
+  };
+  stormPill.addEventListener('click', () => openStorm(selectedStorm ?? strongest().id));
+
+  // Storms, their NHC forecasts, and the outlook: every 10 minutes while the layer is on.
+  const refreshTropics = async () => {
+    if (!store.get().layers.tropics) return;
+    tropicsAt = Date.now();
+    try {
+      const r = await getStorms();
+      storms = r.storms;
+      tropicsGenerated = r.generated;
+      stormGIS = new Map(await Promise.all(storms.map(async (s) => [s.id, await getStormGIS(s.bin)] as const)));
+    } catch {
+      // Keep what's on the map.
+    }
+    outlook = await getOutlook().catch(() => outlook);
+    drawTropics();
+    renderStormPill();
+    rerenderStorm();
+  };
+  map.once('load', () => void refreshTropics());
+
   /* ---------- refresh ---------- */
 
   // Refresh only while visible: a locked phone or background tab costs no
@@ -374,6 +478,7 @@ async function main(): Promise<void> {
     void refreshLive();
     refreshTimeline();
     if (Date.now() - hrrrCheckedAt > 15 * 60_000) void refreshHrrr();
+    if (Date.now() - tropicsAt > 10 * 60_000) void refreshTropics();
   };
   setInterval(refreshIfStale, 60_000);
   document.addEventListener('visibilitychange', refreshIfStale);
@@ -406,6 +511,11 @@ async function main(): Promise<void> {
     }
     if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode) renderBar();
     if (s.alertAreas !== prev.alertAreas) alertAreas.setVisible(s.alertAreas);
+    if (s.layers.tropics !== prev.layers.tropics) {
+      tropical.setVisible(s.layers.tropics);
+      renderStormPill();
+      if (s.layers.tropics && Date.now() - tropicsAt > 60_000) void refreshTropics();
+    }
     if (s.followMap !== prev.followMap) {
       // Pinning the weather while looking around: back to your location's weather (the map stays put).
       if (!s.followMap && mode === 'center' && dot.position) {
@@ -429,6 +539,7 @@ async function main(): Promise<void> {
     if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme) {
       renderAll();
       trip.refresh();
+      rerenderStorm();
     }
   });
 

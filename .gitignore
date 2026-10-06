@@ -5,3 +5,6 @@ dist
 *.log
 .DS_Store
 .netlify
+
+# Local hurricane data for dev (scripts/tropical.mjs)
+public/tropical.dev.json

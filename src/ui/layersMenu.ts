@@ -1,6 +1,6 @@
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
-import { alertMark, boltMark, chevronIcon, cloudMark, gearIcon, layersIcon, rainMark, windIcon } from './icons';
+import { alertMark, boltMark, chevronIcon, cloudMark, gearIcon, hurricaneMark, layersIcon, rainMark, windIcon } from './icons';
 
 type LayerKey = keyof AppState['layers'];
 
@@ -134,6 +134,7 @@ export class LayersMenu {
         this.layer('wind', 'Wind', windIcon, ''),
         this.layer('thunder', 'Lightning', boltMark, 'is-bolt', 'Approximate'),
         this.layer('clouds', 'Clouds', cloudMark, '', 'Live satellite'),
+        this.layer('tropics', 'Hurricanes', hurricaneMark, 'is-alert', 'NHC forecast and models'),
         switchRow({
           label: 'Alert areas',
           mark: alertMark,

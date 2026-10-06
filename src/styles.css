@@ -1648,6 +1648,120 @@ button {
   padding: 4px 16px 20px;
 }
 
+/* ---------- hurricanes ---------- */
+
+.storm-pill .icon {
+  color: var(--c-alert);
+  stroke-width: 2.2;
+}
+
+.storm-picker {
+  display: flex;
+  margin: 0 0 12px;
+  overflow-x: auto;
+}
+
+.storm-now {
+  margin: 0 0 6px;
+}
+
+.storm-cat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 10px;
+  font-weight: 600;
+}
+
+.storm-cat-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.storm-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.storm-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--r-inner);
+  background: var(--group-fill);
+}
+
+:root[data-theme='classic'] .storm-stat {
+  border: 1px solid var(--hairline);
+}
+
+.storm-stat-label {
+  font-size: var(--fs-cap);
+  font-weight: var(--cap-weight);
+  letter-spacing: var(--cap-track);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.storm-stat-value {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.storm-adv a {
+  color: var(--accent);
+}
+
+.storm-fcst-row {
+  min-height: 42px;
+}
+
+.storm-fcst-time {
+  flex: none;
+  width: 92px;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.storm-fcst-wind {
+  font-variant-numeric: tabular-nums;
+}
+
+.storm-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 6px;
+  border-radius: var(--r-inner);
+  background: var(--group-fill);
+}
+
+.chart-band {
+  stroke: var(--hairline);
+  stroke-dasharray: 3 3;
+}
+
+.chart-label {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.model-swatch {
+  flex: none;
+  width: 24px;
+  border-radius: 2px;
+}
+
+.storm-show {
+  margin: 8px 0 4px;
+}
+
 /* ---------- trip weather ---------- */
 
 /* Phones: a bottom panel (the timeline hides behind it); folded, a summary under the search bar. */

@@ -4,7 +4,8 @@ export type Theme = 'liquid' | 'classic';
 import type { TempUnit, WindUnit } from './util/units';
 
 export interface AppState {
-  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean };
+  /** `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
+  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean; tropics: boolean };
   tempUnit: TempUnit;
   windUnit: WindUnit;
   sound: boolean;
@@ -82,7 +83,7 @@ function writePrefs(s: AppState): void {
 export function createStore(selected: LatLon, gps: boolean) {
   const prefs = readPrefs();
   let state: AppState = {
-    layers: { wind: true, rain: true, thunder: false, clouds: false },
+    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
