@@ -42,8 +42,8 @@ export const CLOUDS_TILE_URL =
 export const AERIAL_TILE_URL =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
-/** Open-Meteo grid: aim for this many points per request (each point counts as one API call). */
-export const GRID_TARGET_POINTS = 40;
+/** Open-Meteo grid: at most this many points per request (each point counts as one API call). */
+export const GRID_TARGET_POINTS = 140;
 /** Never fetch a new grid more often than this, unless the view left the old grid. */
 export const GRID_MIN_INTERVAL_MS = 45_000;
 /** Data older than this is refetched on the next settle. */

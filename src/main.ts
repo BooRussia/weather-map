@@ -9,7 +9,7 @@ import { loadConditions, type Conditions } from './data/conditions';
 import { geoPermission, getPosition } from './data/geolocate';
 import { GridController } from './data/gridController';
 import { getHrrrInit, getLatestComposite } from './data/iem';
-import { makeTimeline, offsetTime, utcHourKey } from './data/timeline';
+import { makeTimeline, offsetTime } from './data/timeline';
 import type { Place } from './data/photon';
 import { Animator, type LayerFlags } from './layers/animator';
 import { createMap } from './map/map';
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
 
   // The bar drives the radar crossfade; wind/rain particles follow the nearest hour.
   const bar = new TimelineBar(timeline, radar, (offset) => {
-    grids.setHour(offset === 0 ? null : utcHourKey(offsetTime(timeline, offset)));
+    grids.setTime(offset === 0 ? null : offsetTime(timeline, offset));
   });
   const renderBar = () => bar.render({ colorMode: store.get().colorMode, radarOn: store.get().layers.rain });
   renderBar();

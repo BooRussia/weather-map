@@ -1,7 +1,7 @@
 import type { LatLon } from '../config';
 import type { GridSample } from '../data/openmeteo';
 import { isThunderCode } from '../data/openmeteo';
-import { clampLat, latFromMercY, mercY, windToUV } from '../util/geo';
+import { windToUV } from '../util/geo';
 
 export interface Bounds {
   west: number;
@@ -16,40 +16,55 @@ export interface GridSpec extends Bounds {
 }
 
 /**
- * Pick a lattice over `bounds` (padded on every side) with roughly `target`
- * points, shaped to the viewport. Rows are evenly spaced in Mercator y so the
- * lattice looks even on screen. Points are row-major, north row first.
+ * Lattice spacings in degrees, coarse to fine. Each halves the one before and
+ * all are anchored at 0°, so a finer lattice contains every point of a coarser
+ * one: zooming in adds detail between the points you had, and panning at the
+ * same zoom samples the very same points, instead of a fresh, differently
+ * placed set that makes the wind appear to swing.
  */
-export function planGrid(
-  bounds: Bounds,
-  widthPx: number,
-  heightPx: number,
-  target: number,
-  pad = 0.2,
-): { spec: GridSpec; points: LatLon[] } {
-  const aspect = Math.max(0.2, Math.min(5, widthPx / Math.max(1, heightPx)));
-  const cols = clampInt(Math.round(Math.sqrt(target * aspect)), 4, 10);
-  const rows = clampInt(Math.round(target / cols), 4, 10);
+const STEPS = [32, 16, 8, 4, 2, 1, 0.5, 0.25, 0.125, 0.0625];
+const LAT_LIMIT = 84;
 
-  const lonSpan = bounds.east - bounds.west;
-  const yN0 = mercY(bounds.north);
-  const yS0 = mercY(bounds.south);
-  const ySpan = yN0 - yS0;
-  const west = bounds.west - lonSpan * pad;
-  const east = bounds.east + lonSpan * pad;
-  const north = clampLat(latFromMercY(yN0 + ySpan * pad));
-  const south = clampLat(latFromMercY(yS0 - ySpan * pad));
+/** An axis snapped outward to multiples of `step`: its ends and point count. */
+function axis(lo: number, hi: number, step: number, limit: number): { from: number; to: number; n: number } {
+  const from = Math.max(-limit, Math.floor(lo / step) * step);
+  const to = Math.min(limit, Math.ceil(hi / step) * step);
+  return { from, to, n: Math.max(2, Math.round((to - from) / step) + 1) };
+}
 
-  const yN = mercY(north);
-  const yS = mercY(south);
+/**
+ * The finest anchored lattice over `bounds` (padded on every side) with at
+ * most `maxPoints` points. Each axis has its own spacing, coarsened one at a
+ * time (whichever has points closer together on screen), so the budget isn't
+ * wasted by quartering the count in one jump. Points are row-major, north
+ * row first.
+ */
+export function planGrid(bounds: Bounds, maxPoints: number, pad = 0.15): { spec: GridSpec; points: LatLon[] } {
+  const lonPad = (bounds.east - bounds.west) * pad;
+  const latPad = (bounds.north - bounds.south) * pad;
+  // On a Mercator map a degree of latitude is taller than a degree of longitude is wide.
+  const stretch = 1 / Math.cos((((bounds.north + bounds.south) / 2) * Math.PI) / 180);
+  let kLon = STEPS.length - 1;
+  let kLat = STEPS.length - 1;
+  for (;;) {
+    const lon = axis(bounds.west - lonPad, bounds.east + lonPad, STEPS[kLon], 180);
+    const lat = axis(bounds.south - latPad, bounds.north + latPad, STEPS[kLat], LAT_LIMIT);
+    if (lon.n * lat.n <= maxPoints || (kLon === 0 && kLat === 0)) {
+      return build({ west: lon.from, east: lon.to, south: lat.from, north: lat.to, cols: lon.n, rows: lat.n });
+    }
+    if (kLat === 0 || (kLon > 0 && STEPS[kLon] <= STEPS[kLat] * stretch)) kLon--;
+    else kLat--;
+  }
+}
+
+function build(spec: GridSpec): { spec: GridSpec; points: LatLon[] } {
+  const { west, east, south, north, cols, rows } = spec;
   const points: LatLon[] = [];
   for (let r = 0; r < rows; r++) {
-    const lat = latFromMercY(yN - ((yN - yS) * r) / (rows - 1));
-    for (let c = 0; c < cols; c++) {
-      points.push({ lat, lon: west + ((east - west) * c) / (cols - 1) });
-    }
+    const lat = north - ((north - south) * r) / (rows - 1);
+    for (let c = 0; c < cols; c++) points.push({ lat, lon: west + ((east - west) * c) / (cols - 1) });
   }
-  return { spec: { west, east, south, north, cols, rows }, points };
+  return { spec, points };
 }
 
 export interface FieldSample {
@@ -80,21 +95,20 @@ export class WeatherGrid {
   readonly v: Float32Array;
   readonly rain: Float32Array;
   readonly code: Uint8Array;
-  private readonly yN: number;
-  private readonly yS: number;
 
   constructor(
     readonly spec: GridSpec,
-    samples: GridSample[],
+    samples: GridSample[] | null,
     readonly fetchedAt: number,
     readonly zoom: number,
   ) {
     const n = spec.cols * spec.rows;
-    if (samples.length !== n) throw new Error(`grid expects ${n} samples, got ${samples.length}`);
     this.u = new Float32Array(n);
     this.v = new Float32Array(n);
     this.rain = new Float32Array(n);
     this.code = new Uint8Array(n);
+    if (!samples) return; // filled by blend()
+    if (samples.length !== n) throw new Error(`grid expects ${n} samples, got ${samples.length}`);
     samples.forEach((s, i) => {
       const { u, v } = windToUV(s.windMph, s.windFromDeg);
       this.u[i] = u;
@@ -102,8 +116,21 @@ export class WeatherGrid {
       this.rain[i] = rainIntensity(s.precipRate, s.precipProbability);
       this.code[i] = s.weatherCode;
     });
-    this.yN = mercY(spec.north);
-    this.yS = mercY(spec.south);
+  }
+
+  /**
+   * Two grids of the same lattice mixed in time: f = 0 is `a`, 1 is `b`.
+   * Wind mixes as components, so it turns smoothly instead of jumping.
+   */
+  static blend(a: WeatherGrid, b: WeatherGrid, f: number): WeatherGrid {
+    const g = new WeatherGrid(a.spec, null, a.fetchedAt, a.zoom);
+    for (let i = 0; i < g.u.length; i++) {
+      g.u[i] = a.u[i] + (b.u[i] - a.u[i]) * f;
+      g.v[i] = a.v[i] + (b.v[i] - a.v[i]) * f;
+      g.rain[i] = a.rain[i] + (b.rain[i] - a.rain[i]) * f;
+      g.code[i] = f < 0.5 ? a.code[i] : b.code[i];
+    }
+    return g;
   }
 
   /** Fractional column for a longitude, clamped to the lattice. */
@@ -112,10 +139,10 @@ export class WeatherGrid {
     return clamp(((lon - west) / (east - west)) * (cols - 1), 0, cols - 1);
   }
 
-  /** Fractional row for a latitude, clamped to the lattice. */
+  /** Fractional row for a latitude (rows are evenly spaced in degrees), clamped to the lattice. */
   fy(lat: number): number {
-    const { rows } = this.spec;
-    return clamp(((this.yN - mercY(lat)) / (this.yN - this.yS)) * (rows - 1), 0, rows - 1);
+    const { north, south, rows } = this.spec;
+    return clamp(((north - lat) / (north - south)) * (rows - 1), 0, rows - 1);
   }
 
   /** Bilinear sample at fractional lattice coordinates. */
@@ -157,9 +184,9 @@ export class WeatherGrid {
 
   stormCells(): StormCell[] {
     const out: StormCell[] = [];
-    const { cols, rows, west, east } = this.spec;
+    const { cols, rows, west, east, north, south } = this.spec;
     for (let r = 0; r < rows; r++) {
-      const lat = latFromMercY(this.yN - ((this.yN - this.yS) * r) / (rows - 1));
+      const lat = north - ((north - south) * r) / (rows - 1);
       for (let c = 0; c < cols; c++) {
         const code = this.code[r * cols + c];
         if (!isThunderCode(code)) continue;
@@ -171,4 +198,3 @@ export class WeatherGrid {
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const clampInt = (n: number, lo: number, hi: number) => clamp(Math.round(n), lo, hi);

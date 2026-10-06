@@ -114,19 +114,54 @@ describe('condition line', () => {
 });
 
 describe('grid', () => {
-  it('shapes the lattice to the viewport', () => {
-    const b = { west: -84, east: -80, south: 27, north: 31 };
-    const phone = planGrid(b, 390, 844, 40);
-    const desktop = planGrid(b, 1920, 1080, 40);
-    expect(phone.spec.rows).toBeGreaterThan(phone.spec.cols);
-    expect(desktop.spec.cols).toBeGreaterThan(desktop.spec.rows);
+  const key = (p: { lat: number; lon: number }) => `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
+
+  it('picks the finest anchored lattice within the point budget, shaped to the view', () => {
+    // A phone at zoom 7 over Florida: tall and narrow.
+    const phone = planGrid({ west: -83.5, east: -81.4, south: 27.1, north: 31 }, 100);
+    expect(phone.points.length).toBeLessThanOrEqual(100);
     expect(phone.points).toHaveLength(phone.spec.cols * phone.spec.rows);
-    expect(phone.points.length).toBeLessThanOrEqual(50);
+    expect(phone.spec.rows).toBeGreaterThan(phone.spec.cols);
+    expect((phone.spec.east - phone.spec.west) / (phone.spec.cols - 1)).toBe(0.5);
+    expect((phone.spec.north - phone.spec.south) / (phone.spec.rows - 1)).toBe(0.5);
+    // Every point sits on the 0.5° lattice anchored at 0°.
+    expect(phone.points.every((p) => Number.isInteger(p.lat / 0.5) && Number.isInteger(p.lon / 0.5))).toBe(true);
+  });
+
+  it('samples the same points when panning, and keeps them when zooming in', () => {
+    const a = planGrid({ west: -84, east: -80, south: 27, north: 31 }, 100);
+    const panned = planGrid({ west: -83.8, east: -79.8, south: 27.1, north: 31.1 }, 100);
+    const step = (g: typeof a) => (g.spec.east - g.spec.west) / (g.spec.cols - 1);
+    expect(step(panned)).toBe(step(a));
+    const shared = new Set(a.points.map(key));
+    expect(panned.points.filter((p) => shared.has(key(p))).length).toBeGreaterThan(a.points.length / 2);
+
+    // Zoomed in: a finer lattice that still contains the coarse points inside it.
+    const fine = planGrid({ west: -82.6, east: -81.4, south: 28.4, north: 29.6 }, 100);
+    expect(step(fine)).toBeLessThan(step(a));
+    const finePts = new Set(fine.points.map(key));
+    const coarseInside = a.points.filter((p) => p.lon >= fine.spec.west && p.lon <= fine.spec.east && p.lat >= fine.spec.south && p.lat <= fine.spec.north);
+    expect(coarseInside.length).toBeGreaterThan(0);
+    expect(coarseInside.every((p) => finePts.has(key(p)))).toBe(true);
+  });
+
+  it('blends two hours of wind as components, so it turns instead of jumping', () => {
+    const spec = { west: 0, east: 1, south: 0, north: 1, cols: 2, rows: 2 };
+    const at = (fromDeg: number): GridSample[] =>
+      Array.from({ length: 4 }, () => ({ windMph: 10, windFromDeg: fromDeg, precipRate: 0, precipProbability: 0, weatherCode: 0 }));
+    const north = new WeatherGrid(spec, at(0), 0, 7);
+    const east = new WeatherGrid(spec, at(90), 0, 7);
+    const mid = WeatherGrid.blend(north, east, 0.5);
+    const s: FieldSample = { u: 0, v: 0, rain: 0, storm: false };
+    mid.sampleAt(0.5, 0.5, s);
+    // From the north-east: blowing toward the south-west.
+    expect(s.u).toBeCloseTo(-5);
+    expect(s.v).toBeCloseTo(-5);
   });
 
   it('pads beyond the view and covers it', () => {
     const b = { west: -84, east: -80, south: 27, north: 31 };
-    const { spec, points } = planGrid(b, 800, 600, 40);
+    const { spec, points } = planGrid(b, 100);
     const samples: GridSample[] = points.map(() => ({
       windMph: 10,
       windFromDeg: 270,
