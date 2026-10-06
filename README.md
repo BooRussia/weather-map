@@ -20,6 +20,7 @@ Switch under Layers → Units, sound & appearance → Theme. The choice is remem
 - **Radar** is drawn smooth, like TV-weather radar: each tile's colors are decoded back to reflectivity on the GPU, blurred at screen resolution (smooth shapes instead of square data cells), and recolored (translucent greens for light rain, then yellow, orange, red), leaving out the faint "clear air" returns.
 - **Wind** is short, faint dashes that drift with the wind, brighter where it's stronger.
 - **Timeline** (bottom): scrub or play radar from **24 hours ago, through now, into the forecast** (HRRR simulated radar, as far as the latest run reaches, about 15–18 hours), in **15-minute frames**. Playback glides at one hour per second: each frame crossfades into the next, 8 frames load ahead, and it waits ("Loading radar") rather than skip a frame that hasn't arrived. Past frames are archived NEXRAD radar, now is the newest NEXRAD composite (about 2–3 minutes old), future frames are the model. Wind and falling-rain particles follow the same hour. On a keyboard: Space plays/pauses, ← → step an hour, Home returns to now.
+- **Trip weather** (route button, under locate): enter where you are starting (your location by default) and where you are going, leave now or later, and it checks the drive at the time you will be at each spot: NWS warnings, watches, and advisories the route crosses (and whether they are in effect while you pass), SPC severe-storm and WPC flash-flood outlooks, and the forecast at a stop every 30 minutes of driving (thunderstorms, heavy rain, snow, freezing rain, fog, strong gusts). Tap a stop to fly there and set the radar to that hour (when forecast radar reaches it). Times assume nonstop driving at typical speeds.
 - **Opens on** the Satellite map with Color radar, Radar and Wind on, falling rain off, and the radar **looping from an hour ago to an hour ahead** (half speed) until you pause, play, or scrub. Skipped if your device is set to reduce motion.
 
 ### Weather page
@@ -56,8 +57,10 @@ How it's sent: every NWS request includes `User-Agent: <your value>`. NWS allows
 | Source | Used for | Terms |
 | --- | --- | --- |
 | [NWS api.weather.gov](https://www.weather.gov/documentation/services-web-api) | Place name (`/points`), latest observation, forecast, active alerts | U.S. government data, no key. **User-Agent required** (above). |
-| [NWS warnings map service](https://mapservices.weather.noaa.gov/eventdriven/rest/services/WWA/watch_warn_adv/MapServer) | Alert areas (warnings and watches; marine and advisories filtered out) | U.S. government data, no key. |
+| [NWS warnings map service](https://mapservices.weather.noaa.gov/eventdriven/rest/services/WWA/watch_warn_adv/MapServer) | Alert areas (warnings and watches; marine and advisories filtered out); trip weather (every alert the route crosses, advisories included) | U.S. government data, no key. |
 | [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/ogc/) | All radar: newest and archived NEXRAD composite (now and the past 24 h), HRRR simulated radar (forecast) | Free, no key; NEXRAD and HRRR are NOAA data. CONUS coverage. Tiles come from four IEM hostnames for parallel loading, a zoom level coarser than the screen (smoothing hides it), so a frame is a few tiles. |
+| [OSRM on FOSSGIS](https://routing.openstreetmap.de/about.html) | Trip weather: driving routes and drive times | Free, no key, fair use (the servers openstreetmap.org uses); OpenStreetMap data. Typical speeds, no live traffic. |
+| [NOAA SPC and WPC outlooks](https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer) | Trip weather: severe-storm outlooks (days 1–3) and excessive-rainfall (flash-flood) outlooks (days 1–3), queried with the route line | U.S. government data, no key. |
 | [Photon by Komoot](https://photon.komoot.io/) | Search (cities and addresses) and place names outside NWS coverage | Free, no key, fair use; OpenStreetMap data (© OpenStreetMap contributors). |
 | [NOAA nowCOAST](https://nowcoast.noaa.gov/) | Clouds layer: GOES East + West longwave infrared | U.S. government data, no key. Covers the Americas and eastern Pacific. |
 | [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) | Satellite map style | Credit: Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Fine for personal and non-commercial use; check Esri's terms (or get a free ArcGIS Location Platform key) before a commercial launch. |
@@ -97,12 +100,12 @@ src/
   config.ts             defaults, endpoints, fetch budgets
   state.ts              tiny store; units + sound persist, layers do not
   main.ts               wiring: map, data, layers, UI
-  data/                 NWS, Open-Meteo, grid fetching, geolocation (framework-free)
+  data/                 NWS, Open-Meteo, grid fetching, geolocation, routes + trip hazards (framework-free)
   field/grid.ts         Open-Meteo lattice + bilinear sampling
   layers/               wind / rain / thunder particle layers on canvas
-  map/                  MapLibre setup, smoothed radar (WebGL layer + palette), basemap grayscale
+  map/                  MapLibre setup, smoothed radar (WebGL layer + palette), trip route, basemap grayscale
   audio/crackle.ts      procedural thunder sound (Web Audio)
-  ui/                   HUD, sheet, panels, icons
+  ui/                   HUD, sheet, panels, trip planner, icons
   styles.css            tokens from DESIGN.md
 tests/                  vitest unit tests for the pure logic
 ```

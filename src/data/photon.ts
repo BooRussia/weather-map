@@ -49,10 +49,12 @@ const region = (p: PhotonProps) => {
   return p.countrycode === 'US' ? (US_STATES[p.state] ?? p.state) : p.state;
 };
 
+const AREA_TYPES = ['city', 'town', 'village', 'district', 'county', 'state', 'locality'];
+
 /** Turn one Photon feature into two clean lines. */
 export function toPlace(p: PhotonProps, lon: number, lat: number): Place {
   const address = p.street ? [p.housenumber, p.street].filter(Boolean).join(' ') : '';
-  const isArea = ['city', 'town', 'village', 'district', 'county', 'state', 'locality'].includes(p.type ?? '');
+  const isArea = AREA_TYPES.includes(p.type ?? '');
   const title = p.name || address || p.city || p.county || region(p) || 'Unnamed place';
   const parts = [
     p.name && address && address !== title ? address : null,
@@ -96,7 +98,11 @@ export async function reverseName(lat: number, lon: number, signal?: AbortSignal
   const r = await fetchJson<PhotonResponse>(`${PHOTON}/reverse?${params}`, { signal, timeoutMs: 6000 });
   const p = r.features[0]?.properties;
   if (!p) return null;
-  const name = p.city || p.name || p.county;
+  // A town, else the county: never the street or building the point happens to fall on.
+  const town = p.city || p.district || (AREA_TYPES.includes(p.type ?? '') ? p.name : undefined);
+  const county =
+    p.county && p.countrycode === 'US' && !/County|Parish|Borough|Census Area/.test(p.county) ? `${p.county} County` : p.county;
+  const name = town || county;
   const reg = region(p);
   return name ? [name, reg].filter(Boolean).join(', ') : reg || null;
 }

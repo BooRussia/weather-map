@@ -17,12 +17,13 @@ import { addImagery, refreshClouds, setBasemap, setCloudsVisible, setColorMode }
 import { AlertAreas } from './map/alertAreas';
 import { LocationDot } from './map/location';
 import { RadarLayer } from './map/radarLayer';
+import { TripLayer } from './map/tripLayer';
 import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule } from './ui/capsule';
-import { locateIcon, warningIcon } from './ui/icons';
+import { locateIcon, routeIcon, warningIcon } from './ui/icons';
 import { LayersMenu } from './ui/layersMenu';
 import { showNote } from './ui/note';
 import { WeatherPage } from './ui/page';
@@ -30,6 +31,7 @@ import { SearchBox } from './ui/search';
 import { settingsPanel } from './ui/settings';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
+import { TripPanel } from './ui/trip';
 
 type Layer = keyof AppState['layers'];
 const LAYERS: Layer[] = ['wind', 'rain', 'thunder', 'clouds'];
@@ -64,6 +66,7 @@ async function main(): Promise<void> {
   $('#locate-btn').append(svg(locateIcon));
   $('#alert-pill-icon').append(svg(warningIcon));
   $('#cap-gps').append(svg(locateIcon));
+  $('#trip-btn').append(svg(routeIcon));
   renderCapsule(null, store.get());
   renderCredits(store.get());
 
@@ -213,7 +216,9 @@ async function main(): Promise<void> {
   type Mode = 'gps' | 'center';
   let mode: Mode = located ? 'gps' : 'center';
   let following = located;
-  const followsMap = () => store.get().followMap;
+  /** While planning a trip the camera moves on its own (framing the route, stops); the readout stays put. */
+  let tripOpen = false;
+  const followsMap = () => store.get().followMap && !tripOpen;
   const reticle = $('#reticle');
   const locateBtn = $('#locate-btn');
   const renderLocate = () => {
@@ -314,6 +319,47 @@ async function main(): Promise<void> {
     },
   );
 
+  /* ---------- trip weather ---------- */
+
+  const tripColors = () => ({
+    route: token('--accent') || '#0a84ff',
+    severe: token('--c-alert') || '#ff9f0a',
+    caution: token('--c-sun') || '#ffd60a',
+    stop: '#ffffff',
+  });
+  const tripLayer = new TripLayer(map, tripColors());
+  // Frame the route in the part of the map the panel doesn't cover.
+  const tripPadding = () => {
+    const r = $('#trip').getBoundingClientRect();
+    return window.innerWidth < 700
+      ? { top: 80, right: 70, left: 30, bottom: Math.max(120, window.innerHeight - r.top + 24) }
+      : { top: 80, right: 80, bottom: 150, left: r.right + 30 };
+  };
+  const trip = new TripPanel({
+    myLocation: () => dot.position,
+    near: () => store.get().selected,
+    state: () => store.get(),
+    show: (plan) => {
+      tripLayer.set(plan, tripPadding());
+      $('[data-credit="osrm"]').hidden = !plan;
+    },
+    focus: (pt) => {
+      map.flyTo({ center: [pt.lon, pt.lat], zoom: Math.max(map.getZoom(), 8), duration: 900, essential: true });
+      // Radar at the hour you'll be there, when the timeline reaches it.
+      const offset = (pt.at - timeline.base) / 3_600_000;
+      if (offset <= timeline.maxOffset + 0.125) bar.show(Math.max(0, offset));
+      else showNote('Forecast radar doesn’t reach that far ahead yet.');
+    },
+    layout: (open, folded) => {
+      tripOpen = open;
+      renderLocate();
+      document.body.classList.toggle('trip-open', open);
+      document.body.classList.toggle('trip-folded', open && folded);
+      $('#trip-btn').setAttribute('aria-expanded', String(open));
+    },
+  });
+  $('#trip-btn').addEventListener('click', () => trip.toggle());
+
   /* ---------- refresh ---------- */
 
   // Refresh only while visible: a locked phone or background tab costs no
@@ -378,8 +424,12 @@ async function main(): Promise<void> {
       palette.wind = palette.lightning = token('--fg');
       palette.rain = token('--muted');
       alertAreas.setColor(token('--c-alert'));
+      tripLayer.setColors(tripColors());
     }
-    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme) renderAll();
+    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme) {
+      renderAll();
+      trip.refresh();
+    }
   });
 
   /* ---------- readout → weather page ---------- */

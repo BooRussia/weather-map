@@ -258,6 +258,72 @@ export async function getGridSamples(points: LatLon[], pastHours: number, signal
   };
 }
 
+/** The forecast for one spot on a trip, for the hour you'll be there. */
+export interface StopForecast {
+  tempF: number;
+  precipProbability: number;
+  /** mm over that hour. */
+  precipitation: number;
+  weatherCode: number;
+  gustMph: number;
+  visibilityM: number;
+  isDay: boolean;
+}
+
+interface StopItem {
+  hourly: {
+    time: string[];
+    temperature_2m: (number | null)[];
+    precipitation_probability: (number | null)[];
+    precipitation: (number | null)[];
+    weather_code: (number | null)[];
+    wind_gusts_10m: (number | null)[];
+    visibility: (number | null)[];
+    is_day: (number | null)[];
+  };
+}
+
+const HOUR = 3_600_000;
+/** Open-Meteo `start_hour`/`end_hour`, in GMT. */
+const gmtHour = (ms: number) => new Date(ms).toISOString().slice(0, 13) + ':00';
+
+/**
+ * One request for every stop on a route, each read at the hour nearest its
+ * arrival time (`at`, epoch ms). Forecasts reach 16 days out.
+ */
+export async function getStopForecasts(
+  stops: (LatLon & { at: number })[],
+  signal?: AbortSignal,
+): Promise<StopForecast[]> {
+  const first = Math.floor(Math.min(...stops.map((s) => s.at)) / HOUR) * HOUR;
+  const last = Math.ceil(Math.max(...stops.map((s) => s.at)) / HOUR) * HOUR;
+  const q = new URLSearchParams({
+    latitude: stops.map((p) => c4(p.lat)).join(','),
+    longitude: stops.map((p) => c4(wrapLon(p.lon))).join(','),
+    hourly: 'temperature_2m,precipitation_probability,precipitation,weather_code,wind_gusts_10m,visibility,is_day',
+    start_hour: gmtHour(first),
+    end_hour: gmtHour(last),
+    temperature_unit: 'fahrenheit',
+    wind_speed_unit: 'mph',
+    timezone: 'GMT',
+  });
+  const r = await fetchJson<StopItem[] | StopItem>(`${OPEN_METEO_FORECAST}?${q}`, { signal, timeoutMs: 15_000 });
+  const items = Array.isArray(r) ? r : [r];
+  return stops.map((s, k) => {
+    const h = items[k].hourly;
+    const i = Math.max(0, Math.min(h.time.length - 1, Math.round((s.at - first) / HOUR)));
+    return {
+      tempF: h.temperature_2m[i] ?? Number.NaN,
+      precipProbability: h.precipitation_probability[i] ?? 0,
+      precipitation: h.precipitation[i] ?? 0,
+      weatherCode: h.weather_code[i] ?? 0,
+      gustMph: h.wind_gusts_10m[i] ?? 0,
+      visibilityM: h.visibility[i] ?? 24_000,
+      isDay: h.is_day[i] !== 0,
+    };
+  });
+}
+
 /** WMO weather interpretation codes, as Open-Meteo documents them. */
 const WMO: Record<number, string> = {
   0: 'Clear',

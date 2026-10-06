@@ -16,6 +16,8 @@ export const locateIcon = `${open('i-locate')}<path d="M20.6 3.4 3.6 10.4c-.7.3-
 
 export const layersIcon = `${open('i-layers')}<path d="M12 3.5 2.8 8.3 12 13.1l9.2-4.8z" /><path d="m2.8 12.2 9.2 4.8 9.2-4.8" /><path d="m2.8 16.1 9.2 4.8 9.2-4.8" /></svg>`;
 
+export const routeIcon = `${open('i-route')}<circle cx="6" cy="18" r="2.3" /><circle cx="18" cy="6" r="2.3" /><path d="M8.3 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.7" /></svg>`;
+
 export const closeIcon = `${open('i-close')}<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></svg>`;
 
 export const chevronIcon = `${open('i-chevron')}<path d="m9 5 7 7-7 7" /></svg>`;

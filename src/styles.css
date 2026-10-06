@@ -1645,6 +1645,460 @@ button {
   padding: 4px 16px 20px;
 }
 
+/* ---------- trip weather ---------- */
+
+/* Phones: a bottom panel (the timeline hides behind it); folded, a summary under the search bar. */
+.trip {
+  position: fixed;
+  z-index: 5;
+  left: calc(var(--safe-l) + var(--edge));
+  right: calc(var(--safe-r) + var(--edge));
+  bottom: calc(var(--safe-b) + 8px);
+  max-height: min(64dvh, 640px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.trip.folded {
+  top: calc(var(--safe-t) + 10px + 46px + 10px);
+  bottom: auto;
+  right: calc(var(--safe-r) + var(--edge) + 46px + 8px);
+  max-height: none;
+}
+
+.trip.folded .trip-body {
+  display: none;
+}
+
+body.trip-open .left-stack {
+  display: none;
+}
+
+@media (max-width: 699px) {
+  body.trip-open:not(.trip-folded) .dock {
+    display: none;
+  }
+}
+
+.trip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px 16px;
+}
+
+.trip-fold {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.trip-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.trip-sum {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.trip-sum:empty {
+  display: none;
+}
+
+.trip-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 14px 14px;
+}
+
+.trip-place + .trip-place {
+  border-top: 1px solid var(--hairline);
+}
+
+.trip-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 12px;
+}
+
+.trip-field-label {
+  flex: none;
+  width: 44px;
+  font-size: var(--fs-foot);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.trip-input {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  /* 16px or more, so iOS doesn't zoom the page on focus. */
+  font-size: var(--fs-body);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.trip-input::placeholder {
+  color: var(--muted);
+}
+
+.trip-input::-webkit-search-cancel-button {
+  filter: invert(1) opacity(0.6);
+}
+
+.trip-results {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 6px;
+}
+
+.trip-leave {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 4px;
+}
+
+.trip-when-row {
+  margin: 0 0 12px;
+}
+
+.trip-when {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-inner);
+  background: var(--group-fill);
+  color: var(--fg);
+  font: inherit;
+  color-scheme: dark;
+}
+
+:root[data-theme='classic'] .trip-when {
+  border: 1px solid var(--hairline);
+}
+
+.trip-go {
+  width: 100%;
+  height: 48px;
+  border: 0;
+  border-radius: var(--r-inner);
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+:root[data-theme='classic'] .trip-go {
+  color: #000;
+}
+
+.trip-go:disabled {
+  opacity: 0.5;
+}
+
+.trip-status {
+  margin: 12px 4px 4px;
+  font-size: var(--fs-callout);
+  color: var(--muted);
+}
+
+.trip-route {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 2px 2px 12px;
+}
+
+.trip-route-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.trip-route-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.trip-route-sub {
+  margin: 2px 0 0;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.trip-edit {
+  flex: none;
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: rgba(255, 255, 255, 0.12);
+  font-size: var(--fs-foot);
+  font-weight: 600;
+}
+
+:root[data-theme='classic'] .trip-edit {
+  background: transparent;
+  border: 1px solid var(--hairline);
+}
+
+/* Verdict and hazards: orange for severe, yellow for caution, muted otherwise. */
+.trip-verdict {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px;
+  padding: 12px;
+  border-radius: var(--r-inner);
+  background: var(--group-fill);
+}
+
+.trip-verdict-mark,
+.hz-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.trip-verdict-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.trip-verdict-mark .icon {
+  width: 21px;
+  height: 21px;
+}
+
+.trip-verdict-title {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.trip-verdict-sub {
+  display: block;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.trip-hazards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.hz {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--r-inner);
+  background: var(--group-fill);
+  text-align: left;
+}
+
+.hz-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.hz-mark .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.level-severe > .trip-verdict-mark,
+.hz.level-severe .hz-mark {
+  background: var(--c-alert);
+  color: #000;
+}
+
+.level-caution > .trip-verdict-mark,
+.hz.level-caution .hz-mark {
+  background: var(--c-sun);
+  color: #000;
+}
+
+.hz.is-past {
+  opacity: 0.6;
+}
+
+.hz.is-past .hz-mark {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--muted);
+}
+
+:root[data-theme='classic'] .trip-verdict-mark,
+:root[data-theme='classic'] .hz-mark {
+  background: transparent !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+}
+
+:root[data-theme='classic'] .level-severe > .trip-verdict-mark,
+:root[data-theme='classic'] .hz.level-severe .hz-mark {
+  color: var(--c-alert) !important;
+}
+
+:root[data-theme='classic'] .trip-verdict,
+:root[data-theme='classic'] .hz {
+  border: 1px solid var(--hairline);
+}
+
+.hz-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.hz-title {
+  font-weight: 600;
+}
+
+.hz-when {
+  font-size: var(--fs-callout);
+}
+
+.hz-detail {
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.trip-stops {
+  padding: 0;
+  list-style: none;
+}
+
+.trip-stops li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+.stop {
+  display: grid;
+  grid-template-columns: 66px 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.stop-time {
+  font-size: var(--fs-foot);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stop-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.stop-dot.level-severe {
+  background: var(--c-alert);
+}
+
+.stop-dot.level-caution {
+  background: var(--c-sun);
+}
+
+.stop-dot.level-info {
+  background: var(--c-precip);
+}
+
+.stop-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stop-place {
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stop-flags {
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.stop-flags.level-severe {
+  color: var(--c-alert);
+}
+
+.stop-flags.level-caution {
+  color: var(--c-sun);
+}
+
+.stop-wx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stop-wx .glyph {
+  width: 24px;
+  height: 24px;
+}
+
+.stop-temp {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stop-pop {
+  min-width: 30px;
+  font-size: var(--fs-foot);
+  color: var(--c-precip);
+  text-align: right;
+}
+
+#trip-btn[aria-expanded='true'] {
+  color: var(--accent);
+}
+
 /* ---------- wide screens ---------- */
 
 @media (min-width: 700px) {
@@ -1669,6 +2123,16 @@ button {
   .credits {
     align-self: flex-start;
     max-width: 50%;
+  }
+
+  /* Trip weather: a column on the left, under the search bar, clear of the timeline. */
+  .trip,
+  .trip.folded {
+    top: calc(var(--safe-t) + 10px + 46px + 10px);
+    right: auto;
+    bottom: auto;
+    width: 380px;
+    max-height: calc(100dvh - var(--safe-t) - 66px - var(--safe-b) - 150px);
   }
 }
 

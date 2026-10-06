@@ -168,6 +168,12 @@ export class TimelineBar {
     this.goTo(0);
   }
 
+  /** Show the frame nearest `offsetH` hours from the current 15-minute mark (clamped to the timeline). */
+  show(offsetH: number): void {
+    this.pause();
+    this.goTo(Math.round(offsetH / STEP_H));
+  }
+
   render(s: TimelineBarState): void {
     $('#radar-legend').hidden = !(s.colorMode === 'color' && s.radarOn);
   }

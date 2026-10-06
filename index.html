@@ -64,8 +64,22 @@
       <button id="layers-btn" class="ctrl" type="button" aria-label="Layers" aria-haspopup="dialog" aria-expanded="false"></button>
       <span class="ctrl-sep" aria-hidden="true"></span>
       <button id="locate-btn" class="ctrl" type="button" aria-label="Show my location" aria-pressed="false"></button>
+      <span class="ctrl-sep" aria-hidden="true"></span>
+      <button id="trip-btn" class="ctrl" type="button" aria-label="Trip weather" aria-expanded="false" aria-controls="trip" title="Trip weather"></button>
     </div>
     <div id="layers-menu" class="popover glass-thick" role="dialog" aria-label="Map layers" hidden></div>
+
+    <!-- Trip weather: bottom panel on phones (folds under the search bar), left column on wide screens -->
+    <section id="trip" class="trip glass-thick" aria-label="Trip weather" hidden>
+      <header class="trip-head">
+        <button id="trip-fold" class="trip-fold" type="button" aria-expanded="true" aria-controls="trip-body">
+          <span class="trip-title">Trip weather</span>
+          <span id="trip-sum" class="trip-sum"></span>
+        </button>
+        <button id="trip-close" class="sheet-close" type="button" aria-label="Close trip weather"></button>
+      </header>
+      <div id="trip-body" class="trip-body"></div>
+    </section>
 
     <!-- Bottom: timeline + credits -->
     <div class="dock">
@@ -91,6 +105,7 @@
         <span data-credit="goes" hidden> · <a href="https://nowcoast.noaa.gov/" target="_blank" rel="noopener">NOAA GOES</a></span>
         <span data-credit="esri" hidden> · <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri, Vantor, Earthstar Geographics, GIS User Community</a></span>
         <span> · <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a></span>
+        <span data-credit="osrm" hidden> · <a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">OSRM (FOSSGIS)</a></span>
         <span> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></span>
         <span> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></span>
       </footer>

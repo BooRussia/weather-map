@@ -11,7 +11,7 @@ const WWA_QUERY =
  * Small craft, gale, storm, hurricane-force wind, hazardous seas, freezing spray,
  * marine statements, brisk wind, low water, rip current, high surf.
  */
-const MARINE = ['SC', 'GL', 'SR', 'HF', 'SE', 'UP', 'MH', 'MF', 'MS', 'MA', 'SI', 'SW', 'RB', 'BW', 'LO', 'RP', 'SU'];
+export const MARINE = ['SC', 'GL', 'SR', 'HF', 'SE', 'UP', 'MH', 'MF', 'MS', 'MA', 'SI', 'SW', 'RB', 'BW', 'LO', 'RP', 'SU'];
 
 export interface AlertAreaProps {
   event: string;

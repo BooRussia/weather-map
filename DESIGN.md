@@ -20,7 +20,8 @@ Liquid intentionally allows glass, several semantic colors, one rounded radius f
 Semantic colors (Apple dark-mode system palette), each with one job:
 - `cyan` #64d2ff: precipitation (chance %, next-hours bars, rain icons' drops)
 - `yellow` #ffd60a: sun, lightning bolt, warning icon
-- `orange` #ff9f0a: NWS alert areas on the map and the alert pill's icon
+- `orange` #ff9f0a: NWS alert areas on the map and the alert pill's icon; severe trip hazards
+- Trip hazards reuse these: orange for severe, yellow for caution, cyan dots for light rain; the route line is the accent.
 - Temperature ramp for range bars only: ≤32° #5e5cf0, 45° #0a84ff, 55° #64d2ff, 65° #30d158, 75° #ffd60a, 85° #ff9f0a, ≥95° #ff453a.
 - UV ramp for the UV bar only: green → yellow → orange → red → purple.
 - Radar is drawn smooth, like TV-weather radar: reflectivity is decoded from IEM tiles, blurred at screen resolution, and recolored. Color: nothing below light rain (~11 dBZ), translucent greens, then yellow (~40 dBZ), orange, red (~52), magenta. Mono: white at rising opacity. The legend shows the Color ramp.
@@ -69,6 +70,7 @@ Controls inside a card that need a smaller curve (segmented controls, list rows)
 - Location dot: 16px `accent` circle, 3px white ring, soft shadow, pulsing halo.
 - Center reticle: thin white cross with a gap and a soft shadow, at the map's visual center whenever the selected point is "wherever the map is centered". Dragging shows it; the readout updates when the map settles. Hidden while "Weather follows the map" is off.
 - Layers popover: thick glass list in iOS style: map style segmented control (Satellite / Dark), switches for Radar, Wind, Lightning, Clouds, Alert areas, Falling rain; Radar colors (Color / Mono); a "Units & sound" row.
+- Trip weather: thick glass panel. Phones: bottom panel over the timeline (max 64% height) that folds into a one-line summary under the search bar; wide screens: a 380px column on the left under the search bar. Inside: From / To fields in a group with suggestions inline, a Now / Later segmented control (Later: a date-time field), one accent button; then the route line ("Ocala → Atlanta", time, distance, arrival), a verdict card, hazard cards (icon tile in the level color, title, where and when, detail and source), dimmed cards for hazards on the route but not while you pass, and the stops list (time, level dot, place, flags, glyph, temperature, chance of rain). On the map: the route in the accent over a dark casing, stops as dots in their level color, ends larger with an accent ring.
 - Timeline card: glass, bottom: round play button, time ("Now", "Tue 3:15 PM") with kind ("Live radar", "Radar · −3 h", "Forecast radar · +2 h 15 min", "Loading radar" while waiting on the network), radar legend in Color mode, a scrubber with a white round handle that glides during playback and snaps to 15-minute frames when dragged, observed hours bright and forecast hours dim, scale labels.
 - Weather-page cards (glass, radius 22, 16px padding, caption headers with a small icon): alert, next 2 hours (cyan bars), hourly (horizontal strip, sunrise/sunset cells), 7 days (temperature-ramp range bars with a white "now" dot), then a two-column grid of detail tiles: feels like, UV (ramp bar), wind (compass), humidity, sunset/sunrise (arc), visibility, pressure (gauge), precipitation.
 - Settings sheet: thick glass, iOS grouped rows.
