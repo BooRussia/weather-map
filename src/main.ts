@@ -113,6 +113,11 @@ async function main(): Promise<void> {
   });
   const renderBar = () => bar.render({ colorMode: store.get().colorMode, radarOn: store.get().layers.rain });
   renderBar();
+  // Open on motion: loop the last hour into the next until the timeline is touched.
+  // Not for people who've asked their device to reduce motion.
+  map.once('load', () => {
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) bar.autoplay(-1, 1);
+  });
 
   const refreshTimeline = () => {
     const next = makeTimeline(Date.now(), hrrrInit, liveAt);
@@ -201,61 +206,75 @@ async function main(): Promise<void> {
 
   /* ---------- you (blue dot) vs. the map center (cross) ---------- */
 
+  // mode: what the readout describes, you (gps) or a point on the map (center).
+  // following: whether the camera tracks the blue dot; any gesture stops it.
+  // With "Weather follows the map" off, moving the map changes neither the
+  // readout nor the mode: only the locate button and search do.
   type Mode = 'gps' | 'center';
   let mode: Mode = located ? 'gps' : 'center';
+  let following = located;
+  const followsMap = () => store.get().followMap;
   const reticle = $('#reticle');
   const locateBtn = $('#locate-btn');
+  const renderLocate = () => {
+    // The cross marks the readout's point, so it shows only while the readout follows the map.
+    reticle.hidden = mode === 'gps' || !followsMap();
+    const tracking = mode === 'gps' && following;
+    locateBtn.setAttribute('aria-pressed', String(tracking));
+    locateBtn.setAttribute('aria-label', tracking ? 'Showing your location' : 'Show my location');
+  };
   const setMode = (m: Mode) => {
     mode = m;
-    reticle.hidden = m === 'gps';
-    locateBtn.setAttribute('aria-pressed', String(m === 'gps'));
-    locateBtn.setAttribute('aria-label', m === 'gps' ? 'Showing your location' : 'Show my location');
+    renderLocate();
   };
-  setMode(mode);
+  renderLocate();
 
   const dot = new LocationDot(map, (p) => {
-    // Following you: keep the map on the dot; reload weather only after a real move.
+    // The readout stays on you as you move; the camera only while it's following.
     if (mode !== 'gps') return;
-    map.easeTo({ center: [p.lon, p.lat], duration: 600 });
+    if (following) map.easeTo({ center: [p.lon, p.lat], duration: 600 });
     const s = store.get().selected;
     if (Math.hypot(p.lat - s.lat, p.lon - s.lon) > 0.01) select(p, { gps: true });
   });
   if (located) dot.set(start);
 
-  // Any gesture that moves the map hands the readout to the center cross.
+  // A gesture stops the camera following you and, if the weather follows the map, hands the readout to the cross.
   map.on('movestart', (e) => {
-    if ((e as { originalEvent?: Event }).originalEvent && mode === 'gps') setMode('center');
+    if (!(e as { originalEvent?: Event }).originalEvent) return;
+    following = false;
+    if (mode === 'gps' && followsMap()) setMode('center');
+    else renderLocate();
   });
-  let pendingLabel: string | null = null;
   let settleTimer = 0;
   map.on('moveend', () => {
-    if (mode !== 'center') return;
+    if (mode !== 'center' || !followsMap()) return;
     clearTimeout(settleTimer);
     settleTimer = window.setTimeout(() => {
       const c = map.getCenter();
       const s = store.get().selected;
       // Ignore sub-pixel settles (and the moveend that follows a programmatic select).
       if (Math.abs(c.lat - s.lat) < 0.0005 && Math.abs(wrapLon(c.lng) - s.lon) < 0.0005) return;
-      const label = pendingLabel;
-      pendingLabel = null;
-      select({ lat: c.lat, lon: c.lng }, { label });
+      select({ lat: c.lat, lon: c.lng });
     }, SETTLE_MS);
   });
 
-  // Tap: bring that spot under the cross.
+  // Tap: bring that spot under the cross. (With the weather pinned, a tap changes nothing.)
   map.on('click', (e) => {
+    if (!followsMap()) return;
+    following = false;
     setMode('center');
     map.easeTo({ center: e.lngLat, duration: 450 });
   });
 
   const goToMe = async () => {
     locateBtn.classList.add('busy');
-    const p = dot.position && mode !== 'gps' ? dot.position : await dot.locate(true);
+    const p = dot.position && !(mode === 'gps' && following) ? dot.position : await dot.locate(true);
     locateBtn.classList.remove('busy');
     if (!p) {
       showNote('Location is unavailable. Check location permission for this site.');
       return;
     }
+    following = true;
     setMode('gps');
     map.easeTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 8), duration: 700 });
     select(p, { gps: true });
@@ -269,6 +288,7 @@ async function main(): Promise<void> {
     void dot.locate(false).then((p) => {
       if (!p) showNote(`Location unavailable. Showing ${DEFAULT_PLACE_LABEL}.`);
       else if (mode === 'center' && store.get().selected === start) {
+        following = true;
         setMode('gps');
         map.jumpTo({ center: [p.lon, p.lat] });
         select(p, { gps: true });
@@ -282,19 +302,15 @@ async function main(): Promise<void> {
 
   /* ---------- search ---------- */
 
+  // A search is a deliberate choice: the readout goes there whether or not it follows the map.
   const search = new SearchBox(
     () => store.get().selected,
     (place: Place) => {
+      following = false;
       setMode('center');
-      pendingLabel = place.subtitle ? `${place.title}, ${place.subtitle}` : place.title;
+      select({ lat: place.lat, lon: place.lon }, { label: place.subtitle ? `${place.title}, ${place.subtitle}` : place.title });
       const zoom = place.kind === 'area' ? Math.max(map.getZoom(), 8) : Math.max(map.getZoom(), 11);
       map.flyTo({ center: [place.lon, place.lat], zoom, duration: 900, essential: true });
-      // If the map is already there, flyTo ends without moving: select directly.
-      const c = map.getCenter();
-      if (Math.abs(c.lat - place.lat) < 0.0005 && Math.abs(c.lng - place.lon) < 0.0005) {
-        select({ lat: place.lat, lon: place.lon }, { label: pendingLabel });
-        pendingLabel = null;
-      }
     },
   );
 
@@ -344,6 +360,14 @@ async function main(): Promise<void> {
     }
     if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode) renderBar();
     if (s.alertAreas !== prev.alertAreas) alertAreas.setVisible(s.alertAreas);
+    if (s.followMap !== prev.followMap) {
+      // Pinning the weather while looking around: back to your location's weather (the map stays put).
+      if (!s.followMap && mode === 'center' && dot.position) {
+        setMode('gps');
+        select(dot.position, { gps: true });
+      }
+      renderLocate();
+    }
     if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
     if (s.basemap !== prev.basemap || s.layers.clouds !== prev.layers.clouds || s.layers.rain !== prev.layers.rain) {
       renderCredits(s);

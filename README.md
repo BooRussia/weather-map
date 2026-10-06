@@ -13,14 +13,14 @@ Switch under Layers → Units, sound & appearance → Theme. The choice is remem
 ### On the map
 - **Search** (top): cities and street addresses, suggestions as you type, nearby results first. Press `/` on a keyboard to jump to it.
 - **You** are the blue dot. The **locate button** (top right, under Layers) snaps the map back to you and fills in blue while it follows you.
-- **Drag, tap, or search** and the readout switches to whatever is under the **center cross**; it reloads when the map settles.
+- **Drag, tap, or search** and the readout switches to whatever is under the **center cross**; it reloads when the map settles. Prefer it to stay put? Turn off **Weather follows the map** (Layers → Units, sound & appearance): moving the map then leaves the weather on your location, or on the last place you searched.
 - **Readout** (glass card): place ("My location" when it's you), temperature, condition, `H:87° L:76°`. Tap it for the weather page.
 - **Alert pill**: appears under the readout while an NWS alert is active there; tap for the full text.
 - **Layers** popover: map style (Satellite / Dark); Radar, Wind, Lightning (approximate, with a crackle you can mute), Clouds (live GOES satellite), Alert areas (warnings outlined, watches tinted); radar Colors (Color / Mono); Falling rain.
 - **Radar** is drawn smooth, like TV-weather radar: each tile's colors are decoded back to reflectivity on the GPU, blurred at screen resolution (smooth shapes instead of square data cells), and recolored (translucent greens for light rain, then yellow, orange, red), leaving out the faint "clear air" returns.
 - **Wind** is short, faint dashes that drift with the wind, brighter where it's stronger.
 - **Timeline** (bottom): scrub or play radar from **24 hours ago, through now, into the forecast** (HRRR simulated radar, as far as the latest run reaches, about 15–18 hours), in **15-minute frames**. Playback glides at one hour per second: each frame crossfades into the next, 8 frames load ahead, and it waits ("Loading radar") rather than skip a frame that hasn't arrived. Past frames are archived NEXRAD radar, now is the newest NEXRAD composite (about 2–3 minutes old), future frames are the model. Wind and falling-rain particles follow the same hour. On a keyboard: Space plays/pauses, ← → step an hour, Home returns to now.
-- **Opens on** the Satellite map with Color radar, Radar and Wind on, falling rain off.
+- **Opens on** the Satellite map with Color radar, Radar and Wind on, falling rain off, and the radar **looping from an hour ago to an hour ahead** (half speed) until you pause, play, or scrub. Skipped if your device is set to reduce motion.
 
 ### Weather page
 Apple Weather's main screen for the selected point: a live sky that matches the current weather and time of day (clear, cloudy, rain, storm, snow, fog; day or night) behind glass cards. It shows alerts (tap to expand), the next 2 hours of rain in plain words with 15-minute bars, an hourly strip with sunrise/sunset, 7 days with temperature-colored range bars, and tiles for feels like, UV, wind (compass), humidity, sunrise/sunset, visibility, pressure (gauge), and precipitation. On phones it slides up full screen (swipe down or ✕ to close); at 1100px and wider it stays docked on the right.

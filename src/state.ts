@@ -18,6 +18,11 @@ export interface AppState {
   alertAreas: boolean;
   /** Liquid (Apple-like, default) or Classic (the original black-and-amber). */
   theme: Theme;
+  /**
+   * Moving the map moves the readout to the center cross (default). Off: the
+   * readout stays on your location, or the place you searched, while you look around.
+   */
+  followMap: boolean;
   /** The point the HUD describes. */
   selected: LatLon;
   /** The selected point came from the device location (shows the GPS arrow). */
@@ -39,6 +44,7 @@ interface Prefs {
   rainStreaks?: boolean;
   alertAreas?: boolean;
   theme?: Theme;
+  followMap?: boolean;
 }
 
 function readPrefs(): Prefs {
@@ -64,6 +70,7 @@ function writePrefs(s: AppState): void {
       rainStreaks: s.rainStreaks,
       alertAreas: s.alertAreas,
       theme: s.theme,
+      followMap: s.followMap,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
@@ -84,6 +91,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     rainStreaks: prefs.rainStreaks ?? false,
     alertAreas: prefs.alertAreas ?? true,
     theme: prefs.theme === 'classic' ? 'classic' : 'liquid',
+    followMap: prefs.followMap ?? true,
     selected,
     gps,
   };
@@ -102,7 +110,8 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.sound !== undefined ||
         patch.rainStreaks !== undefined ||
         patch.alertAreas !== undefined ||
-        patch.theme !== undefined
+        patch.theme !== undefined ||
+        patch.followMap !== undefined
       ) {
         writePrefs(state);
       }

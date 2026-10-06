@@ -6,6 +6,8 @@ import { pauseIcon, playIcon } from './icons';
 
 /** Playback speed in frames per second (15-minute frames: one hour per second). */
 const FRAMES_PER_SECOND = 4;
+/** The short autoplay loop runs at half speed, so two hours take four seconds, not two. */
+const AUTO_FRAMES_PER_SECOND = 2;
 /** Frames requested ahead of the playhead. */
 const PREFETCH = 8;
 /** After a stall, resume once this many frames ahead have loaded, so playback doesn't stutter. */
@@ -58,6 +60,8 @@ export class TimelineBar {
   private shownQ = Number.NaN;
   private pending: number | null = null;
   private pendingSince = 0;
+  /** Autoplay's loop, in frames; null for ordinary playback (to the end, back to where it started). */
+  private loopWindow: { from: number; to: number } | null = null;
 
   constructor(
     timeline: Timeline,
@@ -69,8 +73,10 @@ export class TimelineBar {
     $('#tl-play').addEventListener('click', () => this.toggle());
     this.range.step = 'any';
     this.range.addEventListener('input', () => {
+      // Read the drag first: pausing redraws the slider at the playhead.
+      const q = Math.round(Number(this.range.value) / STEP_H);
       this.pause();
-      this.goTo(Math.round(Number(this.range.value) / STEP_H));
+      this.goTo(q);
     });
     this.setTimeline(timeline);
     this.drawPlay();
@@ -87,7 +93,9 @@ export class TimelineBar {
     this.minQ = Math.round(t.minOffset / STEP_H);
     this.maxQ = Math.round(t.maxOffset / STEP_H);
     // Keep the same moment on screen; "now" stays now.
-    if (this.pos !== 0) this.pos = Math.max(this.minQ, Math.min(this.maxQ, this.pos - shift));
+    const clamp = (q: number) => Math.max(this.minQ, Math.min(this.maxQ, q));
+    if (this.pos !== 0) this.pos = clamp(this.pos - shift);
+    if (!this.loopWindow) this.loopFrom = clamp(this.loopFrom - shift);
     this.range.min = String(t.minOffset);
     this.range.max = String(t.maxOffset);
     const span = t.maxOffset - t.minOffset || 1;
@@ -104,6 +112,7 @@ export class TimelineBar {
 
   play(): void {
     if (this.playing) return;
+    this.loopWindow = null;
     // Scrubbed and pressed play before that frame loaded: play from there.
     if (this.pending != null) this.pos = this.pending;
     this.pending = null;
@@ -111,6 +120,24 @@ export class TimelineBar {
     if (Math.round(this.pos) >= this.maxQ) this.pos = this.minQ;
     this.pos = Math.round(this.pos);
     this.loopFrom = this.pos;
+    this.start();
+  }
+
+  /**
+   * Loop from `fromH` to `toH` hours (the end clamps to the forecast available,
+   * and grows if more arrives) until the person uses the timeline.
+   */
+  autoplay(fromH: number, toH: number): void {
+    if (this.playing) return;
+    this.pending = null;
+    const from = Math.max(this.minQ, Math.round(fromH / STEP_H));
+    this.loopWindow = { from, to: Math.round(toH / STEP_H) };
+    this.pos = from;
+    this.loopFrom = from;
+    this.start();
+  }
+
+  private start(): void {
     this.hold = 0;
     this.waited = 0;
     this.playing = true;
@@ -119,7 +146,9 @@ export class TimelineBar {
     this.loop();
   }
 
+  /** Stop playing. Also ends autoplay: any use of the timeline does. */
   pause(): void {
+    this.loopWindow = null;
     if (!this.playing) return;
     this.playing = false;
     // Settle on a whole frame. Playback only advances toward loaded frames, so it's ready.
@@ -193,10 +222,11 @@ export class TimelineBar {
       return;
     }
 
+    const end = this.loopWindow ? Math.min(this.loopWindow.to, this.maxQ) : this.maxQ;
     const a = Math.floor(this.pos + 1e-6);
     const next = a + 1;
-    if (next > this.maxQ) {
-      this.pos = this.maxQ;
+    if (next > end) {
+      this.pos = end;
       this.apply();
       this.hold = HOLD_S;
       return;
@@ -210,7 +240,7 @@ export class TimelineBar {
     }
     if (this.waited > BUFFER_NOTE_S) this.shownQ = Number.NaN; // restore the label
     this.waited = 0;
-    this.pos = Math.min(this.pos + dt * FRAMES_PER_SECOND, next);
+    this.pos = Math.min(this.pos + dt * (this.loopWindow ? AUTO_FRAMES_PER_SECOND : FRAMES_PER_SECOND), next);
     this.apply();
   };
 

@@ -20,6 +20,17 @@ export function settingsPanel(store: Store): HTMLElement {
       ),
     ),
     h('p', { class: 'pop-note' }, 'Liquid is glass and color, like Apple’s apps. Classic is the original black-and-amber look.'),
+    h('p', { class: 'group-label' }, 'Map'),
+    h(
+      'div',
+      { class: 'group' },
+      switchRow({ label: 'Weather follows the map', checked: s.followMap, onChange: (on) => store.set({ followMap: on }) }),
+    ),
+    h(
+      'p',
+      { class: 'pop-note' },
+      'On: move the map and the weather shows what’s under the center cross. Off: the weather stays on your location (or a place you searched) while you look around.',
+    ),
     h('p', { class: 'group-label' }, 'Units'),
     h(
       'div',
@@ -48,7 +59,7 @@ export function settingsPanel(store: Store): HTMLElement {
     h(
       'p',
       { class: 'pop-note' },
-      'Live radar, places, observations, forecasts, and alerts: NWS. Radar history and forecast radar: NEXRAD and HRRR via Iowa Environmental Mesonet. Wind, rain, and point forecasts: Open-Meteo (CC BY 4.0). Search: Photon (OpenStreetMap). Clouds: NOAA GOES via nowCOAST. Satellite imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.',
+      'Places, observations, forecasts, and alerts: NWS. Radar (live, history, and forecast): NEXRAD and HRRR via Iowa Environmental Mesonet. Wind, rain, and point forecasts: Open-Meteo (CC BY 4.0). Search: Photon (OpenStreetMap). Clouds: NOAA GOES via nowCOAST. Satellite imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.',
     ),
   );
 }
