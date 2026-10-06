@@ -1,13 +1,8 @@
 import type { ColorMode } from '../config';
 import { offsetTime, relativeLabel, STEP_H, type Timeline } from '../data/timeline';
+import { RADAR_LEGEND } from '../map/radarPalette';
 import { $, h, svg } from './dom';
 import { pauseIcon, playIcon } from './icons';
-
-/**
- * NWS reflectivity scale, light → heavy, sampled from the live mosaic. Only
- * the legend uses it (DESIGN.md imagery exception), only in Color mode.
- */
-export const RADAR_SCALE = ['#4666a4', '#5eadcf', '#48d68f', '#42d810', '#ffc100', '#ff9800', '#ff2f00'];
 
 /** Playback speed in frames per second (15-minute frames: one hour per second). */
 const FRAMES_PER_SECOND = 4;
@@ -69,7 +64,8 @@ export class TimelineBar {
     private readonly frames: Frames,
     private readonly onTime: (offset: number) => void,
   ) {
-    $('#radar-legend-bar').style.background = `linear-gradient(to right, ${RADAR_SCALE.join(', ')})`;
+    // The radar's own Color ramp (DESIGN.md imagery exception), shown only in Color mode.
+    $('#radar-legend-bar').style.background = `linear-gradient(to right, ${RADAR_LEGEND.join(', ')})`;
     $('#tl-play').addEventListener('click', () => this.toggle());
     this.range.step = 'any';
     this.range.addEventListener('input', () => {
@@ -162,6 +158,7 @@ export class TimelineBar {
     this.pendingSince = performance.now();
     this.range.value = String(q * STEP_H);
     this.label(q, true);
+    this.shownQ = Number.NaN; // the label no longer matches the frame on screen
     this.loop();
   }
 

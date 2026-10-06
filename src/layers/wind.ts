@@ -2,18 +2,20 @@ import type { ScreenField } from './screenField';
 import { PX_PER_MPH } from './screenField';
 
 /** History samples per particle; the trail is drawn through these. */
-const HIST = 18;
-/** Seconds between history samples (trail ≈ HIST × this ≈ 1.3 s of travel). */
+const HIST = 8;
+/** Seconds between history samples (trail ≈ HIST × this ≈ 0.55 s of travel: short dashes, not streaks). */
 const SAMPLE_EVERY = 0.07;
 const LINE_WIDTH = 1;
 
-/** Alpha by wind speed (mph). Calm air is faint, strong wind is bright. */
+/** Alpha by wind speed (mph). Calm air is faint, strong wind is brighter; none of it should cover the map. */
 const BUCKETS = [
-  { maxMph: 4, alpha: 0.4 },
-  { maxMph: 10, alpha: 0.6 },
-  { maxMph: 20, alpha: 0.8 },
-  { maxMph: Infinity, alpha: 0.95 },
+  { maxMph: 4, alpha: 0.3 },
+  { maxMph: 10, alpha: 0.45 },
+  { maxMph: 20, alpha: 0.6 },
+  { maxMph: Infinity, alpha: 0.75 },
 ];
+/** Screen area per particle, CSS px². */
+const AREA_PER_PARTICLE = 1300;
 
 /** Wind as advected particles with fading trails, drawn in `foreground`. */
 export class WindLayer {
@@ -36,7 +38,7 @@ export class WindLayer {
   resize(w: number, h: number): void {
     this.w = w;
     this.h = h;
-    this.n = Math.round(Math.max(120, Math.min(2400, (w * h) / 700)));
+    this.n = Math.round(Math.max(80, Math.min(1400, (w * h) / AREA_PER_PARTICLE)));
     this.x = new Float32Array(this.n);
     this.y = new Float32Array(this.n);
     this.age = new Float32Array(this.n);

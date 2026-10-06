@@ -23,7 +23,7 @@ Semantic colors (Apple dark-mode system palette), each with one job:
 - `orange` #ff9f0a: NWS alert areas on the map and the alert pill's icon
 - Temperature ramp for range bars only: ≤32° #5e5cf0, 45° #0a84ff, 55° #64d2ff, 65° #30d158, 75° #ffd60a, 85° #ff9f0a, ≥95° #ff453a.
 - UV ramp for the UV bar only: green → yellow → orange → red → purple.
-- Radar keeps the NWS reflectivity scale (Color) or grayscale (Mono); the legend shows it.
+- Radar is drawn smooth, like TV-weather radar: reflectivity is decoded from IEM tiles, blurred at screen resolution, and recolored. Color: nothing below light rain (~11 dBZ), translucent greens, then yellow (~40 dBZ), orange, red (~52), magenta. Mono: white at rising opacity. The legend shows the Color ramp.
 
 No other hues. Weather-page skies use the gradients listed under Materials; they are backgrounds, not UI color.
 
@@ -47,7 +47,7 @@ Controls inside a card that need a smaller curve (segmented controls, list rows)
 ## Motion
 - duration: 200ms for state changes (switches, hover, pressed); 420ms for sheets and the weather page.
 - easing: `cubic-bezier(0.32, 0.72, 0, 1)` (Apple's sheet curve) for sheets and the page; `ease-out` for everything else. No bounce, no elastic, no overshoot.
-- Live layers (wind, rain, lightning, radar timeline) and weather-page skies animate continuously: they are content. Timeline playback glides through 15-minute radar frames at one hour per second, crossfading each frame into the next (constant combined coverage, so nothing pulses) and never advancing onto a frame that hasn't loaded.
+- Live layers (wind, rain, lightning, radar timeline) and weather-page skies animate continuously: they are content. Wind is short, faint dashes (about half a second of travel, 30–75% white by speed) so the map stays readable under it. Timeline playback glides through 15-minute radar frames at one hour per second, crossfading each frame into the next (constant combined coverage, so nothing pulses) and never advancing onto a frame that hasn't loaded.
 - The location dot's halo pulses (2s, ease-out): it is the one decorative loop, and it says "this is live".
 - `prefers-reduced-motion`: UI transitions drop to none, skies hold a still frame, the halo stops. Map data layers keep running.
 

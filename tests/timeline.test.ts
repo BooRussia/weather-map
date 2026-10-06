@@ -16,16 +16,22 @@ describe('radar timeline', () => {
     expect(makeTimeline(at('2026-10-05T22:37:00Z'), null).maxOffset).toBe(0);
   });
 
-  it('uses live radar now, the archive for the past, HRRR for the future', () => {
-    const t = makeTimeline(at('2026-10-05T22:37:00Z'), at('2026-10-05T20:00:00Z'));
-    expect(frameSource(t, 0)).toEqual({ kind: 'live' });
+  it('uses the newest composite now, the archive for the past, HRRR for the future', () => {
+    const t = makeTimeline(at('2026-10-05T22:37:00Z'), at('2026-10-05T20:00:00Z'), at('2026-10-05T22:35:00Z'));
+    const now = frameSource(t, 0);
+    expect(now.kind).toBe('live');
+    // Always-latest tiles, versioned by scan time so a new scan is a new frame.
+    expect(now.url).toContain('nexrad-n0q-900913/{z}/{x}/{y}.png?v=202610052235');
+    expect(frameSource(makeTimeline(at('2026-10-05T22:37:00Z'), null), 0).url).toMatch(/nexrad-n0q-900913\/\{z\}\/\{x\}\/\{y\}\.png$/);
 
     const past = frameSource(t, -0.25);
-    expect(past.kind !== 'live' && past.url).toContain('ridge::USCOMP-N0Q-202610052215/');
+    expect(past.kind).toBe('past');
+    expect(past.url).toContain('ridge::USCOMP-N0Q-202610052215/');
 
     const future = frameSource(t, 2);
     // 22:30 + 2 h = 00:30, 4.5 hours after the 20Z init.
-    expect(future.kind !== 'live' && future.url).toContain('hrrr::REFD-F0270-202610052000/');
+    expect(future.kind).toBe('future');
+    expect(future.url).toContain('hrrr::REFD-F0270-202610052000/');
   });
 
   it('snaps offsets to frames', () => {

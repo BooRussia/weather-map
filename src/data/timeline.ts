@@ -1,4 +1,11 @@
-import { FUTURE_RADAR_TILE_URL, HRRR_MAX_MINUTES, IEM_HOSTS, PAST_RADAR_TILE_URL, TIMELINE_PAST_HOURS } from '../config';
+import {
+  FUTURE_RADAR_TILE_URL,
+  HRRR_MAX_MINUTES,
+  IEM_HOSTS,
+  LATEST_RADAR_TILE_URL,
+  PAST_RADAR_TILE_URL,
+  TIMELINE_PAST_HOURS,
+} from '../config';
 
 const HOUR = 3_600_000;
 /** Frames are 15 minutes apart: the archive and HRRR both publish at that cadence. */
@@ -7,7 +14,7 @@ const STEP_MS = STEP_H * HOUR;
 
 /**
  * The radar timeline: 15-minute frames from 24 hours ago, through "now"
- * (the live NWS radar), into the HRRR forecast. Offsets are hours from the
+ * (the newest composite), into the HRRR forecast. Offsets are hours from the
  * current 15-minute mark, in multiples of 0.25; 0 means now.
  */
 export interface Timeline {
@@ -15,15 +22,17 @@ export interface Timeline {
   base: number;
   /** HRRR run time, epoch ms (null if unknown: no future frames). */
   init: number | null;
+  /** Valid time of the newest composite, epoch ms (null if unknown). */
+  live: number | null;
   minOffset: number;
   maxOffset: number;
 }
 
-export function makeTimeline(now: number, init: number | null): Timeline {
+export function makeTimeline(now: number, init: number | null, live: number | null = null): Timeline {
   const base = Math.floor(now / STEP_MS) * STEP_MS;
   // The last frame must still be inside the HRRR run's 18 hours.
   const maxOffset = init == null ? 0 : Math.max(0, Math.floor((init + HRRR_MAX_MINUTES * 60_000 - base) / STEP_MS) * STEP_H);
-  return { base, init, minOffset: -TIMELINE_PAST_HOURS, maxOffset };
+  return { base, init, live, minOffset: -TIMELINE_PAST_HOURS, maxOffset };
 }
 
 export const offsetTime = (t: Timeline, offset: number) => t.base + Math.round(offset * 60) * 60_000;
@@ -41,15 +50,25 @@ export function utcHourKey(ms: number): string {
   return new Date(Math.round(ms / HOUR) * HOUR).toISOString().slice(0, 13) + ':00';
 }
 
-export type FrameSource = { kind: 'live' } | { kind: 'past' | 'future'; url: string };
+export interface FrameSource {
+  kind: 'live' | 'past' | 'future';
+  /** Tile URL template ({z}/{x}/{y}); also the frame's identity. */
+  url: string;
+}
 
 /** Which tiles to show at an offset. */
 export function frameSource(t: Timeline, offset: number): FrameSource {
   const o = snap(offset);
-  if (o === 0) return { kind: 'live' };
+  // The always-latest tiles, versioned by the composite's time so each new scan is a new URL.
+  // (The stamped archive can lag the newest scan by a minute or two and 503 meanwhile.)
+  const live: FrameSource = {
+    kind: 'live',
+    url: t.live == null ? LATEST_RADAR_TILE_URL : `${LATEST_RADAR_TILE_URL}?v=${utcStamp(t.live)}`,
+  };
+  if (o === 0) return live;
   const at = offsetTime(t, o);
   if (o < 0) return { kind: 'past', url: PAST_RADAR_TILE_URL.replace('{stamp}', utcStamp(at)) };
-  if (t.init == null) return { kind: 'live' };
+  if (t.init == null) return live;
   const minutes = Math.round((at - t.init) / 60_000);
   return {
     kind: 'future',

@@ -1,24 +1,14 @@
 import type { Map as MlMap, RasterTileSource } from 'maplibre-gl';
-import {
-  AERIAL_TILE_URL,
-  CLOUDS_TILE_URL,
-  IMAGERY_REFRESH_MS,
-  RADAR_TILE_URL,
-  type Basemap,
-  type ColorMode,
-} from '../config';
+import { AERIAL_TILE_URL, CLOUDS_TILE_URL, IMAGERY_REFRESH_MS, type Basemap, type ColorMode } from '../config';
 
 /**
  * Raster imagery layers. Stack, bottom to top:
  *   Carto background → aerial (Satellite style) → Carto fills/lines (Dark style)
- *   → clouds → radar → Carto labels.
+ *   → clouds → radar (its own layer, radarLayer.ts) → Carto labels.
  */
 const AERIAL = 'esri-aerial';
 const CLOUDS = 'goes-clouds';
-const RADAR = 'nws-radar';
-const OWN = new Set([AERIAL, CLOUDS, RADAR]);
-
-type LiveLayer = typeof CLOUDS | typeof RADAR;
+const OWN = new Set([AERIAL, CLOUDS]);
 
 interface RasterPaint {
   saturation: number;
@@ -29,15 +19,11 @@ interface RasterPaint {
 
 /**
  * Mono is the DESIGN.md default: everything grayscale. Color is the
- * owner-requested data exception: the NWS reflectivity scale on radar and
- * true color on aerial imagery. Aerial is dimmed in both modes so white wind
+ * owner-requested data exception: true color on aerial imagery (and the radar
+ * ramp, in radarPalette.ts). Aerial is dimmed in both modes so white wind
  * particles and HUD type stay readable. Clouds are infrared: grayscale either way.
  */
 const PAINT: Record<string, Record<ColorMode, RasterPaint>> = {
-  [RADAR]: {
-    mono: { saturation: -1, opacity: 0.3, brightnessMax: 0.75, contrast: 0 },
-    color: { saturation: 0, opacity: 0.7, brightnessMax: 1, contrast: 0 },
-  },
   [AERIAL]: {
     mono: { saturation: -1, opacity: 1, brightnessMax: 0.6, contrast: 0 },
     color: { saturation: -0.1, opacity: 1, brightnessMax: 0.7, contrast: 0 },
@@ -50,7 +36,6 @@ const PAINT: Record<string, Record<ColorMode, RasterPaint>> = {
 };
 
 export interface ImageryState {
-  radar: boolean;
   clouds: boolean;
   basemap: Basemap;
   colorMode: ColorMode;
@@ -65,11 +50,8 @@ export function addImagery(map: MlMap, s: ImageryState): void {
   map.addSource(AERIAL, { type: 'raster', tiles: [AERIAL_TILE_URL], tileSize: 256, maxzoom: 19 });
   addRaster(map, AERIAL, s.basemap === 'satellite', s.colorMode, firstVector);
 
-  map.addSource(CLOUDS, { type: 'raster', tiles: [liveTiles(CLOUDS)], tileSize: 256, maxzoom: 9 });
+  map.addSource(CLOUDS, { type: 'raster', tiles: [liveTiles()], tileSize: 256, maxzoom: 9 });
   addRaster(map, CLOUDS, s.clouds, s.colorMode, firstSymbol);
-
-  map.addSource(RADAR, { type: 'raster', tiles: [liveTiles(RADAR)], tileSize: 256, minzoom: 3, maxzoom: 10 });
-  addRaster(map, RADAR, s.radar, s.colorMode, firstSymbol);
 
   setBasemap(map, s.basemap);
 }
@@ -96,9 +78,8 @@ function addRaster(map: MlMap, id: string, visible: boolean, mode: ColorMode, be
 
 const visibility = (on: boolean) => (on ? 'visible' : 'none');
 
-export function setImageryVisible(map: MlMap, which: 'radar' | 'clouds', visible: boolean): void {
-  const id = which === 'radar' ? RADAR : CLOUDS;
-  if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility(visible));
+export function setCloudsVisible(map: MlMap, visible: boolean): void {
+  if (map.getLayer(CLOUDS)) map.setLayoutProperty(CLOUDS, 'visibility', visibility(visible));
 }
 
 export function setColorMode(map: MlMap, mode: ColorMode): void {
@@ -128,48 +109,19 @@ export function setBasemap(map: MlMap, basemap: Basemap): void {
   }
 }
 
-/* ---------- keeping live layers fresh ---------- */
+/* ---------- keeping clouds fresh ---------- */
 
 const bucket = () => Math.floor(Date.now() / IMAGERY_REFRESH_MS);
-const loaded = new Map<LiveLayer, number>();
-const BASE_URL: Record<LiveLayer, string> = { [CLOUDS]: CLOUDS_TILE_URL, [RADAR]: RADAR_TILE_URL };
+let loadedBucket = -1;
 
 /** Cache-bust per bucket so tiles refresh as new scans arrive. */
-function liveTiles(id: LiveLayer): string {
-  const b = bucket();
-  loaded.set(id, b);
-  return `${BASE_URL[id]}&_t=${b}`;
+function liveTiles(): string {
+  loadedBucket = bucket();
+  return `${CLOUDS_TILE_URL}&_t=${loadedBucket}`;
 }
 
-/** Re-request radar/cloud tiles once a new bucket has started. Safe to call often. */
-export function refreshImagery(map: MlMap, visible: { radar: boolean; clouds: boolean }): void {
-  const b = bucket();
-  for (const [id, on] of [
-    [RADAR, visible.radar],
-    [CLOUDS, visible.clouds],
-  ] as const) {
-    if (!on || loaded.get(id) === b) continue;
-    (map.getSource(id) as RasterTileSource | undefined)?.setTiles([liveTiles(id)]);
-  }
-}
-
-/* ---------- shared with the radar loop ---------- */
-
-/** Radar raster paint for a color mode, so loop frames look like the live layer. */
-export function radarPaint(mode: ColorMode): Record<string, number> {
-  const p = PAINT[RADAR][mode];
-  return {
-    'raster-saturation': p.saturation,
-    'raster-opacity': p.opacity,
-    'raster-brightness-max': p.brightnessMax,
-    'raster-contrast': p.contrast,
-    'raster-fade-duration': 0,
-  };
-}
-
-/** Id of the layer drawn just above the live radar (new layers go here to sit in its slot). */
-export function aboveRadar(map: MlMap): string | undefined {
-  const layers = map.getStyle().layers;
-  const i = layers.findIndex((l) => l.id === RADAR);
-  return i >= 0 ? layers[i + 1]?.id : undefined;
+/** Re-request cloud tiles once a new bucket has started. Safe to call often. */
+export function refreshClouds(map: MlMap, visible: boolean): void {
+  if (!visible || loadedBucket === bucket()) return;
+  (map.getSource(CLOUDS) as RasterTileSource | undefined)?.setTiles([liveTiles()]);
 }

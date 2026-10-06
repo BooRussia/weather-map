@@ -17,7 +17,9 @@ Switch under Layers → Units, sound & appearance → Theme. The choice is remem
 - **Readout** (glass card): place ("My location" when it's you), temperature, condition, `H:87° L:76°`. Tap it for the weather page.
 - **Alert pill**: appears under the readout while an NWS alert is active there; tap for the full text.
 - **Layers** popover: map style (Satellite / Dark); Radar, Wind, Lightning (approximate, with a crackle you can mute), Clouds (live GOES satellite), Alert areas (warnings outlined, watches tinted); radar Colors (Color / Mono); Falling rain.
-- **Timeline** (bottom): scrub or play radar from **24 hours ago, through now, into the forecast** (HRRR simulated radar, as far as the latest run reaches, about 15–18 hours), in **15-minute frames**. Playback glides at one hour per second: each frame crossfades into the next, 6 frames load ahead, and it waits ("Loading radar") rather than skip a frame that hasn't arrived. Past frames are archived NEXRAD radar, now is the live NWS mosaic, future frames are the model. Wind and falling-rain particles follow the same hour. On a keyboard: Space plays/pauses, ← → step an hour, Home returns to now.
+- **Radar** is drawn smooth, like TV-weather radar: each tile's colors are decoded back to reflectivity on the GPU, blurred at screen resolution (smooth shapes instead of square data cells), and recolored (translucent greens for light rain, then yellow, orange, red), leaving out the faint "clear air" returns.
+- **Wind** is short, faint dashes that drift with the wind, brighter where it's stronger.
+- **Timeline** (bottom): scrub or play radar from **24 hours ago, through now, into the forecast** (HRRR simulated radar, as far as the latest run reaches, about 15–18 hours), in **15-minute frames**. Playback glides at one hour per second: each frame crossfades into the next, 8 frames load ahead, and it waits ("Loading radar") rather than skip a frame that hasn't arrived. Past frames are archived NEXRAD radar, now is the newest NEXRAD composite (about 2–3 minutes old), future frames are the model. Wind and falling-rain particles follow the same hour. On a keyboard: Space plays/pauses, ← → step an hour, Home returns to now.
 - **Opens on** the Satellite map with Color radar, Radar and Wind on, falling rain off.
 
 ### Weather page
@@ -54,9 +56,8 @@ How it's sent: every NWS request includes `User-Agent: <your value>`. NWS allows
 | Source | Used for | Terms |
 | --- | --- | --- |
 | [NWS api.weather.gov](https://www.weather.gov/documentation/services-web-api) | Place name (`/points`), latest observation, forecast, active alerts | U.S. government data, no key. **User-Agent required** (above). |
-| [NWS radar mosaic](https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer) | Radar under the Rain layer (grayscale or color) | U.S. government data, no key. US coverage only. |
 | [NWS warnings map service](https://mapservices.weather.noaa.gov/eventdriven/rest/services/WWA/watch_warn_adv/MapServer) | Alert areas (warnings and watches; marine and advisories filtered out) | U.S. government data, no key. |
-| [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/ogc/) | Timeline: archived NEXRAD composite (past 24 h) and HRRR simulated radar (forecast) | Free, no key; NEXRAD and HRRR are NOAA data. CONUS coverage. Frames load only as you scrub or play (about 8 kept at a time). |
+| [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/ogc/) | All radar: newest and archived NEXRAD composite (now and the past 24 h), HRRR simulated radar (forecast) | Free, no key; NEXRAD and HRRR are NOAA data. CONUS coverage. Tiles come from four IEM hostnames for parallel loading, a zoom level coarser than the screen (smoothing hides it), so a frame is a few tiles. |
 | [Photon by Komoot](https://photon.komoot.io/) | Search (cities and addresses) and place names outside NWS coverage | Free, no key, fair use; OpenStreetMap data (© OpenStreetMap contributors). |
 | [NOAA nowCOAST](https://nowcoast.noaa.gov/) | Clouds layer: GOES East + West longwave infrared | U.S. government data, no key. Covers the Americas and eastern Pacific. |
 | [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) | Satellite map style | Credit: Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Fine for personal and non-commercial use; check Esri's terms (or get a free ArcGIS Location Platform key) before a commercial launch. |
@@ -99,7 +100,7 @@ src/
   data/                 NWS, Open-Meteo, grid fetching, geolocation (framework-free)
   field/grid.ts         Open-Meteo lattice + bilinear sampling
   layers/               wind / rain / thunder particle layers on canvas
-  map/                  MapLibre setup, radar, basemap grayscale
+  map/                  MapLibre setup, smoothed radar (WebGL layer + palette), basemap grayscale
   audio/crackle.ts      procedural thunder sound (Web Audio)
   ui/                   HUD, sheet, panels, icons
   styles.css            tokens from DESIGN.md

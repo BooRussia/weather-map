@@ -8,15 +8,15 @@ import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_
 import { loadConditions, type Conditions } from './data/conditions';
 import { geoPermission, getPosition } from './data/geolocate';
 import { GridController } from './data/gridController';
-import { getHrrrInit } from './data/hrrr';
+import { getHrrrInit, getLatestComposite } from './data/iem';
 import { makeTimeline, offsetTime, utcHourKey } from './data/timeline';
 import type { Place } from './data/photon';
 import { Animator, type LayerFlags } from './layers/animator';
 import { createMap } from './map/map';
-import { addImagery, refreshImagery, setBasemap, setColorMode, setImageryVisible } from './map/imagery';
+import { addImagery, refreshClouds, setBasemap, setCloudsVisible, setColorMode } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
 import { LocationDot } from './map/location';
-import { RadarTimeline } from './map/radarTimeline';
+import { RadarLayer } from './map/radarLayer';
 import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
@@ -69,9 +69,18 @@ async function main(): Promise<void> {
 
   const map = await createMap($('#map'), start);
   const alertAreas = new AlertAreas(map, token('--c-alert') || '#ff9f0a', store.get().alertAreas);
+
+  // Radar: 24 h of history, now, and the HRRR forecast, smoothed (radarLayer.ts).
+  let hrrrInit: number | null = null;
+  let liveAt: number | null = null;
+  let timeline = makeTimeline(Date.now(), hrrrInit, liveAt);
+  const radar = new RadarLayer(map, timeline, store.get().colorMode, store.get().layers.rain);
+
   map.once('load', () => {
     const s = store.get();
-    addImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
+    // Bottom to top: imagery, radar, alert areas, labels.
+    addImagery(map, { clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
+    radar.install();
     alertAreas.install();
   });
 
@@ -98,24 +107,25 @@ async function main(): Promise<void> {
 
   /* ---------- timeline: 24 h of radar history into the HRRR forecast ---------- */
 
-  let hrrrInit: number | null = null;
-  let timeline = makeTimeline(Date.now(), hrrrInit);
-  const frames = new RadarTimeline(map, timeline, store.get().colorMode, store.get().layers.rain);
   // The bar drives the radar crossfade; wind/rain particles follow the nearest hour.
-  const bar = new TimelineBar(timeline, frames, (offset) => {
-    // Past and forecast frames come from Iowa Environmental Mesonet: credit them while shown.
-    $('[data-credit="iem"]').hidden = offset === 0;
+  const bar = new TimelineBar(timeline, radar, (offset) => {
     grids.setHour(offset === 0 ? null : utcHourKey(offsetTime(timeline, offset)));
   });
   const renderBar = () => bar.render({ colorMode: store.get().colorMode, radarOn: store.get().layers.rain });
   renderBar();
-  map.once('load', () => frames.blend(bar.offset, bar.offset, 0));
 
   const refreshTimeline = () => {
-    const next = makeTimeline(Date.now(), hrrrInit);
-    if (next.base === timeline.base && next.maxOffset === timeline.maxOffset && next.init === timeline.init) return;
+    const next = makeTimeline(Date.now(), hrrrInit, liveAt);
+    if (
+      next.base === timeline.base &&
+      next.maxOffset === timeline.maxOffset &&
+      next.init === timeline.init &&
+      next.live === timeline.live
+    ) {
+      return;
+    }
     timeline = next;
-    frames.setTimeline(next);
+    radar.setTimeline(next);
     bar.setTimeline(next);
   };
   let hrrrCheckedAt = 0;
@@ -129,6 +139,16 @@ async function main(): Promise<void> {
     }
   };
   void refreshHrrr();
+  // "Now" is the newest composite, published every 5 minutes.
+  const refreshLive = async () => {
+    try {
+      liveAt = await getLatestComposite();
+      refreshTimeline();
+    } catch {
+      // Keep the last known composite (or IEM's always-latest tiles).
+    }
+  };
+  void refreshLive();
 
   /* ---------- weather page (live sky + cards) ---------- */
 
@@ -287,8 +307,9 @@ async function main(): Promise<void> {
     if (Date.now() - lastLoaded >= CONDITIONS_REFRESH_MS) loadSelected(false);
     grids.refreshIfOlderThan(GRID_MAX_AGE_MS);
     const s = store.get();
-    refreshImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds });
+    refreshClouds(map, s.layers.clouds);
     alertAreas.refreshIfStale();
+    void refreshLive();
     refreshTimeline();
     if (Date.now() - hrrrCheckedAt > 15 * 60_000) void refreshHrrr();
   };
@@ -311,22 +332,22 @@ async function main(): Promise<void> {
     for (const layer of LAYERS) {
       const on = s.layers[layer];
       if (on === prev.layers[layer]) continue;
-      if (layer === 'rain') frames.setRadarOn(on);
-      else if (layer === 'clouds') setImageryVisible(map, 'clouds', on);
+      if (layer === 'rain') radar.setRadarOn(on);
+      else if (layer === 'clouds') setCloudsVisible(map, on);
       else animator.layerChanged(layer, on);
     }
     if (streaksOn(s) !== streaksOn(prev)) animator.layerChanged('rain', streaksOn(s));
-    if (s.layers.rain !== prev.layers.rain || s.layers.clouds !== prev.layers.clouds) {
-      refreshImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds });
-    }
+    if (s.layers.clouds !== prev.layers.clouds) refreshClouds(map, s.layers.clouds);
     if (s.colorMode !== prev.colorMode) {
       setColorMode(map, s.colorMode);
-      frames.setColorMode(s.colorMode);
+      radar.setColorMode(s.colorMode);
     }
     if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode) renderBar();
     if (s.alertAreas !== prev.alertAreas) alertAreas.setVisible(s.alertAreas);
     if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
-    if (s.basemap !== prev.basemap || s.layers.clouds !== prev.layers.clouds) renderCredits(s);
+    if (s.basemap !== prev.basemap || s.layers.clouds !== prev.layers.clouds || s.layers.rain !== prev.layers.rain) {
+      renderCredits(s);
+    }
     if (s.theme !== prev.theme) {
       applyTheme(s);
       // Canvas and map colors don't read CSS; hand them the new tokens.
@@ -378,6 +399,7 @@ async function main(): Promise<void> {
 
 /** Credits for optional imagery appear only while that imagery is on screen. */
 function renderCredits(s: AppState): void {
+  $('[data-credit="iem"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
 }
