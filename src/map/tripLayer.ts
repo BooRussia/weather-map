@@ -58,19 +58,24 @@ export class TripLayer {
         type: 'circle',
         source: STOPS,
         paint: {
-          'circle-radius': ['case', ['get', 'end'], 6.5, ['==', ['get', 'level'], 'none'], 3.5, 5.5],
+          'circle-radius': ['case', ['get', 'end'], 6.5, ['get', 'night'], 6.5, ['==', ['get', 'level'], 'none'], 3.5, 5.5],
           'circle-color': this.stopColor(),
-          'circle-stroke-color': ['case', ['get', 'end'], this.colors.route, '#000000'],
-          'circle-stroke-width': ['case', ['get', 'end'], 3, 1.5],
+          'circle-stroke-color': this.strokeColor(),
+          'circle-stroke-width': ['case', ['get', 'end'], 3, ['get', 'night'], 2.5, 1.5],
         },
       },
       firstSymbol,
     );
   }
 
+  /** Nights are dark dots ringed in white; other stops take their level's color. */
   private stopColor() {
     const c = this.colors;
-    return ['match', ['get', 'level'], 'severe', c.severe, 'caution', c.caution, c.stop] as unknown as string;
+    return ['case', ['get', 'night'], '#1c1c1e', ['match', ['get', 'level'], 'severe', c.severe, 'caution', c.caution, c.stop]] as unknown as string;
+  }
+
+  private strokeColor() {
+    return ['case', ['get', 'end'], this.colors.route, ['get', 'night'], '#ffffff', '#000000'] as unknown as string;
   }
 
   setColors(colors: TripColors): void {
@@ -78,7 +83,7 @@ export class TripLayer {
     if (!this.installed) return;
     this.map.setPaintProperty(ROUTE, 'line-color', colors.route);
     this.map.setPaintProperty(STOPS, 'circle-color', this.stopColor());
-    this.map.setPaintProperty(STOPS, 'circle-stroke-color', ['case', ['get', 'end'], colors.route, '#000000']);
+    this.map.setPaintProperty(STOPS, 'circle-stroke-color', this.strokeColor());
   }
 
   /** Draw a plan (and frame it inside `padding`), or clear it. */
@@ -96,7 +101,7 @@ export class TripLayer {
       type: 'FeatureCollection',
       features: (plan?.stops ?? []).map((s, i) => ({
         type: 'Feature',
-        properties: { level: s.level ?? 'none', end: i === 0 || i === last },
+        properties: { level: s.level ?? 'none', end: i === 0 || i === last, night: !!s.night },
         geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
       })),
     };

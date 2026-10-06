@@ -64,27 +64,30 @@ export async function getRoute(from: LatLon, to: LatLon, signal?: AbortSignal): 
   }
 }
 
-/** Points every `stepMin` minutes of driving from `depart` (epoch ms), always ending at the destination. */
-export function sampleRoute(route: Route, depart: number, stepMin: number): RoutePoint[] {
-  const out: RoutePoint[] = [];
-  const step = stepMin * 60;
+/** The spot `s` seconds of driving from the start (interpolated), stamped with clock time `at`. */
+export function pointAt(route: Route, s: number, at = 0): RoutePoint {
   const last = route.coords.length - 1;
-  let i = 0;
-  for (let s = 0; last > 0 && s < route.duration; s += step) {
-    while (i < last - 1 && route.secs[i + 1] < s) i++;
-    const t0 = route.secs[i];
-    const t1 = route.secs[i + 1];
-    const f = t1 > t0 ? (s - t0) / (t1 - t0) : 0;
-    const [x0, y0] = route.coords[i];
-    const [x1, y1] = route.coords[i + 1];
-    out.push({
-      lon: x0 + (x1 - x0) * f,
-      lat: y0 + (y1 - y0) * f,
-      at: depart + s * 1000,
-      m: route.meters[i] + (route.meters[i + 1] - route.meters[i]) * f,
-    });
+  if (last < 1 || s >= route.duration) {
+    const [x, y] = route.coords[last];
+    return { lon: x, lat: y, at, m: route.distance };
   }
-  const [x, y] = route.coords[last];
-  out.push({ lon: x, lat: y, at: depart + route.duration * 1000, m: route.distance });
-  return out;
+  // Binary search: the segment that contains `s`.
+  let lo = 0;
+  let hi = last;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (route.secs[mid] <= s) lo = mid;
+    else hi = mid;
+  }
+  const t0 = route.secs[lo];
+  const t1 = route.secs[hi];
+  const f = t1 > t0 ? (s - t0) / (t1 - t0) : 0;
+  const [x0, y0] = route.coords[lo];
+  const [x1, y1] = route.coords[hi];
+  return {
+    lon: x0 + (x1 - x0) * f,
+    lat: y0 + (y1 - y0) * f,
+    at,
+    m: route.meters[lo] + (route.meters[hi] - route.meters[lo]) * f,
+  };
 }

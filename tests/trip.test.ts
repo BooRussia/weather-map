@@ -1,7 +1,8 @@
 import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import type { StopForecast } from '../src/data/openmeteo';
-import { sampleRoute, toRoute, type RoutePoint } from '../src/data/route';
+import { pointAt, toRoute, type RoutePoint } from '../src/data/route';
+import { clockAt, dayCount, nextLeave, sampleSchedule, scheduleDrive, zoneOffsetS } from '../src/data/schedule';
 import { stopSpacing } from '../src/data/trip';
 import { forecastHazards, inPolygon, overlaps, sortHazards, stopFlags, windowIn, type Hazard } from '../src/data/tripHazards';
 import { durationText, lightWeather } from '../src/ui/trip';
@@ -39,17 +40,96 @@ describe('route', () => {
     expect(route.duration).toBe(1800);
   });
 
-  it('samples by drive time, interpolating between vertices, and ends at the destination', () => {
-    const pts = sampleRoute(route, 0, 5);
+  it('finds the spot at a given drive time', () => {
+    expect(pointAt(route, 300).lon).toBeCloseTo(0.5); // halfway through the first 10 minutes
+    expect(pointAt(route, 900)).toMatchObject({ lon: 1.5, m: 1500 }); // a quarter into the second segment
+    expect(pointAt(route, 5000)).toMatchObject({ lon: 3, m: 3000 }); // past the end: the destination
+  });
+
+  it('samples a nonstop drive by drive time and ends at the destination', () => {
+    const [pts] = sampleSchedule(route, { days: [{ fromS: 0, toS: route.duration, leave: 0 }] }, 5);
     expect(pts.map((p) => p.at / MIN)).toEqual([0, 5, 10, 15, 20, 25, 30]);
-    expect(pts[1].lon).toBeCloseTo(0.5); // halfway through the first 10 minutes
-    expect(pts[3].lon).toBeCloseTo(1.5); // a quarter into the second segment
     expect(pts[pts.length - 1]).toMatchObject({ lon: 3, m: 3000 });
   });
 
   it('spaces forecast stops every 30 minutes, hourly on very long drives', () => {
     expect(stopSpacing(10 * 3600)).toBe(30);
     expect(stopSpacing(40 * 3600)).toBe(60);
+  });
+});
+
+describe('overnight stops', () => {
+  const H = 3_600_000;
+  /** 25 hours of driving due east, one degree an hour. */
+  const long = toRoute({
+    geometry: {
+      coordinates: [
+        [0, 0],
+        [25, 0],
+      ],
+    },
+    legs: [{ annotation: { duration: [25 * 3600], distance: [2_500_000] } }],
+  });
+  const utc = async () => 'UTC';
+  const depart = Date.UTC(2026, 9, 6, 9); // 9 AM UTC
+
+  it('starts the next day at the morning hour, after at least eight hours of rest', () => {
+    // Arrive 11:49 PM: 8 AM is more than 8 h away.
+    expect(nextLeave(Date.UTC(2026, 9, 6, 23, 49), 8, 0)).toBe(Date.UTC(2026, 9, 7, 8));
+    // Arrive 2 AM: 8 AM is too soon, so 10 AM.
+    expect(nextLeave(Date.UTC(2026, 9, 7, 2), 8, 0)).toBe(Date.UTC(2026, 9, 7, 10));
+    // 8 AM in a town five hours behind UTC is 13:00 UTC.
+    expect(nextLeave(Date.UTC(2026, 9, 6, 23), 8, -5 * 3600)).toBe(Date.UTC(2026, 9, 7, 13));
+    // Rounded up to a quarter hour.
+    expect(nextLeave(Date.UTC(2026, 9, 7, 2, 7), 8, 0)).toBe(Date.UTC(2026, 9, 7, 10, 15));
+  });
+
+  it('reads time-zone offsets, daylight saving included', () => {
+    expect(zoneOffsetS('America/Denver', Date.UTC(2026, 9, 6, 12))).toBe(-6 * 3600);
+    expect(zoneOffsetS('America/Denver', Date.UTC(2026, 0, 6, 12))).toBe(-7 * 3600);
+    expect(zoneOffsetS('UTC', Date.UTC(2026, 9, 6, 12))).toBe(0);
+  });
+
+  it('needs the fewest days that fit the limit, finishing a little over rather than adding a short day', () => {
+    expect(dayCount(25 * 3600, 10)).toBe(3);
+    expect(dayCount(25 * 3600, 12)).toBe(3); // not 12 + 12 + 1… but 24 h 15 min would fit in 2
+    expect(dayCount(24.5 * 3600, 12)).toBe(2);
+    expect(dayCount(10.5 * 3600, 10)).toBe(1);
+    expect(dayCount(40 * 3600, null)).toBe(1);
+  });
+
+  it('splits a long drive into equal days, each starting at the morning hour', async () => {
+    const sch = await scheduleDrive(long, depart, { maxDriveH: 10, startHour: 8 }, utc);
+    const third = 25 / 3;
+    expect(sch.days.map((d) => [d.fromS / 3600, d.toS / 3600])).toEqual([
+      [0, third],
+      [third, 2 * third],
+      [2 * third, 25],
+    ]);
+    // 9 AM start, 8 h 20 min a day: arrive 5:20 PM, leave 8 AM.
+    expect(sch.days.map((d) => new Date(d.leave).toISOString().slice(11, 16))).toEqual(['09:00', '08:00', '08:00']);
+    expect(clockAt(sch, sch.days[0].toS)).toBe(Date.UTC(2026, 9, 6, 17, 20)); // the boundary is the evening arrival
+    expect(clockAt(sch, 25 * 3600)).toBe(Date.UTC(2026, 9, 8, 16, 20));
+  });
+
+  it('starts mornings at local time where each night falls', async () => {
+    const sch = await scheduleDrive(long, depart, { maxDriveH: 10, startHour: 8 }, async () => 'America/Denver');
+    expect(new Date(sch.days[1].leave).toISOString().slice(11, 16)).toBe('14:00'); // 8 AM MDT
+  });
+
+  it('drives straight through when nonstop', async () => {
+    const sch = await scheduleDrive(long, depart, { maxDriveH: null, startHour: 8 }, utc);
+    expect(sch.days).toHaveLength(1);
+  });
+
+  it('samples each night as an arrival and a morning departure at the same spot', async () => {
+    const sch = await scheduleDrive(long, depart, { maxDriveH: 10, startHour: 8 }, utc);
+    const days = sampleSchedule(long, sch, 60);
+    const arrive = days[0][days[0].length - 1];
+    const leave = days[1][0];
+    expect(arrive.lon).toBeCloseTo(25 / 3);
+    expect(leave.lon).toBeCloseTo(25 / 3);
+    expect(leave.at - arrive.at).toBe(14 * H + 40 * MIN); // 5:20 PM to 8 AM
   });
 });
 

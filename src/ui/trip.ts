@@ -2,12 +2,12 @@ import type { LatLon } from '../config';
 import { glyphFor } from '../data/outlook';
 import { reverseName, searchPlaces, type Place } from '../data/photon';
 import { RouteError, type RoutePoint } from '../data/route';
-import { planTrip, stopSpacing, type TripPlan } from '../data/trip';
+import { zoneOffsetS } from '../data/schedule';
+import { deviceZone, planTrip, stopSpacing, type TripPlan, type TripStop } from '../data/trip';
 import { worse, type Hazard, type HazardKind, type HazardSource, type Level } from '../data/tripHazards';
 import type { AppState } from '../state';
 import { formatTemp } from '../util/units';
 import { $, h, svg } from './dom';
-import { timeShort } from './format';
 import {
   boltMark,
   closeIcon,
@@ -80,9 +80,64 @@ export function durationText(s: number): string {
 const distanceText = (m: number, s: AppState) =>
   s.tempUnit === 'F' ? `${Math.round(m / 1609.344).toLocaleString()} mi` : `${Math.round(m / 1000).toLocaleString()} km`;
 
-const t = (ms: number) => timeShort(new Date(ms));
-const span = (from: number, to: number) => (to - from < 10 * 60_000 ? `around ${t(from)}` : `${t(from)}–${t(to)}`);
+/**
+ * "3:40 PM", or "Wed 8:00 AM" on another day, in the place's own time zone,
+ * marked ("CDT") when its clock differs from this device's.
+ */
+export function clockText(ms: number, zone: string | null, now = Date.now()): string {
+  const here = deviceZone();
+  const tz = zone ?? here;
+  const day = (x: number) => new Date(x).toLocaleDateString('en-CA', { timeZone: tz });
+  const opts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', timeZone: tz };
+  if (day(ms) !== day(now)) opts.weekday = 'short';
+  if (zoneOffsetS(tz, ms) !== zoneOffsetS(here, ms)) opts.timeZoneName = 'short';
+  return new Date(ms).toLocaleString(undefined, opts);
+}
+
+/** A stop's time in its day's list: no weekday (the heading has it); the zone, if different, apart. */
+function stopClock(ms: number, zone: string | null): HTMLElement {
+  const here = deviceZone();
+  const tz = zone ?? here;
+  const time = new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: tz });
+  const abbr =
+    zoneOffsetS(tz, ms) !== zoneOffsetS(here, ms)
+      ? (new Intl.DateTimeFormat(undefined, { timeZone: tz, timeZoneName: 'short' }).formatToParts(ms).find((p) => p.type === 'timeZoneName')
+          ?.value ?? '')
+      : '';
+  return h('span', { class: 'stop-time' }, time, abbr ? h('span', { class: 'stop-tz' }, abbr) : null);
+}
+
+const t = clockText;
+const span = (from: number, to: number, zone: string | null) =>
+  to - from < 10 * 60_000 ? `around ${t(from, zone)}` : `${t(from, zone)}–${t(to, zone)}`;
 const short = (label: string) => label.split(',')[0];
+
+/** Hours of driving a day (0: nonstop), and the hour each later day starts. */
+const DAY_HOURS = [0, 8, 10, 12];
+const START_HOURS = [7, 8, 9];
+const TRIP_PREFS_KEY = 'weather-map:trip:v1';
+const hourLabel = (h: number) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: 'numeric' });
+
+function readTripPrefs(): { dayHours: number; startHour: number } {
+  const fallback = { dayHours: 10, startHour: 8 };
+  try {
+    const p = JSON.parse(localStorage.getItem(TRIP_PREFS_KEY) ?? '{}') as Partial<typeof fallback>;
+    return {
+      dayHours: DAY_HOURS.includes(p.dayHours ?? -1) ? p.dayHours! : fallback.dayHours,
+      startHour: START_HOURS.includes(p.startHour ?? -1) ? p.startHour! : fallback.startHour,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeTripPrefs(p: { dayHours: number; startHour: number }): void {
+  try {
+    localStorage.setItem(TRIP_PREFS_KEY, JSON.stringify(p));
+  } catch {
+    // Storage blocked: the choice lasts for this visit.
+  }
+}
 
 /** Minor things on the way, as one sentence: "Some rain and a chance of storms." */
 export function lightWeather(hs: Pick<Hazard, 'kind' | 'title'>[]): string {
@@ -287,12 +342,14 @@ export class TripPanel {
   private readonly to: PlaceField;
   private readonly when = h('input', { type: 'datetime-local', class: 'trip-when', 'aria-label': 'Leave at' });
   private readonly whenRow = h('div', { class: 'trip-when-row', hidden: true }, this.when);
+  private readonly startRow: HTMLElement;
   private readonly go = h('button', { type: 'submit', class: 'trip-go' }, 'Check the drive');
   private readonly form: HTMLFormElement;
   private readonly head = h('div', { class: 'trip-route' });
   private readonly status = h('p', { class: 'trip-status', role: 'status', hidden: true });
   private readonly results = h('div', { class: 'trip-out' });
   private leave: 'now' | 'later' = 'now';
+  private prefs = readTripPrefs();
   private plan: TripPlan | null = null;
   private labels = { from: '', to: '' };
   private names = new Map<number, string>();
@@ -318,12 +375,29 @@ export class TripPanel {
         if (v === 'later') this.limitWhen();
       },
     );
+    const perDay = segmented(
+      'Driving each day',
+      DAY_HOURS.map((n) => ({ value: String(n), label: n ? `${n} h` : 'Nonstop' })),
+      String(this.prefs.dayHours),
+      (v) => this.setPrefs({ dayHours: Number(v) }),
+    );
+    const mornings = segmented(
+      'Start each day at',
+      START_HOURS.map((n) => ({ value: String(n), label: hourLabel(n) })),
+      String(this.prefs.startHour),
+      (v) => this.setPrefs({ startHour: Number(v) }),
+    );
+    perDay.classList.add('seg-compact');
+    mornings.classList.add('seg-compact');
+    this.startRow = h('div', { class: 'trip-leave', hidden: !this.prefs.dayHours }, h('span', { class: 'trip-field-label' }, 'Mornings'), mornings);
     this.form = h(
       'form',
       { class: 'trip-form', novalidate: true },
       h('div', { class: 'group trip-fields' }, this.from.el, this.to.el),
       h('div', { class: 'trip-leave' }, h('span', { class: 'trip-field-label' }, 'Leave'), leave),
       this.whenRow,
+      h('div', { class: 'trip-leave' }, h('span', { class: 'trip-field-label' }, 'Each day'), perDay),
+      this.startRow,
       this.go,
     );
     this.form.addEventListener('submit', (e) => {
@@ -374,6 +448,12 @@ export class TripPanel {
   /** Re-render for new units or theme. */
   refresh(): void {
     this.render();
+  }
+
+  private setPrefs(patch: Partial<{ dayHours: number; startHour: number }>): void {
+    this.prefs = { ...this.prefs, ...patch };
+    this.startRow.hidden = !this.prefs.dayHours;
+    writeTripPrefs(this.prefs);
   }
 
   private setFolded(folded: boolean): void {
@@ -429,7 +509,8 @@ export class TripPanel {
     this.go.disabled = true;
     this.say('Checking the route and the weather along it…');
     try {
-      const plan = await planTrip(start, to, depart, t, ctrl.signal);
+      const opts = { maxDriveH: this.prefs.dayHours || null, startHour: this.prefs.startHour };
+      const plan = await planTrip(start, to, depart, opts, ctrl.signal);
       if (ctrl.signal.aborted) return;
       this.plan = plan;
       this.labels = { from: from.label, to: to.label };
@@ -448,16 +529,33 @@ export class TripPanel {
     }
   }
 
-  /** Stops listed: hourly (every forecast stop on long drives), plus any stop with weather to flag. */
+  /**
+   * Stops listed: hourly within each day (every forecast stop on long
+   * drives), every night, the ends, and any stop with weather to flag.
+   */
   private shown(plan: TripPlan): number[] {
     const every = stopSpacing(plan.route.duration) === 30 ? 2 : 1;
     const last = plan.stops.length - 1;
-    return plan.stops.map((_, i) => i).filter((i) => i % every === 0 || i === last || plan.stops[i].level);
+    const out: number[] = [];
+    let day = -1;
+    let j = 0;
+    plan.stops.forEach((s, i) => {
+      if (s.day !== day) {
+        day = s.day;
+        j = 0;
+      }
+      if (j % every === 0 || i === 0 || i === last || s.night || s.level) out.push(i);
+      j++;
+    });
+    return out;
   }
 
   private async loadNames(plan: TripPlan): Promise<void> {
     const run = ++this.nameRun;
-    const queue = this.shown(plan).filter((i) => i > 0 && i < plan.stops.length - 1);
+    // Where you'll sleep matters most: name the nights first.
+    const queue = this.shown(plan)
+      .filter((i) => i > 0 && i < plan.stops.length - 1)
+      .sort((a, b) => Number(!!plan.stops[b].night) - Number(!!plan.stops[a].night));
     const worker = async () => {
       for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
         if (run !== this.nameRun) return;
@@ -490,15 +588,27 @@ export class TripPanel {
     return this.names.get(i) ?? (this.hooks.state().tempUnit === 'F' ? `Mile ${Math.round(m / 1609.344)}` : `Km ${Math.round(m / 1000)}`);
   }
 
-  /** The nearest named stop to a point on the route. */
-  private near(pt: RoutePoint): string {
+  /** The stop nearest a point on the route, optionally only among named ones. */
+  private nearest(pt: RoutePoint, named: boolean): number {
     const p = this.plan!;
+    const last = p.stops.length - 1;
     let best = -1;
     for (const i of this.shown(p)) {
-      const named = i === 0 || i === p.stops.length - 1 || this.names.has(i);
-      if (named && (best < 0 || Math.abs(p.stops[i].m - pt.m) < Math.abs(p.stops[best].m - pt.m))) best = i;
+      if (named && i !== 0 && i !== last && !this.names.has(i)) continue;
+      if (best < 0 || Math.abs(p.stops[i].m - pt.m) < Math.abs(p.stops[best].m - pt.m)) best = i;
     }
-    return best < 0 ? 'On the way' : `Near ${short(this.nameOf(best))}`;
+    return best;
+  }
+
+  private near(pt: RoutePoint): string {
+    const i = this.nearest(pt, true);
+    return i < 0 ? 'On the way' : `Near ${short(this.nameOf(i))}`;
+  }
+
+  /** The time zone at a point on the route (its nearest stop's). */
+  private zoneAt(pt: RoutePoint): string | null {
+    const i = this.nearest(pt, false);
+    return i < 0 ? null : this.plan!.stops[i].zone;
   }
 
   private render(): void {
@@ -508,6 +618,9 @@ export class TripPanel {
     this.head.hidden = this.editing || !p;
     if (p && !this.editing) {
       const later = p.depart - Date.now() > 5 * 60_000;
+      const nights = p.schedule.days.length - 1;
+      const first = p.stops[0];
+      const end = p.stops[p.stops.length - 1];
       const edit = h('button', { type: 'button', class: 'trip-edit' }, 'Edit');
       edit.addEventListener('click', () => {
         this.editing = true;
@@ -522,7 +635,13 @@ export class TripPanel {
           h(
             'p',
             { class: 'trip-route-sub' },
-            [later ? `Leave ${t(p.depart)}` : null, durationText(p.route.duration), distanceText(p.route.distance, s), `Arrive ${t(p.arrive)}`]
+            [
+              later ? `Leave ${t(p.depart, first.zone)}` : null,
+              nights ? `${nights + 1} days, ${nights} ${nights === 1 ? 'night' : 'nights'}` : null,
+              `${durationText(p.route.duration)}${nights ? ' driving' : ''}`,
+              distanceText(p.route.distance, s),
+              `Arrive ${t(p.arrive, end.zone)}`,
+            ]
               .filter(Boolean)
               .join(' · '),
           ),
@@ -531,6 +650,68 @@ export class TripPanel {
       );
     }
     this.renderResults();
+  }
+
+  private wx(f: TripStop['forecast'], s: AppState, pop: boolean): HTMLElement | null {
+    if (!f) return null;
+    return h(
+      'span',
+      { class: 'stop-wx' },
+      svg(GLYPHS[glyphFor(f.weatherCode, f.isDay)]),
+      h('span', { class: 'stop-temp' }, Number.isFinite(f.tempF) ? formatTemp(f.tempF, s.tempUnit) : '--'),
+      pop ? h('span', { class: 'stop-pop' }, f.precipProbability >= 20 ? `${Math.round(f.precipProbability)}%` : '') : null,
+    );
+  }
+
+  private stopRow(i: number, s: AppState): HTMLElement {
+    const st = this.plan!.stops[i];
+    const night = st.night;
+    const flags = night
+      ? [
+          st.flags.length ? `Evening: ${st.flags.map((f) => f.title).join(', ')}` : null,
+          night.leaveFlags.length ? `Morning: ${night.leaveFlags.map((f) => f.title).join(', ')}` : null,
+        ].filter(Boolean)
+      : st.flags.map((f) => f.title);
+    const leaveTime = night
+      ? new Date(night.leave).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: st.zone ?? undefined })
+      : '';
+    const btn = h(
+      'button',
+      { type: 'button', class: `stop${night ? ' is-night' : ''}` },
+      stopClock(st.at, st.zone),
+      night
+        ? h('span', { class: 'stop-moon' }, svg(GLYPHS['clear-night']))
+        : h('span', { class: `stop-dot${st.level ? ` level-${st.level}` : ''}` }),
+      h(
+        'span',
+        { class: 'stop-main' },
+        night ? h('span', { class: 'stop-kicker' }, `Night ${night.n}`) : null,
+        h('span', { class: 'stop-place' }, this.nameOf(i)),
+        // The night's own line: tonight's weather, then tomorrow morning's as you leave.
+        night
+          ? h(
+              'span',
+              { class: 'stop-overnight' },
+              this.wx(st.forecast, s, false),
+              h('span', { class: 'stop-arrow' }, '→'),
+              this.wx(night.leaveForecast, s, false),
+              h('span', { class: 'stop-leave' }, `Leave ${leaveTime}`),
+            )
+          : null,
+        flags.length ? h('span', { class: `stop-flags level-${st.level}` }, flags.join(' · ')) : null,
+      ),
+      night ? null : this.wx(st.forecast, s, true),
+    );
+    btn.addEventListener('click', () => this.focus(st));
+    return h('li', {}, btn);
+  }
+
+  private hazardDetail(hz: Hazard, zone: string | null): string {
+    let detail = hz.detail;
+    if (hz.source === 'NWS' && hz.active) {
+      detail = hz.on && hz.on > hz.from ? `Starts ${t(hz.on, zone)}` : hz.off ? `Until ${t(hz.off, zone)}` : '';
+    }
+    return [detail, SOURCE[hz.source]].filter(Boolean).join(' · ');
   }
 
   private renderResults(): void {
@@ -545,6 +726,7 @@ export class TripPanel {
     const past = p.hazards.filter((hz) => !hz.active);
     const watch = active.filter((hz) => hz.level !== 'info');
     const worst = watch.reduce<Level | null>((l, hz) => worse(l, hz.level), null);
+    const nights = p.schedule.days.length - 1;
 
     const verdict = watch.length
       ? `${watch.length} ${watch.length === 1 ? 'thing' : 'things'} to watch`
@@ -556,9 +738,16 @@ export class TripPanel {
       : active.length
         ? lightWeather(active)
         : 'No alerts, outlooks, or rough weather expected along the way.';
-    this.sum.textContent = `${short(this.labels.to)} · ${watch.length ? `${watch.length} to watch` : 'clear'}`;
+    this.sum.textContent = [
+      short(this.labels.to),
+      nights ? `${nights} ${nights === 1 ? 'night' : 'nights'}` : null,
+      watch.length ? `${watch.length} to watch` : 'clear',
+    ]
+      .filter(Boolean)
+      .join(' · ');
 
     const hazardItem = (hz: Hazard) => {
+      const zone = this.zoneAt(hz.where);
       const btn = h(
         'button',
         { type: 'button', class: `hz level-${hz.level}${hz.active ? '' : ' is-past'}` },
@@ -567,40 +756,29 @@ export class TripPanel {
           'span',
           { class: 'hz-text' },
           h('span', { class: 'hz-title' }, hz.title),
-          h('span', { class: 'hz-when' }, `${this.near(hz.where)} · ${span(hz.from, hz.to)}`),
-          h('span', { class: 'hz-detail' }, [hz.detail, SOURCE[hz.source]].filter(Boolean).join(' · ')),
+          h('span', { class: 'hz-when' }, `${this.near(hz.where)} · ${span(hz.from, hz.to, zone)}`),
+          h('span', { class: 'hz-detail' }, this.hazardDetail(hz, zone)),
         ),
       );
       btn.addEventListener('click', () => this.focus(hz.where));
       return h('li', {}, btn);
     };
 
-    const stops = this.shown(p).map((i) => {
-      const st = p.stops[i];
-      const f = st.forecast;
-      const btn = h(
-        'button',
-        { type: 'button', class: 'stop' },
-        h('span', { class: 'stop-time' }, t(st.at)),
-        h('span', { class: `stop-dot${st.level ? ` level-${st.level}` : ''}` }),
-        h(
-          'span',
-          { class: 'stop-main' },
-          h('span', { class: 'stop-place' }, this.nameOf(i)),
-          st.flags.length ? h('span', { class: `stop-flags level-${st.level}` }, st.flags.map((fl) => fl.title).join(' · ')) : null,
-        ),
-        f
-          ? h(
-              'span',
-              { class: 'stop-wx' },
-              svg(GLYPHS[glyphFor(f.weatherCode, f.isDay)]),
-              h('span', { class: 'stop-temp' }, Number.isFinite(f.tempF) ? formatTemp(f.tempF, s.tempUnit) : '--'),
-              h('span', { class: 'stop-pop' }, f.precipProbability >= 20 ? `${Math.round(f.precipProbability)}%` : ''),
-            )
-          : null,
-      );
-      btn.addEventListener('click', () => this.focus(st));
-      return h('li', {}, btn);
+    // One list per driving day (a single "Along the way" list for a one-day drive).
+    const byDay = new Map<number, HTMLElement[]>();
+    for (const i of this.shown(p)) {
+      const d = p.stops[i].day;
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d)!.push(this.stopRow(i, s));
+    }
+    const dayLists = [...byDay].flatMap(([d, rows]) => {
+      const first = p.stops.find((st) => st.day === d)!;
+      const leave = p.schedule.days[d].leave;
+      const date = new Date(leave).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: first.zone ?? undefined });
+      return [
+        h('p', { class: 'group-label' }, nights ? `Day ${d + 1} · ${date}` : 'Along the way'),
+        h('ol', { class: 'group trip-stops' }, ...rows),
+      ];
     });
 
     const parts: (HTMLElement | null)[] = [
@@ -611,19 +789,18 @@ export class TripPanel {
         h('span', {}, h('span', { class: 'trip-verdict-title' }, verdict), h('span', { class: 'trip-verdict-sub' }, verdictSub)),
       ),
       active.length ? h('ul', { class: 'trip-hazards' }, ...active.map(hazardItem)) : null,
-      past.length
-        ? h('p', { class: 'group-label' }, 'On the route, but not while you’re there')
-        : null,
+      past.length ? h('p', { class: 'group-label' }, 'On the route, but not while you’re there') : null,
       past.length ? h('ul', { class: 'trip-hazards' }, ...past.map(hazardItem)) : null,
       p.failed.length
         ? h('p', { class: 'pop-note' }, `Couldn’t check ${p.failed.map((f) => SOURCE_PLURAL[f]).join(' or ')} just now.`)
         : null,
-      h('p', { class: 'group-label' }, 'Along the way'),
-      h('ol', { class: 'group trip-stops' }, ...stops),
+      ...dayLists,
       h(
         'p',
         { class: 'pop-note' },
-        'Times assume nonstop driving at typical speeds. Weather is the forecast for when you’ll be at each spot; tap one to see it on the map, with forecast radar when it’s within reach.',
+        nights
+          ? `Drive times are typical speeds with no breaks; nights fall where ${this.prefs.dayHours} hours of driving runs out, and each morning starts at ${hourLabel(this.prefs.startHour)} local time. Weather is the forecast for when you’ll be at each spot; tap one to see it on the map, with forecast radar when it’s within reach.`
+          : 'Drive times are typical speeds with no breaks. Weather is the forecast for when you’ll be at each spot; tap one to see it on the map, with forecast radar when it’s within reach.',
       ),
     ];
     this.results.replaceChildren(...parts.filter((n): n is HTMLElement => !!n));
@@ -635,4 +812,3 @@ export class TripPanel {
     this.hooks.focus(pt);
   }
 }
-

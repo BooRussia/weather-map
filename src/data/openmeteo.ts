@@ -258,6 +258,18 @@ export async function getGridSamples(points: LatLon[], pastHours: number, signal
   };
 }
 
+/** IANA time zone of each point ("America/Chicago"), from Open-Meteo's `timezone=auto`. */
+export async function getTimeZones(points: LatLon[], signal?: AbortSignal): Promise<string[]> {
+  const q = new URLSearchParams({
+    latitude: points.map((p) => c4(p.lat)).join(','),
+    longitude: points.map((p) => c4(wrapLon(p.lon))).join(','),
+    timezone: 'auto',
+    forecast_days: '1',
+  });
+  const r = await fetchJson<{ timezone: string }[] | { timezone: string }>(`${OPEN_METEO_FORECAST}?${q}`, { signal, timeoutMs: 10_000 });
+  return (Array.isArray(r) ? r : [r]).map((x) => x.timezone);
+}
+
 /** The forecast for one spot on a trip, for the hour you'll be there. */
 export interface StopForecast {
   tempF: number;

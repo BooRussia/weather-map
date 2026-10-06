@@ -42,6 +42,9 @@ export interface Hazard {
   where: RoutePoint;
   /** In effect while you're there. False: on the route, but not while you pass. */
   active: boolean;
+  /** NWS alerts: when it takes effect and ends, epoch ms (shown as "Until 8 PM" in local time). */
+  on?: number;
+  off?: number;
   url?: string;
 }
 
@@ -147,7 +150,7 @@ interface WwaProps {
 
 const ALERT_LEVEL: Record<string, Level> = { W: 'severe', A: 'caution', Y: 'caution', S: 'info' };
 
-function alertHazards(fc: FeatureCollection<Geometry, WwaProps>, samples: RoutePoint[], time: (ms: number) => string): Hazard[] {
+function alertHazards(fc: FeatureCollection<Geometry, WwaProps>, samples: RoutePoint[]): Hazard[] {
   // One alert can arrive as many zone polygons: merge them by alert.
   const byAlert = new Map<string, { h: Hazard; on: number; off: number }>();
   for (const f of fc.features) {
@@ -184,9 +187,9 @@ function alertHazards(fc: FeatureCollection<Geometry, WwaProps>, samples: RouteP
   }
   return [...byAlert.values()].map(({ h, on, off }) => {
     h.active = overlaps(h.from, h.to, on, off);
+    h.on = on || undefined;
+    h.off = Number.isFinite(off) ? off : undefined;
     if (!h.active) h.detail = off < h.from ? 'Ends before you get there' : 'Starts after you pass';
-    else if (on > h.from) h.detail = `Starts ${time(on)}`;
-    else if (Number.isFinite(off)) h.detail = `Until ${time(off)}`;
     return h;
   });
 }
@@ -238,13 +241,12 @@ function outlookHazard<P>(
 /** NOAA hazards along the route. Sources that fail are listed in `failed`; the rest still count. */
 export async function getRouteHazards(
   samples: RoutePoint[],
-  time: (ms: number) => string,
   signal?: AbortSignal,
 ): Promise<{ hazards: Hazard[]; failed: HazardSource[] }> {
   const failed = new Set<HazardSource>();
   const notMarine = `phenom NOT IN (${MARINE.map((m) => `'${m}'`).join(',')})`;
   const alerts = query<WwaProps>(WWA, lineQuery(samples, 'prod_type,sig,onset,ends,expiration,url', notMarine), signal)
-    .then((fc) => alertHazards(fc, samples, time))
+    .then((fc) => alertHazards(fc, samples))
     .catch(() => (failed.add('NWS'), []));
 
   const spc = SPC_LAYERS.map((layer) =>
