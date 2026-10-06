@@ -6,8 +6,8 @@ import { planGrid, rainIntensity, WeatherGrid, type FieldSample } from '../src/f
 import type { GridSample } from '../src/data/openmeteo';
 import { placeLabel, rankAlerts, type Alert, type NwsPoint } from '../src/data/nws';
 import { parseColor, toGray, desaturateStyle } from '../src/map/style';
-import { conditionLine } from '../src/ui/hud';
-import { reflow, shortPeriodName } from '../src/ui/panels';
+import { conditionLine } from '../src/ui/format';
+import { reflow, shortPeriodName } from '../src/ui/format';
 import { makeStrike } from '../src/layers/thunder';
 
 describe('wind vectors', () => {

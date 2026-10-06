@@ -47,11 +47,3 @@ export async function createMap(container: HTMLElement, center: LatLon): Promise
   // can start while the basemap is still streaming in.
   return map;
 }
-
-/** Thin crosshair marking the point the HUD describes. */
-export function createCrosshair(map: MlMap, at: LatLon): maplibregl.Marker {
-  const el = document.createElement('div');
-  el.className = 'crosshair';
-  el.setAttribute('aria-hidden', 'true');
-  return new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([at.lon, at.lat]).addTo(map);
-}

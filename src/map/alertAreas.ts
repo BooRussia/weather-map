@@ -62,6 +62,12 @@ export class AlertAreas {
     if (this.visible) void this.update(true);
   }
 
+  /** Theme change: Liquid draws alerts in system orange, Classic in amber. */
+  setColor(color: string): void {
+    if (this.map.getLayer(FILL)) this.map.setPaintProperty(FILL, 'fill-color', color);
+    if (this.map.getLayer(LINE)) this.map.setPaintProperty(LINE, 'line-color', color);
+  }
+
   setVisible(on: boolean): void {
     this.visible = on;
     for (const id of [FILL, LINE]) {

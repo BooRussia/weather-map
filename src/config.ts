@@ -28,7 +28,6 @@ export const NWS_USER_AGENT =
 
 export const NWS_BASE = 'https://api.weather.gov';
 export const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast';
-export const OPEN_METEO_GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search';
 
 /** Carto Dark Matter (vector). Credit: © CARTO © OpenStreetMap contributors. */
 export const BASEMAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';

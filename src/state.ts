@@ -1,4 +1,6 @@
 import type { Basemap, ColorMode, LatLon } from './config';
+
+export type Theme = 'liquid' | 'classic';
 import type { TempUnit, WindUnit } from './util/units';
 
 export interface AppState {
@@ -14,6 +16,8 @@ export interface AppState {
   rainStreaks: boolean;
   /** NWS warning/watch areas drawn on the map in the accent. */
   alertAreas: boolean;
+  /** Liquid (Apple-like, default) or Classic (the original black-and-amber). */
+  theme: Theme;
   /** The point the HUD describes. */
   selected: LatLon;
   /** The selected point came from the device location (shows the GPS arrow). */
@@ -34,6 +38,7 @@ interface Prefs {
   colorMode?: ColorMode;
   rainStreaks?: boolean;
   alertAreas?: boolean;
+  theme?: Theme;
 }
 
 function readPrefs(): Prefs {
@@ -58,6 +63,7 @@ function writePrefs(s: AppState): void {
       colorMode: s.colorMode,
       rainStreaks: s.rainStreaks,
       alertAreas: s.alertAreas,
+      theme: s.theme,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
@@ -77,6 +83,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     colorMode: prefs.colorMode === 'mono' ? 'mono' : 'color',
     rainStreaks: prefs.rainStreaks ?? false,
     alertAreas: prefs.alertAreas ?? true,
+    theme: prefs.theme === 'classic' ? 'classic' : 'liquid',
     selected,
     gps,
   };
@@ -94,7 +101,8 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.colorMode ||
         patch.sound !== undefined ||
         patch.rainStreaks !== undefined ||
-        patch.alertAreas !== undefined
+        patch.alertAreas !== undefined ||
+        patch.theme !== undefined
       ) {
         writePrefs(state);
       }

@@ -1,44 +1,76 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="liquid">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="color-scheme" content="dark" />
-    <meta name="description" content="Live wind and rain over a dark map." />
+    <meta name="description" content="Live radar, wind, and forecasts over a satellite map." />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Weather Map" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Weather Map</title>
+    <script>
+      // Apply the saved theme before first paint so there is no flash.
+      try {
+        var p = JSON.parse(localStorage.getItem('weather-map:prefs:v2') || '{}');
+        if (p.theme === 'classic') document.documentElement.dataset.theme = 'classic';
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="map" class="map"></div>
     <canvas id="wind-canvas" class="layer-canvas" aria-hidden="true"></canvas>
     <canvas id="fx-canvas" class="layer-canvas" aria-hidden="true"></canvas>
+    <div id="reticle" class="reticle" aria-hidden="true" hidden></div>
 
-    <header class="hud">
-      <button id="hud-readout" class="hud-readout" type="button">
-        <span class="hud-place-row">
-          <span id="hud-gps" class="hud-mark" hidden></span>
-          <span id="hud-place" class="hud-place"></span>
-          <span id="hud-chevron" class="hud-mark"></span>
-        </span>
-        <span id="hud-temp" class="hud-temp"></span>
-        <span id="hud-cond" class="hud-cond"></span>
-        <span id="hud-hilo" class="hud-hilo"></span>
-      </button>
-    </header>
-
-    <div class="top-right">
-      <button id="gear" class="gear" type="button" aria-label="Settings"></button>
-      <button id="alert-tag" class="alert-tag" type="button" hidden><span id="alert-tag-text"></span></button>
+    <!-- Top: search -->
+    <div class="top">
+      <form id="search-form" class="search glass" role="search" autocomplete="off">
+        <span class="search-icon" id="search-icon"></span>
+        <input
+          id="search"
+          class="search-input"
+          type="search"
+          inputmode="search"
+          enterkeyhint="search"
+          placeholder="Search city or address"
+          aria-label="Search city or address"
+          aria-controls="search-results"
+          aria-expanded="false"
+          aria-autocomplete="list"
+          role="combobox"
+        />
+      </form>
+      <ul id="search-results" class="search-results glass" role="listbox" hidden></ul>
     </div>
 
-    <div class="bottom">
-      <p id="note" class="note" role="status" aria-live="polite"></p>
-      <div id="timeline" class="timeline">
+    <!-- Readout for the selected point -->
+    <div class="left-stack">
+    <button id="capsule" class="capsule glass" type="button">
+      <span id="cap-kicker" class="cap-kicker" hidden>My location</span>
+      <span class="cap-place-row"><span id="cap-gps" class="cap-gps" hidden></span><span id="cap-place" class="cap-place">Locating</span></span>
+      <span id="cap-temp" class="cap-temp">--°</span>
+      <span id="cap-cond" class="cap-cond"></span>
+      <span id="cap-hilo" class="cap-hilo"></span>
+    </button>
+    <button id="alert-pill" class="alert-pill glass" type="button" hidden><span id="alert-pill-icon"></span><span id="alert-pill-text"></span></button>
+    </div>
+
+    <!-- Map controls -->
+    <div class="controls glass">
+      <button id="layers-btn" class="ctrl" type="button" aria-label="Layers" aria-haspopup="dialog" aria-expanded="false"></button>
+      <span class="ctrl-sep" aria-hidden="true"></span>
+      <button id="locate-btn" class="ctrl" type="button" aria-label="Show my location" aria-pressed="false"></button>
+    </div>
+    <div id="layers-menu" class="popover glass-thick" role="dialog" aria-label="Map layers" hidden></div>
+
+    <!-- Bottom: timeline + credits -->
+    <div class="dock">
+      <p id="note" class="note glass" role="status" aria-live="polite"></p>
+      <div id="timeline" class="timeline glass">
         <div class="tl-row">
           <button id="tl-play" class="tl-play" type="button" aria-label="Play radar timeline" title="Play / pause (Space)"></button>
           <span class="tl-label">
@@ -52,33 +84,37 @@
         <input id="tl-range" class="tl-range" type="range" min="-24" max="0" step="1" value="0" aria-label="Radar time" title="Drag, or use ← → to step an hour" />
         <div id="tl-scale" class="tl-scale" aria-hidden="true"></div>
       </div>
-      <nav class="layer-bar" aria-label="Map layers">
-        <button class="layer-toggle" data-layer="wind" type="button" aria-label="Wind" title="Wind"></button>
-        <button class="layer-toggle" data-layer="rain" type="button" aria-label="Rain" title="Rain"></button>
-        <button class="layer-toggle" data-layer="thunder" type="button" aria-label="Thunder" title="Thunder"></button>
-        <button class="layer-toggle" data-layer="clouds" type="button" aria-label="Clouds (live satellite)" title="Clouds"></button>
-      </nav>
-      <footer class="attribution">
+      <footer class="credits">
         <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
         <span> · <a href="https://www.weather.gov/" target="_blank" rel="noopener">NWS</a></span>
         <span data-credit="iem" hidden> · <a href="https://mesonet.agron.iastate.edu/" target="_blank" rel="noopener">IEM</a></span>
         <span data-credit="goes" hidden> · <a href="https://nowcoast.noaa.gov/" target="_blank" rel="noopener">NOAA GOES</a></span>
         <span data-credit="esri" hidden> · <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri, Vantor, Earthstar Geographics, GIS User Community</a></span>
+        <span> · <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a></span>
         <span> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></span>
         <span> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></span>
       </footer>
     </div>
 
-    <aside id="side" class="side" aria-labelledby="side-title" hidden>
-      <header class="sheet-head">
-        <h2 id="side-title" class="sheet-title"></h2>
-        <button id="side-close" class="sheet-close" type="button" aria-label="Close details"></button>
-      </header>
-      <div id="side-body" class="sheet-body"></div>
-    </aside>
+    <!-- Weather page: live sky + cards (full screen on phones, docked on desktop) -->
+    <section id="page" class="page" role="dialog" aria-modal="true" aria-labelledby="page-place" hidden>
+      <canvas id="sky" class="sky" aria-hidden="true"></canvas>
+      <div class="page-scroll" id="page-scroll">
+        <header class="page-head">
+          <p id="page-kicker" class="page-kicker" hidden>My location</p>
+          <h2 id="page-place" class="page-place">Locating</h2>
+          <p id="page-temp" class="page-temp">--°</p>
+          <p id="page-cond" class="page-cond"></p>
+          <p id="page-hilo" class="page-hilo"></p>
+        </header>
+        <div id="page-body" class="page-body"></div>
+      </div>
+      <button id="page-close" class="round-btn glass page-close" type="button" aria-label="Back to map"></button>
+    </section>
 
+    <!-- Settings -->
     <div id="scrim" class="scrim"></div>
-    <section id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <section id="sheet" class="sheet glass-thick" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
       <header id="sheet-head" class="sheet-head">
         <h2 id="sheet-title" class="sheet-title"></h2>
       </header>

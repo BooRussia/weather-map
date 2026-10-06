@@ -1,4 +1,4 @@
-import { OPEN_METEO_FORECAST, OPEN_METEO_GEOCODE, type LatLon } from '../config';
+import { OPEN_METEO_FORECAST, type LatLon } from '../config';
 import { fetchJson } from '../util/http';
 import { wrapLon } from '../util/geo';
 
@@ -256,39 +256,6 @@ export async function getGridSamples(points: LatLon[], pastHours: number, signal
       })),
     ),
   };
-}
-
-export interface GeocodeResult {
-  name: string;
-  region: string;
-  country: string;
-  lat: number;
-  lon: number;
-}
-
-interface GeocodeResponse {
-  results?: {
-    name: string;
-    latitude: number;
-    longitude: number;
-    country_code: string;
-    country: string;
-    admin1?: string;
-  }[];
-}
-
-/** Place search for the settings sheet. US results are listed first. */
-export async function geocode(name: string, signal?: AbortSignal): Promise<GeocodeResult[]> {
-  const q = new URLSearchParams({ name, count: '8', language: 'en', format: 'json' });
-  const r = await fetchJson<GeocodeResponse>(`${OPEN_METEO_GEOCODE}?${q}`, { signal });
-  const results = (r.results ?? []).map((x) => ({
-    name: x.name,
-    region: x.admin1 ?? '',
-    country: x.country_code,
-    lat: x.latitude,
-    lon: x.longitude,
-  }));
-  return results.sort((a, b) => Number(b.country === 'US') - Number(a.country === 'US'));
 }
 
 /** WMO weather interpretation codes, as Open-Meteo documents them. */

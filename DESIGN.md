@@ -2,65 +2,85 @@
 
 Locked. Every surface reads this file. Do not restyle per screen.
 
+On 2026-10-05 the owner asked for an Apple-like redesign (liquid glass, Apple's system colors, rounded corners, spring motion, live weather backgrounds) and then chose to keep the original black-and-amber language as a second theme. There are two themes over one layout:
+
+- **Liquid** (default): everything in the sections below.
+- **Classic**: the original language, defined under "Classic theme" at the end. Same layout and components; only the tokens change.
+
+Liquid intentionally allows glass, several semantic colors, one rounded radius family, and motion longer than 200ms; those are owner decisions, not drift. Anything not written here is still out. Settings → Appearance switches themes; the choice is remembered.
+
 ## Color
-- background: #000000
-- foreground: #f0f0fa
-- muted: #8a8a96
-- hairline: #2a2a2a
-- accent: #f5a623
-- accent-on: #000000
+- background: #000000 (behind the map and the weather page while they load)
+- foreground: #ffffff (primary label)
+- muted: rgba(235, 235, 245, 0.62) (secondary label)
+- hairline: rgba(255, 255, 255, 0.14) (separators inside glass)
+- accent: #0a84ff (system blue: your location, selected state, links)
+- accent-on: #ffffff
 
-Neutrals only besides `accent`. No second chromatic color. `#000` and `#fff` are allowed.
+Semantic colors (Apple dark-mode system palette), each with one job:
+- `cyan` #64d2ff: precipitation (chance %, next-hours bars, rain icons' drops)
+- `yellow` #ffd60a: sun, lightning bolt, warning icon
+- `orange` #ff9f0a: NWS alert areas on the map and the alert pill's icon
+- Temperature ramp for range bars only: ≤32° #5e5cf0, 45° #0a84ff, 55° #64d2ff, 65° #30d158, 75° #ffd60a, 85° #ff9f0a, ≥95° #ff453a.
+- UV ramp for the UV bar only: green → yellow → orange → red → purple.
+- Radar keeps the NWS reflectivity scale (Color) or grayscale (Mono); the legend shows it.
 
-- `accent` means one thing: an active NWS alert. It fills the alert tag and draws alert areas on the map (warnings: 1.5px outline + 14% fill; watches: 7% fill, no outline). Not links, not focus rings, not lightning, not icons, not any other data.
-- HUD control surface: `background` at 0.85 opacity (`rgba(0,0,0,0.85)`).
-- Status remap: errors, loading, offline, and "no storms in view" all use `muted` text. Only an active alert uses `accent`.
-- Particle layers are neutral: wind in `foreground`, rain streaks in `foreground`/`muted` at reduced alpha (off by default), lightning in `foreground`. Clouds (GOES infrared) are grayscale. In Mono, radar and the satellite basemap are grayscale too, and the dark basemap is always desaturated at load. Alpha varies with data; hue does not, except under the one exception below.
-- Imagery exception (owner-requested, 2026-10-05): Settings → Map → Colors → Color shows imagery in its own colors: the NWS reflectivity scale on radar (blue/green light through yellow, orange, red heavy) and true color on the satellite basemap, dimmed so particles and HUD type stay readable. It applies to those raster layers only. The owner made Color with the Satellite basemap the first-load default on 2026-10-05; Mono stays one tap away in Settings. These are data, not a palette: no UI element may borrow these hues, and NWS orange is never a second accent. The one exception is the radar legend bar, which shows that same scale, only while Colors is Color and Rain is on. Forecast (HRRR) radar frames draw at 75% of observed radar opacity so the model's trace wash doesn't cover the map.
+No other hues. Weather-page skies use the gradients listed under Materials; they are backgrounds, not UI color.
 
 ## Type
-- text: IBM Plex Sans (self-hosted, weights 300 / 400 / 500). D-DIN Exp is the preferred face if it is ever self-hosted; it would replace Plex everywhere, not alongside it.
+- text: SF Pro on Apple devices (the browser's system font there), Inter Variable with optical sizing everywhere else (self-hosted). Stack: `-apple-system, BlinkMacSystemFont, "Inter Variable", sans-serif`. Named here on purpose; it is not an unchosen default.
 - mono: None
-- sizes: display 72px (temperature, weight 300) / body 16px (condition line, sheet text, inputs; 16px also stops iOS zooming into focused fields) / meta 11px (place name, labels, attribution; uppercase where used as a label, tracking 0.12em)
+- sizes: hero 96px weight 200 (weather-page temperature) / display 64px weight 200 (map capsule temperature) / title 20px weight 500 / body 17px / callout 15px / footnote 13px / caption 12px uppercase weight 600, tracking 0.04em (card headers, like Apple's "HOURLY FORECAST")
 
-One family. Basemap labels come from the tile provider's glyphs; they are map ornament, not UI type. HUD text over the live map may carry a neutral `#000` text-shadow halo for legibility; it is not a decorative effect.
+Crisp and soft: antialiased, `optimizeLegibility`, tight negative tracking on large numbers (−0.03em), proportional figures on hero numbers, tabular figures where numbers stack in columns. Text on glass is white or `muted`; never gray on a colored fill.
 
 ## Radius
-- family: all-sharp
-- value: 0
-- exception: Pill (9999px) on the bottom layer toggle buttons (Wind, Rain, Thunder, Clouds) only; every other radius stays 0, including the alert tag, the gear button, the sheet, inputs, and segmented controls.
+- family: all-soft
+- value: 22 (cards, sheets, popovers, the search field and the timeline card)
+- exception: Fully round on circular controls only: icon buttons, the location dot, switch knobs, and the scrubber handle.
 
-The brief calls the alert an "alert pill". It is a sharp tag: the radius lock wins over the word.
+Controls inside a card that need a smaller curve (segmented controls, list rows) use 12, the inner radius of a 22 card with 10px padding. That follows from the family; it is not a second one.
 
 ## Space
 - base: 4px
 
 ## Motion
-- duration: 160ms (never over 200ms)
-- easing: ease-out
+- duration: 200ms for state changes (switches, hover, pressed); 420ms for sheets and the weather page.
+- easing: `cubic-bezier(0.32, 0.72, 0, 1)` (Apple's sheet curve) for sheets and the page; `ease-out` for everything else. No bounce, no elastic, no overshoot.
+- Live layers (wind, rain, lightning, radar timeline) and weather-page skies animate continuously: they are content.
+- The location dot's halo pulses (2s, ease-out): it is the one decorative loop, and it says "this is live".
+- `prefers-reduced-motion`: UI transitions drop to none, skies hold a still frame, the halo stops. Map data layers keep running.
 
-No linear. No ease-in. No bounce. No elastic.
-
-- UI motion is allowed only for: sheet open/close, toggle state change, alert tag appearing.
-- Wind particles, rain streaks, lightning, and the radar loop are data layers, not UI motion. They may animate continuously. A lightning flash lasts under 400ms. Timeline playback steps one hour about every 0.65 s and holds briefly on the last hour.
-- `prefers-reduced-motion`: UI transitions drop to none. Data layers keep running because they are the content.
+## Materials
+- Glass (liquid): `backdrop-filter: blur(24px) saturate(180%)` over the live map, fill `rgba(30, 30, 34, 0.42)`, a 1px border that is brighter at the top (`rgba(255,255,255,0.28)` fading to `0.06`), an inner top highlight, and a soft shadow (`0 10px 30px rgba(0,0,0,0.35)`). Thick glass (sheets, popovers): fill `0.62`.
+- Glass sits only on chrome that floats over the map or the sky: search, capsule, controls, timeline card, popovers, sheets, weather-page cards. Never glass on glass: a card inside a glass sheet is a plain inset group.
+- Weather-page skies (top → bottom): clear day `#2c7be5 → #6cb8f0`, clear night `#070b1f → #1d2a4a`, cloudy day `#5f6f84 → #9aa9bb`, cloudy night `#151c28 → #2b3545`, rain `#323f50 → #5a6a7d`, storm `#141a24 → #34404f`, snow `#7f8b99 → #c3ccd6`, fog `#8a9098 → #bcc2c8`. Effects drawn over them: sun glow, stars, drifting clouds, rain streaks, snow, fog bands, lightning flashes.
 
 ## Surfaces
-- HUD text floats on the map with no card behind it.
-- Controls are either solid `rgba(0,0,0,0.85)` or a ghost 1px outline on transparent black.
-- The sheet is one solid `#000` surface with a `hairline` top edge. Sections are separated by hairlines, never boxed. No nested cards.
-- No glass, frost, or backdrop blur. No gradients on chrome. No equal feature grids.
+- The map is full-bleed. Floating chrome is glass.
+- The weather page (opened from the capsule) is Apple Weather's main screen: a live sky for the current weather behind a scrolling column of glass cards. Full screen on phones; a docked right column (400px) at 1100px and wider.
+- No nested cards. Inside a card, separate with hairlines and space.
 
 ## Components
-- Layer toggle (pill, the one radius exception): 64×48, 12px apart; 56×48, 8px apart below 360px wide. Active: `rgba(0,0,0,0.85)` fill, 1px `foreground` outline, filled `foreground` icon. Inactive: transparent black, 1px `muted` outline, outline `muted` icon.
-- Alert tag: `accent` fill, `accent-on` text, meta size, uppercase, sharp. Shown only while an NWS alert is active for the selected point.
-- Gear: 44×44 square, `rgba(0,0,0,0.85)`, `foreground` icon.
-- Attribution strip: meta size or smaller, `muted`, bottom-left. Credits for optional imagery (Esri, NOAA GOES) appear only while that imagery is on screen; the strip may wrap to two lines.
-- Selected point: a 1px `foreground` crosshair on the map, no dot, no fill.
-- HUD lines: place (meta, uppercase; a small arrow when it is your GPS location; a chevron hinting the detail sheet), temperature (display), condition (body), high/low (body, `H 78°  L 72°`).
-- Timeline (play bar): a 44×44 sharp ghost play button, the frame time in body with its kind in meta ("Radar · −3 h", "Forecast radar · +5 h", "Live radar"), the radar legend at the row's end in Color mode, then a native range input restyled: 2px track, observed hours in `foreground` and forecast hours in `muted`, split at now; a 4×22 sharp `foreground` handle with a 2px black ring; meta scale labels (−24 h, −12 h, Now in `foreground`, the last forecast hour). Full width on phones, at most 640px on wider screens.
-- Docked panel (1100px and wider): the detail sheet's content in a fixed 380px right column, solid `#000`, `hairline` left edge, no scrim; the map stays interactive, its center shifts left by padding, and the top-right and bottom controls move beside it. Open by default; the HUD and the close button toggle it.
-- Detail sheet blocks, top to bottom, separated by hairlines: alert row, next 2 hours, hourly strip, 7 days, details, sources.
-- Charts: one series, `foreground` marks, no fills beyond the mark, 2px gaps between bars, sharp ends (the radius lock applies to marks), one solid hairline baseline, no dashed guides, tabular figures where numbers align.
-- Range bar (7 days): `hairline` track, `foreground` segment for the day's low→high on the week's scale, a 2px `foreground` tick for the current temperature on today.
-- Spec rows: uppercase meta label, a solid hairline leader, value in body with tabular figures.
+- Search field: glass pill-shaped field (radius 22), magnifier, placeholder "Search city or address", results in a glass popover beneath it.
+- Weather capsule: glass card, top-left under search: place (with a small location arrow when it is your GPS location), temperature (display), condition, `H:87° L:76°`. Tapping opens the weather page.
+- Alert pill: glass, under the capsule, orange ⚠ + event name. Shown only while an NWS alert is active at the selected point.
+- Map controls: one glass column, top-right: layers button, hairline, locate button. Locate is filled blue while the map follows you.
+- Location dot: 16px `accent` circle, 3px white ring, soft shadow, pulsing halo.
+- Center reticle: thin white cross with a gap and a soft shadow, at the map's visual center whenever the selected point is "wherever the map is centered". Dragging shows it; the readout updates when the map settles.
+- Layers popover: thick glass list in iOS style: map style segmented control (Satellite / Dark), switches for Radar, Wind, Lightning, Clouds, Alert areas, Falling rain; Radar colors (Color / Mono); a "Units & sound" row.
+- Timeline card: glass, bottom: round play button, time ("Now", "Tue 3 PM") with kind ("Live radar", "Radar · −3 h", "Forecast radar · +5 h"), radar legend in Color mode, a scrubber with a white round handle, observed hours bright and forecast hours dim, scale labels.
+- Weather-page cards (glass, radius 22, 16px padding, caption headers with a small icon): alert, next 2 hours (cyan bars), hourly (horizontal strip, sunrise/sunset cells), 7 days (temperature-ramp range bars with a white "now" dot), then a two-column grid of detail tiles: feels like, UV (ramp bar), wind (compass), humidity, sunset/sunrise (arc), visibility, pressure (gauge), precipitation.
+- Settings sheet: thick glass, iOS grouped rows.
+- Credits: footnote text, `muted`, bottom-left under the timeline card.
+
+## Classic theme
+
+The original language (2026-10-05 v1), kept as a theme. Same layout and components as Liquid; these tokens replace Liquid's.
+
+- Color: background #000000, foreground #f0f0fa, muted #8a8a96, hairline #2a2a2a, accent #f5a623 (an active NWS alert only: the alert pill and alert areas on the map), accent-on #000000. No other hues: the location dot is white with a black ring, weather glyphs are `foreground` line icons, precipitation and temperature bars are `foreground`, the radar legend and Color radar remain the documented imagery exception.
+- Type: IBM Plex Sans (self-hosted, 300/400/500). Sizes: display 72px weight 300 / body 16px / meta 11px uppercase, tracking 0.12em.
+- Radius: all-sharp, 0. Exception: the location dot and the scrubber handle are round (a dot is a dot).
+- Materials: no blur. Floating chrome is solid `rgba(0,0,0,0.85)` with a `hairline` border; sheets and the weather page are solid `#000`.
+- Motion: 160ms `ease-out` for everything, including sheets and the page. The location halo does not pulse.
+- Weather-page sky: black, with the same effects drawn in white at low alpha (rain streaks, snow, stars, fog bands, lightning flashes); no colored gradients.

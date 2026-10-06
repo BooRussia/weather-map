@@ -86,3 +86,17 @@ Skip:
 | Alert areas (warnings outlined, watches tinted) | MyRadar | map, amber |
 | Radar timeline (−24 h → HRRR forecast) with frame time | MyRadar, Windy | above the layer buttons |
 | Radar color legend | MyRadar | in the timeline row, Color mode only |
+
+## Redesign (2026-10-05): Liquid and Classic themes
+
+The owner then asked for Apple's look outright and chose to keep the original style as a second theme. Several items skipped above are now taken, in the **Liquid** theme only:
+
+| Previously skipped | Now |
+| --- | --- |
+| Frosted / liquid glass | Floating chrome and weather-page cards are glass |
+| Animated sky background | The weather page has a live sky for the current weather and time of day |
+| Equal widget grid | Two-column detail tiles (feels like, UV, wind compass, humidity, sun arc, visibility, pressure gauge, precipitation) |
+| Colored temperature / UV gradients | Temperature-ramp range bars and a UV ramp |
+| SF Symbols-style multicolor icons | Yellow sun, white clouds, cyan drops, yellow bolt |
+
+Also new in both themes: a city/address search bar, a blue location dot with a locate button, and a center cross that picks the point while you drag. **Classic** keeps the original tokens (black, white, one amber accent, sharp corners, IBM Plex, no blur) over the same layout.

@@ -1,24 +1,29 @@
 # Weather Map
 
-Live wind and rain over a dark map, phone first. One screen: the map is the app.
+Live radar, wind, and forecasts over a satellite map, phone first. One screen: the map is the app.
 
 **Live:** https://boorussia.github.io/weather-map/
 
-- **Wind**: particles that follow the wind direction; speed and brightness scale with wind speed.
-- **Rain**: falling streaks, denser where precipitation is heavier and more likely, over the NWS radar. Settings → Map → **Colors → Color** shows the NWS intensity scale (blue/green light, yellow/orange moderate, red heavy). Settings → Rain → **Falling rain → Off** hides the streaks so only the radar shows. These choices are remembered.
-- **Thunder**: approximate lightning (see below) with a short procedural crackle; the sound can be turned off in Settings.
-- **Clouds**: live GOES weather-satellite imagery (infrared, so it works at night), a few minutes old.
-- **Map style**: Settings → Map → Style switches between the dark map and **Satellite** aerial imagery, with place names and state lines kept on top. **Colors: Mono / Color** applies to both the radar and the satellite imagery.
-- **Timeline (play bar)**: scrub or play radar from **24 hours ago, through now, into the forecast** (HRRR simulated radar, as far as the latest run reaches, about 15–18 hours). Past hours are archived NEXRAD radar, now is the live NWS mosaic, future hours are the model. Wind and falling-rain particles follow the same hour. In Color mode a legend shows the intensity scale. On a keyboard: Space plays/pauses, ← → step an hour, Home returns to now.
-- **Opens on**: the Satellite map with Color radar and the falling-rain animation off (change any of it in Settings; your choice is remembered).
-- **Desktop**: at 1100px and wider the detail panel stays docked on the right while the map stays usable; the temperature toggles it.
-- **Alert areas**: active NWS warnings are outlined on the map in amber and watches are lightly tinted (Settings → Map → Alert areas). Amber only ever means an active alert.
-- **HUD**: place (with an arrow when it's your GPS location), temperature, condition, and today's high/low. Tap the map to read conditions for that point. An amber ⚠ tag appears only while an NWS alert is active there.
-- **Detail sheet** (tap the temperature): alert rows with end times, a plain-language next-2-hours rain line with 15-minute bars, a 24-hour strip with sunrise/sunset, 7 days with temperature range bars, and a spec-sheet list of details (feels like, humidity, dew point, wind, gusts, pressure, visibility, UV, sunrise, sunset).
+### Two themes
+- **Liquid** (default): close to Apple's own apps. Liquid-glass controls, SF Pro on iPhone/Mac (Inter elsewhere), system colors, and a weather page with a live sky.
+- **Classic**: the original black-and-amber look, sharp corners, IBM Plex.
 
-Which ideas came from which apps, and what was left out, is logged in `docs/inspiration.md`.
+Switch under Layers → Units, sound & appearance → Theme. The choice is remembered. Both themes share one layout; `DESIGN.md` defines both.
 
-`PRODUCT.md` is the brief. `DESIGN.md` is the locked visual language; read it before changing any UI.
+### On the map
+- **Search** (top): cities and street addresses, suggestions as you type, nearby results first. Press `/` on a keyboard to jump to it.
+- **You** are the blue dot. The **locate button** (top right, under Layers) snaps the map back to you and fills in blue while it follows you.
+- **Drag, tap, or search** and the readout switches to whatever is under the **center cross**; it reloads when the map settles.
+- **Readout** (glass card): place ("My location" when it's you), temperature, condition, `H:87° L:76°`. Tap it for the weather page.
+- **Alert pill**: appears under the readout while an NWS alert is active there; tap for the full text.
+- **Layers** popover: map style (Satellite / Dark); Radar, Wind, Lightning (approximate, with a crackle you can mute), Clouds (live GOES satellite), Alert areas (warnings outlined, watches tinted); radar Colors (Color / Mono); Falling rain.
+- **Timeline** (bottom): scrub or play radar from **24 hours ago, through now, into the forecast** (HRRR simulated radar, as far as the latest run reaches, about 15–18 hours). Past hours are archived NEXRAD radar, now is the live NWS mosaic, future hours are the model. Wind and falling-rain particles follow the same hour. On a keyboard: Space plays/pauses, ← → step an hour, Home returns to now.
+- **Opens on** the Satellite map with Color radar, Radar and Wind on, falling rain off.
+
+### Weather page
+Apple Weather's main screen for the selected point: a live sky that matches the current weather and time of day (clear, cloudy, rain, storm, snow, fog; day or night) behind glass cards. It shows alerts (tap to expand), the next 2 hours of rain in plain words with 15-minute bars, an hourly strip with sunrise/sunset, 7 days with temperature-colored range bars, and tiles for feels like, UV, wind (compass), humidity, sunrise/sunset, visibility, pressure (gauge), and precipitation. On phones it slides up full screen (swipe down or ✕ to close); at 1100px and wider it stays docked on the right.
+
+Which ideas came from which apps is logged in `docs/inspiration.md`. `PRODUCT.md` is the brief; `DESIGN.md` is the locked visual language; read it before changing any UI.
 
 ## Run
 
@@ -52,11 +57,13 @@ How it's sent: every NWS request includes `User-Agent: <your value>`. NWS allows
 | [NWS radar mosaic](https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer) | Radar under the Rain layer (grayscale or color) | U.S. government data, no key. US coverage only. |
 | [NWS warnings map service](https://mapservices.weather.noaa.gov/eventdriven/rest/services/WWA/watch_warn_adv/MapServer) | Alert areas (warnings and watches; marine and advisories filtered out) | U.S. government data, no key. |
 | [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/ogc/) | Timeline: archived NEXRAD composite (past 24 h) and HRRR simulated radar (forecast) | Free, no key; NEXRAD and HRRR are NOAA data. CONUS coverage. Frames load only as you scrub or play (about 8 kept at a time). |
+| [Photon by Komoot](https://photon.komoot.io/) | Search (cities and addresses) and place names outside NWS coverage | Free, no key, fair use; OpenStreetMap data (© OpenStreetMap contributors). |
 | [NOAA nowCOAST](https://nowcoast.noaa.gov/) | Clouds layer: GOES East + West longwave infrared | U.S. government data, no key. Covers the Americas and eastern Pacific. |
 | [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) | Satellite map style | Credit: Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Fine for personal and non-commercial use; check Esri's terms (or get a free ArcGIS Location Platform key) before a commercial launch. |
-| [Open-Meteo](https://open-meteo.com/) | Wind + precipitation grid for the particles; hourly, 7-day, next-2-hours, and details for the detail sheet; temperature fallback; place search | **CC BY 4.0**, attribution required. Free tier: non-commercial, 10,000 calls/day. |
+| [Open-Meteo](https://open-meteo.com/) | Wind + precipitation grid for the particles; hourly, 7-day, next-2-hours, and details for the weather page; temperature fallback | **CC BY 4.0**, attribution required. Free tier: non-commercial, 10,000 calls/day. |
 | [CARTO Dark Matter](https://carto.com/basemaps) | Basemap (converted to grayscale at load) | © CARTO © OpenStreetMap contributors. Check CARTO's basemap terms before commercial use. |
-| [IBM Plex Sans](https://github.com/IBM/plex) | UI type, self-hosted via `@fontsource` | SIL Open Font License. |
+| [Inter](https://rsms.me/inter/) | Liquid theme type on non-Apple devices (Apple devices use their system SF Pro), self-hosted via `@fontsource-variable` | SIL Open Font License. |
+| [IBM Plex Sans](https://github.com/IBM/plex) | Classic theme type, self-hosted via `@fontsource` | SIL Open Font License. |
 
 The on-screen attribution strip (bottom-left) credits Open-Meteo, NWS, CARTO, and OpenStreetMap, each linked. Esri and NOAA GOES credits appear while their imagery is showing.
 

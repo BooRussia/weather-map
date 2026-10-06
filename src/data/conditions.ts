@@ -11,6 +11,7 @@ import {
   type Observation,
 } from './nws';
 import { getPointForecast, weatherCodeText, type HourlyPoint, type PointForecast } from './openmeteo';
+import { reverseName } from './photon';
 
 /** An observation older than this is not "current". */
 const OBS_MAX_AGE_MS = 90 * 60_000;
@@ -78,9 +79,13 @@ export async function loadConditions(
   const nwsPoint = getPoint(point.lat, point.lon, signal).catch(() => null);
   const om = getPointForecast(point, signal).catch(() => null);
 
-  const placeDone = nwsPoint.then((p) => {
+  const placeDone = nwsPoint.then(async (p) => {
+    if (p) return emit({ place: placeLabel(p), inNwsCoverage: true });
     // A failed lookup on refresh keeps the known name instead of dropping to coordinates.
-    if (p || !previous) emit({ place: p ? placeLabel(p) : formatCoord(point.lat, point.lon), inNwsCoverage: !!p });
+    if (previous) return;
+    // Outside NWS coverage: an OpenStreetMap place name, else coordinates.
+    const name = await reverseName(point.lat, point.lon, signal).catch(() => null);
+    emit({ place: name ?? formatCoord(point.lat, point.lon), inNwsCoverage: false });
   });
 
   const alertsDone = getActiveAlerts(point.lat, point.lon, signal)

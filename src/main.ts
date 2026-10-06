@@ -1,3 +1,4 @@
+import '@fontsource-variable/inter/opsz.css';
 import '@fontsource/ibm-plex-sans/latin-300.css';
 import '@fontsource/ibm-plex-sans/latin-400.css';
 import '@fontsource/ibm-plex-sans/latin-500.css';
@@ -7,27 +8,33 @@ import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_
 import { loadConditions, type Conditions } from './data/conditions';
 import { geoPermission, getPosition } from './data/geolocate';
 import { GridController } from './data/gridController';
+import { getHrrrInit } from './data/hrrr';
+import { makeTimeline, offsetTime, utcHourKey } from './data/timeline';
+import type { Place } from './data/photon';
 import { Animator, type LayerFlags } from './layers/animator';
-import { createCrosshair, createMap } from './map/map';
+import { createMap } from './map/map';
 import { addImagery, refreshImagery, setBasemap, setColorMode, setImageryVisible } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
+import { LocationDot } from './map/location';
 import { RadarTimeline } from './map/radarTimeline';
-import { makeTimeline, offsetTime, utcHourKey } from './data/timeline';
-import { getHrrrInit } from './data/hrrr';
 import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, svg } from './ui/dom';
-import { renderAlertTag, renderHud } from './ui/hud';
-import { chevronIcon, closeIcon, cloudsIcon, gearIcon, gpsIcon, rainIcon, thunderIcon, warningIcon, windIcon } from './ui/icons';
+import { renderAlertPill, renderCapsule } from './ui/capsule';
+import { locateIcon, warningIcon } from './ui/icons';
+import { LayersMenu } from './ui/layersMenu';
 import { showNote } from './ui/note';
-import { alertsPanel, detailPanel, settingsPanel } from './ui/panels';
-import { TimelineBar } from './ui/timelineBar';
+import { WeatherPage } from './ui/page';
+import { SearchBox } from './ui/search';
+import { settingsPanel } from './ui/settings';
 import { Sheet } from './ui/sheet';
+import { TimelineBar } from './ui/timelineBar';
 
 type Layer = keyof AppState['layers'];
 const LAYERS: Layer[] = ['wind', 'rain', 'thunder', 'clouds'];
-const LAYER_ICONS: Record<Layer, string> = { wind: windIcon, rain: rainIcon, thunder: thunderIcon, clouds: cloudsIcon };
+/** Wait this long after the map settles before loading weather for its center. */
+const SETTLE_MS = 350;
 
 async function main(): Promise<void> {
   // Geolocation: use it right away if already granted; otherwise start at the
@@ -47,33 +54,26 @@ async function main(): Promise<void> {
   const sheet = new Sheet();
   let conditions: Conditions | null = null;
 
+  const applyTheme = (s: AppState) => {
+    document.documentElement.dataset.theme = s.theme;
+  };
+  applyTheme(store.get());
+  const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
   // Static chrome.
-  $('#gear').append(svg(gearIcon));
-  $('#hud-gps').append(svg(gpsIcon));
-  $('#hud-chevron').append(svg(chevronIcon));
-  $('#alert-tag').prepend(svg(warningIcon));
-  $('#side-close').append(svg(closeIcon));
-  document.querySelectorAll<HTMLButtonElement>('.layer-toggle').forEach((btn) => {
-    const layer = btn.dataset.layer as Layer;
-    btn.append(svg(LAYER_ICONS[layer]));
-    btn.setAttribute('aria-pressed', String(store.get().layers[layer]));
-  });
-  renderHud(null, store.get());
+  $('#locate-btn').append(svg(locateIcon));
+  $('#alert-pill-icon').append(svg(warningIcon));
+  $('#cap-gps').append(svg(locateIcon));
+  renderCapsule(null, store.get());
   renderCredits(store.get());
 
-  const css = getComputedStyle(document.documentElement);
-  const fg = css.getPropertyValue('--fg').trim() || '#f0f0fa';
-  const muted = css.getPropertyValue('--muted').trim() || '#8a8a96';
-  const accent = css.getPropertyValue('--accent').trim() || '#f5a623';
-
   const map = await createMap($('#map'), start);
-  const alertAreas = new AlertAreas(map, accent, store.get().alertAreas);
+  const alertAreas = new AlertAreas(map, token('--c-alert') || '#ff9f0a', store.get().alertAreas);
   map.once('load', () => {
     const s = store.get();
     addImagery(map, { radar: s.layers.rain, clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
     alertAreas.install();
   });
-  const crosshair = createCrosshair(map, start);
 
   // Rain streaks need the Rain layer on AND the falling-rain setting on; radar needs only the layer.
   const streaksOn = (s: AppState) => s.layers.rain && s.rainStreaks;
@@ -81,11 +81,8 @@ async function main(): Promise<void> {
     const s = store.get();
     return { ...s.layers, rain: streaksOn(s) };
   };
-  const animator = new Animator(map, $('#wind-canvas'), $('#fx-canvas'), flags, {
-    wind: fg,
-    rain: muted,
-    lightning: fg,
-  });
+  const palette = { wind: token('--fg') || '#ffffff', rain: token('--muted') || '#c8c8d0', lightning: token('--fg') || '#ffffff' };
+  const animator = new Animator(map, $('#wind-canvas'), $('#fx-canvas'), flags, palette);
   animator.onStrike = () => {
     const s = store.get();
     if (s.sound && s.layers.thunder) playCrackle();
@@ -134,117 +131,155 @@ async function main(): Promise<void> {
   };
   void refreshHrrr();
 
-  // Desktop keyboard: Space plays/pauses, arrows step an hour, Home jumps to now.
-  document.addEventListener('keydown', (e) => {
-    if (sheet.isOpen || e.metaKey || e.ctrlKey || e.altKey) return;
-    const t = e.target as HTMLElement;
-    if (t.closest('input, textarea, select, button, a') && t.id !== 'tl-range') return;
-    if (e.key === ' ') {
-      e.preventDefault();
-      bar.toggle();
-    } else if (t.id !== 'tl-range' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-      e.preventDefault();
-      bar.step(e.key === 'ArrowRight' ? 1 : -1);
-    } else if (e.key === 'Home' && t.id !== 'tl-range') {
-      e.preventDefault();
-      bar.now();
-    }
-  });
+  /* ---------- weather page (live sky + cards) ---------- */
 
-  /* ---------- conditions for the selected point ---------- */
-
-  let loadCtrl: AbortController | null = null;
-  // The detail sheet's alert rows open the full alert text in the same sheet.
-  const detailActions = {
-    openAlerts: () => {
-      if (conditions) sheet.open('alerts', alertsTitle(conditions), alertsPanel(conditions.alerts), null);
-    },
-  };
-  /* ---------- desktop: detail panel docked on the right ---------- */
-
-  const wide = window.matchMedia('(min-width: 1100px)');
-  const SIDE_KEY = 'weather-map:side';
-  let sideOpen = readFlag(SIDE_KEY, true);
-  const sideWidth = () => parseInt(getComputedStyle(document.documentElement).getPropertyValue('--side-w'), 10) || 380;
   let padRight = -1;
-  const renderSide = () => {
-    const show = wide.matches && sideOpen;
-    $('#side').hidden = !show;
-    document.body.classList.toggle('side-open', show);
-    // Keep the map's center in the uncovered area.
-    const pad = show ? sideWidth() : 0;
+  // The page reports layout changes (docked on desktop or not), including during its constructor.
+  const onPageLayout = (docked: boolean) => {
+    // Docked on desktop: keep the map's center in the uncovered area.
+    const pad = docked ? parseInt(token('--page-w'), 10) || 400 : 0;
     if (pad !== padRight) {
       padRight = pad;
       map.setPadding({ top: 0, bottom: 0, left: 0, right: pad });
     }
-    if (show && conditions) {
-      $('#side-title').textContent = conditions.place ?? 'Forecast';
-      const body = $('#side-body');
-      const scroll = body.scrollTop;
-      body.replaceChildren(detailPanel(conditions, store.get(), detailActions));
-      body.scrollTop = scroll;
-    }
   };
-  const setSide = (open: boolean) => {
-    sideOpen = open;
-    writeFlag(SIDE_KEY, open);
-    renderSide();
-  };
-  $('#side-close').addEventListener('click', () => setSide(false));
-  wide.addEventListener('change', renderSide);
-  renderSide();
+  const page = new WeatherPage(onPageLayout);
 
-  const refreshSheet = () => {
-    renderSide();
-    if (!conditions) return;
-    if (sheet.current === 'forecast') sheet.update(conditions.place ?? 'Forecast', detailPanel(conditions, store.get(), detailActions));
-    if (sheet.current === 'alerts') sheet.update(alertsTitle(conditions), alertsPanel(conditions.alerts));
+  const renderAll = () => {
+    const s = store.get();
+    renderCapsule(conditions, s);
+    renderAlertPill(conditions?.alerts ?? []);
+    if (page.open) page.render(conditions, s);
   };
+
+  /* ---------- conditions for the selected point ---------- */
+
+  let loadCtrl: AbortController | null = null;
   let lastLoaded = 0;
-  /** New point: clear the HUD first. Refresh: keep showing the old values until new ones land. */
+  /** A search result's own name beats the NWS "3 mi ESE of …" label for that point. */
+  let labelOverride: string | null = null;
+  /** New point: clear the readout first. Refresh: keep showing the old values until new ones land. */
   const loadSelected = (newPoint: boolean) => {
     loadCtrl?.abort();
     loadCtrl = new AbortController();
     lastLoaded = Date.now();
     if (newPoint) {
       conditions = null;
-      renderHud(null, store.get());
-      renderAlertTag([]);
+      renderAll();
     }
     void loadConditions(store.get().selected, loadCtrl.signal, newPoint ? null : conditions, (c) => {
-      conditions = c;
-      renderHud(c, store.get());
-      renderAlertTag(c.alerts);
-      refreshSheet();
+      conditions = labelOverride ? { ...c, place: labelOverride } : c;
+      renderAll();
     });
   };
 
-  let userPicked = false;
-  const select = (p: LatLon, opts: { jump: boolean; gps?: boolean }) => {
+  const select = (p: LatLon, opts: { gps?: boolean; label?: string | null } = {}) => {
+    labelOverride = opts.label ?? null;
     store.set({ selected: { lat: p.lat, lon: wrapLon(p.lon) }, gps: !!opts.gps });
-    // Marker keeps the raw longitude so it stays on the world copy that was tapped.
-    crosshair.setLngLat([p.lon, p.lat]);
-    if (opts.jump) map.jumpTo({ center: [p.lon, p.lat] });
     loadSelected(true);
     grids.refreshIfOlderThan(5 * 60_000);
   };
 
+  /* ---------- you (blue dot) vs. the map center (cross) ---------- */
+
+  type Mode = 'gps' | 'center';
+  let mode: Mode = located ? 'gps' : 'center';
+  const reticle = $('#reticle');
+  const locateBtn = $('#locate-btn');
+  const setMode = (m: Mode) => {
+    mode = m;
+    reticle.hidden = m === 'gps';
+    locateBtn.setAttribute('aria-pressed', String(m === 'gps'));
+    locateBtn.setAttribute('aria-label', m === 'gps' ? 'Showing your location' : 'Show my location');
+  };
+  setMode(mode);
+
+  const dot = new LocationDot(map, (p) => {
+    // Following you: keep the map on the dot; reload weather only after a real move.
+    if (mode !== 'gps') return;
+    map.easeTo({ center: [p.lon, p.lat], duration: 600 });
+    const s = store.get().selected;
+    if (Math.hypot(p.lat - s.lat, p.lon - s.lon) > 0.01) select(p, { gps: true });
+  });
+  if (located) dot.set(start);
+
+  // Any gesture that moves the map hands the readout to the center cross.
+  map.on('movestart', (e) => {
+    if ((e as { originalEvent?: Event }).originalEvent && mode === 'gps') setMode('center');
+  });
+  let pendingLabel: string | null = null;
+  let settleTimer = 0;
+  map.on('moveend', () => {
+    if (mode !== 'center') return;
+    clearTimeout(settleTimer);
+    settleTimer = window.setTimeout(() => {
+      const c = map.getCenter();
+      const s = store.get().selected;
+      // Ignore sub-pixel settles (and the moveend that follows a programmatic select).
+      if (Math.abs(c.lat - s.lat) < 0.0005 && Math.abs(wrapLon(c.lng) - s.lon) < 0.0005) return;
+      const label = pendingLabel;
+      pendingLabel = null;
+      select({ lat: c.lat, lon: c.lng }, { label });
+    }, SETTLE_MS);
+  });
+
+  // Tap: bring that spot under the cross.
+  map.on('click', (e) => {
+    setMode('center');
+    map.easeTo({ center: e.lngLat, duration: 450 });
+  });
+
+  const goToMe = async () => {
+    locateBtn.classList.add('busy');
+    const p = dot.position && mode !== 'gps' ? dot.position : await dot.locate(true);
+    locateBtn.classList.remove('busy');
+    if (!p) {
+      showNote('Location is unavailable. Check location permission for this site.');
+      return;
+    }
+    setMode('gps');
+    map.easeTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 8), duration: 700 });
+    select(p, { gps: true });
+  };
+  locateBtn.addEventListener('click', () => void goToMe());
+
   loadSelected(true);
 
   if (!located && permission !== 'denied') {
-    void getPosition(10_000).then((p) => {
-      if (p && !userPicked) select(p, { jump: true, gps: true });
-      else if (!p) showNote(`Location unavailable. Showing ${DEFAULT_PLACE_LABEL}.`);
+    // First visit: ask once. If allowed and you haven't moved the map yet, go there.
+    void dot.locate(false).then((p) => {
+      if (!p) showNote(`Location unavailable. Showing ${DEFAULT_PLACE_LABEL}.`);
+      else if (mode === 'center' && store.get().selected === start) {
+        setMode('gps');
+        map.jumpTo({ center: [p.lon, p.lat] });
+        select(p, { gps: true });
+      }
     });
-  } else if (permission === 'denied') {
+  } else if (located) {
+    void dot.locate(false);
+  } else {
     showNote(`Location is off. Showing ${DEFAULT_PLACE_LABEL}.`);
   }
 
-  // Tap empty map: describe that point. The camera stays where it is.
-  map.on('click', (e) => {
-    userPicked = true;
-    select({ lat: e.lngLat.lat, lon: e.lngLat.lng }, { jump: false });
-  });
+  /* ---------- search ---------- */
+
+  const search = new SearchBox(
+    () => store.get().selected,
+    (place: Place) => {
+      setMode('center');
+      pendingLabel = place.subtitle ? `${place.title}, ${place.subtitle}` : place.title;
+      const zoom = place.kind === 'area' ? Math.max(map.getZoom(), 8) : Math.max(map.getZoom(), 11);
+      map.flyTo({ center: [place.lon, place.lat], zoom, duration: 900, essential: true });
+      // If the map is already there, flyTo ends without moving: select directly.
+      const c = map.getCenter();
+      if (Math.abs(c.lat - place.lat) < 0.0005 && Math.abs(c.lng - place.lon) < 0.0005) {
+        select({ lat: place.lat, lon: place.lon }, { label: pendingLabel });
+        pendingLabel = null;
+      }
+    },
+  );
+
+  /* ---------- refresh ---------- */
 
   // Refresh only while visible: a locked phone or background tab costs no
   // battery and no API calls, and catches up as soon as it comes back.
@@ -261,32 +296,27 @@ async function main(): Promise<void> {
   setInterval(refreshIfStale, 60_000);
   document.addEventListener('visibilitychange', refreshIfStale);
 
-  /* ---------- layer toggles ---------- */
+  /* ---------- layers popover + settings ---------- */
 
-  document.querySelectorAll<HTMLButtonElement>('.layer-toggle').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const layer = btn.dataset.layer as Layer;
-      // Turning Thunder on is the user gesture that unlocks audio.
-      if (layer === 'thunder' && !store.get().layers.thunder) primeAudio();
-      store.toggleLayer(layer);
-    });
+  const openSettings = () => sheet.open('settings', 'Settings', settingsPanel(store), $('#layers-btn'));
+  new LayersMenu(store, openSettings, (layer, on) => {
+    // Turning Lightning on is the user gesture that unlocks audio.
+    if (layer === 'thunder' && on) {
+      primeAudio();
+      if (!grids.current) showNote('Storm data loading');
+      else if (!animator.stormsInView()) showNote('No thunderstorms in view');
+    }
   });
 
   store.subscribe((s, prev) => {
     for (const layer of LAYERS) {
       const on = s.layers[layer];
       if (on === prev.layers[layer]) continue;
-      document.querySelector(`.layer-toggle[data-layer="${layer}"]`)?.setAttribute('aria-pressed', String(on));
       if (layer === 'rain') {
         frames.setRadarOn(on);
         frames.show(bar.offset);
-      }
-      else if (layer === 'clouds') setImageryVisible(map, 'clouds', on);
+      } else if (layer === 'clouds') setImageryVisible(map, 'clouds', on);
       else animator.layerChanged(layer, on);
-      if (layer === 'thunder' && on) {
-        if (!grids.current) showNote('Storm data loading');
-        else if (!animator.stormsInView()) showNote('No thunderstorms in view');
-      }
     }
     if (streaksOn(s) !== streaksOn(prev)) animator.layerChanged('rain', streaksOn(s));
     if (s.layers.rain !== prev.layers.rain || s.layers.clouds !== prev.layers.clouds) {
@@ -300,77 +330,59 @@ async function main(): Promise<void> {
     if (s.alertAreas !== prev.alertAreas) alertAreas.setVisible(s.alertAreas);
     if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
     if (s.basemap !== prev.basemap || s.layers.clouds !== prev.layers.clouds) renderCredits(s);
-    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit) {
-      renderHud(conditions, s);
-      refreshSheet();
+    if (s.theme !== prev.theme) {
+      applyTheme(s);
+      // Canvas and map colors don't read CSS; hand them the new tokens.
+      palette.wind = palette.lightning = token('--fg');
+      palette.rain = token('--muted');
+      alertAreas.setColor(token('--c-alert'));
+    }
+    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme) renderAll();
+  });
+
+  /* ---------- readout → weather page ---------- */
+
+  const capsule = $('#capsule');
+  capsule.addEventListener('click', () => {
+    page.toggle(capsule);
+    if (page.open) page.render(conditions, store.get());
+  });
+  $('#alert-pill').addEventListener('click', () => {
+    if (!page.open) page.setOpen(true, $('#alert-pill'));
+    page.render(conditions, store.get());
+    requestAnimationFrame(() => page.scrollToAlerts());
+  });
+  if (page.open) page.render(conditions, store.get());
+
+  /* ---------- keyboard (desktop) ---------- */
+
+  document.addEventListener('keydown', (e) => {
+    if (sheet.isOpen || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target as HTMLElement;
+    const typing = !!t.closest('input:not([type=range]), textarea, select');
+    if (e.key === '/' && !typing) {
+      e.preventDefault();
+      search.focus();
+      return;
+    }
+    if (typing || (t.closest('button, a') && t.id !== 'tl-range')) return;
+    if (e.key === ' ') {
+      e.preventDefault();
+      bar.toggle();
+    } else if (t.id !== 'tl-range' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      bar.step(e.key === 'ArrowRight' ? 1 : -1);
+    } else if (e.key === 'Home' && t.id !== 'tl-range') {
+      e.preventDefault();
+      bar.now();
     }
   });
-
-  /* ---------- sheets ---------- */
-
-  const gear = $('#gear');
-  gear.addEventListener('click', () => {
-    sheet.open(
-      'settings',
-      'Settings',
-      settingsPanel(store, {
-        place: () => conditions?.place ?? DEFAULT_PLACE_LABEL,
-        pickPlace: (lat, lon) => {
-          userPicked = true;
-          select({ lat, lon }, { jump: true });
-          sheet.close();
-        },
-        useMyLocation: async () => {
-          const p = await getPosition(10_000);
-          if (!p) return false;
-          userPicked = true;
-          select(p, { jump: true, gps: true });
-          sheet.close();
-          return true;
-        },
-      }),
-      gear,
-    );
-  });
-
-  const alertTag = $('#alert-tag');
-  alertTag.addEventListener('click', () => {
-    if (conditions) sheet.open('alerts', alertsTitle(conditions), alertsPanel(conditions.alerts), alertTag);
-  });
-
-  const readout = $('#hud-readout');
-  readout.addEventListener('click', () => {
-    // Desktop: the HUD toggles the docked panel. Phone: it opens the sheet.
-    if (wide.matches) setSide(!sideOpen);
-    else if (conditions) sheet.open('forecast', conditions.place ?? 'Forecast', detailPanel(conditions, store.get(), detailActions), readout);
-  });
-}
-
-function readFlag(key: string, fallback: boolean): boolean {
-  try {
-    const v = localStorage.getItem(key);
-    return v == null ? fallback : v === '1';
-  } catch {
-    return fallback;
-  }
-}
-
-function writeFlag(key: string, on: boolean): void {
-  try {
-    localStorage.setItem(key, on ? '1' : '0');
-  } catch {
-    // Storage blocked: the choice lasts for this visit.
-  }
 }
 
 /** Credits for optional imagery appear only while that imagery is on screen. */
 function renderCredits(s: AppState): void {
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
-}
-
-function alertsTitle(c: Conditions): string {
-  return c.alerts.length === 1 ? 'Active alert' : `${c.alerts.length} active alerts`;
 }
 
 void main();
