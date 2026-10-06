@@ -101,16 +101,15 @@ async function main(): Promise<void> {
   let hrrrInit: number | null = null;
   let timeline = makeTimeline(Date.now(), hrrrInit);
   const frames = new RadarTimeline(map, timeline, store.get().colorMode, store.get().layers.rain);
-  // Radar frames and the wind/rain particles follow the same hour.
-  const bar = new TimelineBar(timeline, (offset, direction) => {
-    frames.show(offset, direction);
+  // The bar drives the radar crossfade; wind/rain particles follow the nearest hour.
+  const bar = new TimelineBar(timeline, frames, (offset) => {
     // Past and forecast frames come from Iowa Environmental Mesonet: credit them while shown.
     $('[data-credit="iem"]').hidden = offset === 0;
     grids.setHour(offset === 0 ? null : utcHourKey(offsetTime(timeline, offset)));
   });
   const renderBar = () => bar.render({ colorMode: store.get().colorMode, radarOn: store.get().layers.rain });
   renderBar();
-  map.once('load', () => frames.show(bar.offset));
+  map.once('load', () => frames.blend(bar.offset, bar.offset, 0));
 
   const refreshTimeline = () => {
     const next = makeTimeline(Date.now(), hrrrInit);
@@ -312,10 +311,8 @@ async function main(): Promise<void> {
     for (const layer of LAYERS) {
       const on = s.layers[layer];
       if (on === prev.layers[layer]) continue;
-      if (layer === 'rain') {
-        frames.setRadarOn(on);
-        frames.show(bar.offset);
-      } else if (layer === 'clouds') setImageryVisible(map, 'clouds', on);
+      if (layer === 'rain') frames.setRadarOn(on);
+      else if (layer === 'clouds') setImageryVisible(map, 'clouds', on);
       else animator.layerChanged(layer, on);
     }
     if (streaksOn(s) !== streaksOn(prev)) animator.layerChanged('rain', streaksOn(s));

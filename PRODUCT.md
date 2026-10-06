@@ -14,7 +14,7 @@ Open the app and see the weather moving over a satellite map right away. Your lo
 - Selected point: either "you" (GPS, blue dot, locate button filled) or "the map center" (after any drag, tap, or search; the center cross shows). The readout reloads when the map settles, not on every frame.
 - Search: cities and street addresses, suggestions as you type, nearby results first.
 - Layers live in one popover: Radar, Wind, Lightning, Clouds, Alert areas, Falling rain, map style, radar colors. First load: Satellite map, Color radar, Radar and Wind on, falling rain off. Layer switches reset each visit; map style, colors, units, and sound are remembered.
-- Timeline: one play bar scrubs or plays radar from 24 hours ago, through now, into the HRRR forecast (as far as the latest run reaches, about 15–18 hours). Wind and falling-rain particles follow the same hour.
+- Timeline: one play bar scrubs or plays radar from 24 hours ago, through now, into the HRRR forecast (as far as the latest run reaches, about 15–18 hours), in 15-minute frames. Playback is smooth: frames crossfade, load ahead, and playback waits rather than skip. Wind and falling-rain particles follow the nearest hour.
 - Weather page: alerts, next 2 hours of rain, hourly, 7 days, and detail tiles (feels like, UV, wind, humidity, sun, visibility, pressure, precipitation) over a live sky that matches current conditions and time of day.
 - Desktop (1100px and wider): the weather page docks on the right. Keyboard: Space plays/pauses, ←/→ step an hour, Home returns to now, `/` focuses search.
 - Map shows active NWS alert areas (warnings and watches, not marine or minor advisories).

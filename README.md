@@ -17,7 +17,7 @@ Switch under Layers → Units, sound & appearance → Theme. The choice is remem
 - **Readout** (glass card): place ("My location" when it's you), temperature, condition, `H:87° L:76°`. Tap it for the weather page.
 - **Alert pill**: appears under the readout while an NWS alert is active there; tap for the full text.
 - **Layers** popover: map style (Satellite / Dark); Radar, Wind, Lightning (approximate, with a crackle you can mute), Clouds (live GOES satellite), Alert areas (warnings outlined, watches tinted); radar Colors (Color / Mono); Falling rain.
-- **Timeline** (bottom): scrub or play radar from **24 hours ago, through now, into the forecast** (HRRR simulated radar, as far as the latest run reaches, about 15–18 hours). Past hours are archived NEXRAD radar, now is the live NWS mosaic, future hours are the model. Wind and falling-rain particles follow the same hour. On a keyboard: Space plays/pauses, ← → step an hour, Home returns to now.
+- **Timeline** (bottom): scrub or play radar from **24 hours ago, through now, into the forecast** (HRRR simulated radar, as far as the latest run reaches, about 15–18 hours), in **15-minute frames**. Playback glides at one hour per second: each frame crossfades into the next, 6 frames load ahead, and it waits ("Loading radar") rather than skip a frame that hasn't arrived. Past frames are archived NEXRAD radar, now is the live NWS mosaic, future frames are the model. Wind and falling-rain particles follow the same hour. On a keyboard: Space plays/pauses, ← → step an hour, Home returns to now.
 - **Opens on** the Satellite map with Color radar, Radar and Wind on, falling rain off.
 
 ### Weather page

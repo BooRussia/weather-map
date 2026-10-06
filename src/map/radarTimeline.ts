@@ -1,24 +1,29 @@
-import type { Map as MlMap } from 'maplibre-gl';
+import type { Map as MlMap, RasterTileSource } from 'maplibre-gl';
 import type { ColorMode } from '../config';
-import { frameSource, type Timeline } from '../data/timeline';
+import { frameSource, STEP_H, type Timeline } from '../data/timeline';
 import { aboveRadar, radarPaint, setImageryVisible } from './imagery';
 
-/** Frame layers kept on the map at once (current + prefetch + recent). */
-const MAX_FRAMES = 8;
-/** Frames loaded ahead of the one on screen while playing or scrubbing. */
-const PREFETCH = 2;
+/**
+ * Frame layers kept on the map at once. Each holds its tiles on the GPU
+ * (about 4 MB a frame on a phone), so this bounds memory.
+ */
+const MAX_FRAMES = 12;
+const LIVE = 'nws-radar';
 
 /**
- * Radar frames for the timeline. "Now" is the live NWS layer; past hours are
- * IEM's NEXRAD archive; future hours are HRRR simulated radar. Frame layers
- * are created when first needed and evicted least-recently-used, so a phone
- * never holds more than a handful.
+ * Radar frames for the timeline. "Now" is the live NWS layer; past frames
+ * are IEM's NEXRAD archive; future frames are HRRR simulated radar. Frame
+ * layers are created ahead of playback (opacity 0, so their tiles load),
+ * crossfaded while playing, and evicted least-recently-used.
  */
 export class RadarTimeline {
-  /** Tile URL → layer/source id, in least- to most-recently used order. */
+  /** Tile URL → layer/source id, least- to most-recently used. */
   private frames = new Map<string, string>();
   private seq = 0;
-  private visibleId: string | null = null;
+  /** Opacity currently set on each layer we have touched (skip no-op paint updates). */
+  private opacity = new Map<string, number>();
+  private last: [number, number, number] = [0, 0, 0];
+  private liveVisible: boolean | null = null;
 
   constructor(
     private readonly map: MlMap,
@@ -36,48 +41,105 @@ export class RadarTimeline {
     const paint = radarPaint(mode);
     for (const id of this.frames.values()) {
       for (const [k, v] of Object.entries(paint)) {
-        if (k === 'raster-opacity') continue;
-        this.map.setPaintProperty(id, k as 'raster-saturation', v);
+        if (k !== 'raster-opacity') this.map.setPaintProperty(id, k as 'raster-saturation', v);
       }
-      this.map.setPaintProperty(id, 'raster-opacity', id === this.visibleId ? this.opacityFor(this.urlOf(id)) : 0);
     }
+    // imagery.setColorMode also reset the live layer's opacity; re-apply the blend.
+    this.opacity.clear();
+    this.liveVisible = null;
+    this.blend(...this.last);
   }
 
   setRadarOn(on: boolean): void {
     this.radarOn = on;
+    this.opacity.clear();
+    this.liveVisible = null;
+    this.blend(...this.last);
   }
 
-  /** Put the frame for `offset` on screen; `direction` picks which neighbors to preload. */
-  /** Forecast frames draw lighter: HRRR paints trace returns as a wide pale wash. */
-  private opacityFor(url: string): number {
-    const o = radarPaint(this.mode)['raster-opacity'];
-    return url.includes('hrrr::') ? o * 0.75 : o;
-  }
-
-  show(offset: number, direction: 1 | -1 = 1): void {
-    // Imagery layers go in on map load; until then there is nothing to swap.
-    if (!this.map.getLayer('nws-radar')) return;
+  /** Frame at `offset` is loaded and can go on screen without a gap. */
+  ready(offset: number): boolean {
     const src = frameSource(this.timeline, offset);
+    if (src.kind === 'live') return true;
+    const id = this.frames.get(src.url);
+    if (!id) return false;
+    const source = this.map.getSource(id) as RasterTileSource | undefined;
+    return !!source && source.loaded();
+  }
+
+  /** Create the next `count` frames from `offset` so their tiles start loading. */
+  prefetch(offset: number, direction: 1 | -1, count: number): void {
+    if (!this.map.getLayer(LIVE)) return;
+    for (let k = 0; k < count; k++) {
+      const o = offset + k * STEP_H * direction;
+      if (o < this.timeline.minOffset || o > this.timeline.maxOffset) break;
+      const src = frameSource(this.timeline, o);
+      if (src.kind !== 'live') this.ensure(src.url);
+    }
+    this.evict(offset, direction, count);
+  }
+
+  /**
+   * Show frame `a` fading into frame `b` (f = 0…1). Where both have rain the
+   * combined coverage stays constant, so nothing pulses mid-fade.
+   */
+  blend(a: number, b: number, f: number): void {
+    this.last = [a, b, f];
+    if (!this.map.getLayer(LIVE)) return;
     if (!this.radarOn) {
-      this.setVisible(null);
-      setImageryVisible(this.map, 'radar', false);
+      for (const id of this.opacity.keys()) this.set(id, 0);
+      this.setLiveVisible(false);
       return;
     }
-    if (src.kind === 'live') {
-      this.setVisible(null);
-      setImageryVisible(this.map, 'radar', true);
+    this.setLiveVisible(true);
+    const ia = this.layerFor(a);
+    const ib = this.layerFor(b);
+    const oa = this.opacityFor(ia);
+    const ob = this.opacityFor(ib);
+    const want = new Map<string, number>();
+    if (ia === ib || f <= 0) {
+      want.set(ia, oa);
+    } else if (f >= 1) {
+      want.set(ib, ob);
     } else {
-      this.setVisible(this.ensure(src.url));
-      setImageryVisible(this.map, 'radar', false);
+      // Alpha over alpha: A + B − AB = target, with A fading out linearly.
+      const A = oa * (1 - f);
+      const target = oa + (ob - oa) * f;
+      const B = A >= 1 ? 0 : (target - A) / (1 - A);
+      want.set(ia, A);
+      want.set(ib, Math.max(0, Math.min(1, B)));
     }
-    // Preload the next frames so playback doesn't wait on the network.
-    for (let k = 1; k <= PREFETCH; k++) {
-      const next = offset + k * direction;
-      if (next < this.timeline.minOffset || next > this.timeline.maxOffset) break;
-      const n = frameSource(this.timeline, next);
-      if (n.kind !== 'live') this.ensure(n.url);
-    }
-    this.evict();
+    for (const id of this.opacity.keys()) if (!want.has(id)) this.set(id, 0);
+    if (!want.has(LIVE)) this.set(LIVE, 0);
+    for (const [id, o] of want) this.set(id, o);
+  }
+
+  private setLiveVisible(on: boolean): void {
+    if (on === this.liveVisible) return;
+    this.liveVisible = on;
+    setImageryVisible(this.map, 'radar', on);
+  }
+
+  private layerFor(offset: number): string {
+    const src = frameSource(this.timeline, offset);
+    return src.kind === 'live' ? LIVE : this.ensure(src.url);
+  }
+
+  /** Forecast frames draw lighter: HRRR paints trace returns as a wide pale wash. */
+  private opacityFor(id: string): number {
+    const o = radarPaint(this.mode)['raster-opacity'];
+    if (id === LIVE) return o;
+    for (const [url, fid] of this.frames) if (fid === id) return url.includes('hrrr::') ? o * 0.75 : o;
+    return o;
+  }
+
+  private set(id: string, o: number): void {
+    const prev = this.opacity.get(id);
+    if (prev !== undefined && Math.abs(prev - o) < 0.004) return;
+    if (!this.map.getLayer(id)) return;
+    this.map.setPaintProperty(id, 'raster-opacity', o);
+    if (o === 0 && id !== LIVE) this.opacity.delete(id);
+    else this.opacity.set(id, o);
   }
 
   private ensure(url: string): string {
@@ -104,29 +166,19 @@ export class RadarTimeline {
     return id;
   }
 
-  private setVisible(id: string | null): void {
-    if (this.visibleId && this.visibleId !== id && this.map.getLayer(this.visibleId)) {
-      this.map.setPaintProperty(this.visibleId, 'raster-opacity', 0);
+  /** Drop the least-recently-used frames, never the ones on screen or just prefetched. */
+  private evict(offset: number, direction: 1 | -1, count: number): void {
+    if (this.frames.size <= MAX_FRAMES) return;
+    const keep = new Set<string>();
+    for (let k = -1; k < count; k++) {
+      const src = frameSource(this.timeline, offset + k * STEP_H * direction);
+      if (src.kind !== 'live') keep.add(src.url);
     }
-    if (id) this.map.setPaintProperty(id, 'raster-opacity', this.opacityFor(this.urlOf(id)));
-    this.visibleId = id;
-  }
-
-  private urlOf(id: string): string {
-    for (const [url, fid] of this.frames) if (fid === id) return url;
-    return '';
-  }
-
-  private evict(): void {
-    while (this.frames.size > MAX_FRAMES) {
-      const [url, id] = this.frames.entries().next().value as [string, string];
-      if (id === this.visibleId) {
-        // Never drop the frame on screen; recycle it to the end instead.
-        this.frames.delete(url);
-        this.frames.set(url, id);
-        continue;
-      }
+    for (const [url, id] of this.frames) {
+      if (this.frames.size <= MAX_FRAMES) break;
+      if (keep.has(url) || this.opacity.has(id)) continue;
       this.frames.delete(url);
+      this.opacity.delete(id);
       if (this.map.getLayer(id)) this.map.removeLayer(id);
       if (this.map.getSource(id)) this.map.removeSource(id);
     }
