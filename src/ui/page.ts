@@ -133,9 +133,16 @@ export class WeatherPage {
 
     const om = c?.om ?? null;
     // What's actually being observed beats the model when NWS has a fresh observation.
-    const code = codeFromText(c?.observation?.text ?? '') ?? om?.current.weatherCode ?? 0;
-    const { scene, clouds, intensity } = sceneFor(code, om?.current.isDay ?? true);
-    this.sky.setScene(scene, clouds, intensity, s.theme === 'classic');
+    let code = codeFromText(c?.observation?.text ?? '') ?? om?.current.weatherCode ?? 0;
+    let phase = sunPhase(om);
+    if (import.meta.env.DEV) {
+      // Dev only: ?sky=95&phase=0.97 previews a weather code at a time of day.
+      const q = new URLSearchParams(location.search);
+      if (q.has('sky')) code = Number(q.get('sky'));
+      if (q.has('phase')) phase = Number(q.get('phase'));
+    }
+    const { scene, clouds, intensity } = sceneFor(code, phase >= 0 && phase <= 1);
+    this.sky.setScene(scene, clouds, intensity, s.theme === 'classic', phase);
 
     const keep = this.scroller.scrollTop;
     $('#page-body').replaceChildren(
@@ -426,6 +433,15 @@ function gauge(hpa: number, value: string, unit: string): SVGSVGElement {
 
 /** "07:25" style local times → minutes since midnight. */
 const minutesOf = (isoLocal: string) => Number(isoLocal.slice(11, 13)) * 60 + Number(isoLocal.slice(14, 16));
+
+/** Where the day is, for the sky: 0 at sunrise, 1 at sunset, below 0 or above 1 at night. */
+export function sunPhase(om: PointForecast | null): number {
+  const today = om?.daily[0];
+  if (!om || !today) return om?.current.isDay === false ? -0.5 : 0.5;
+  const rise = minutesOf(today.sunrise);
+  const set = minutesOf(today.sunset);
+  return set > rise ? (minutesOf(om.current.time) - rise) / (set - rise) : om.current.isDay ? 0.5 : -0.5;
+}
 
 function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
   const cur = om.current;

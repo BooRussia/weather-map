@@ -60,6 +60,7 @@ Controls inside a card that need a smaller curve (segmented controls, list rows)
 ## Surfaces
 - The map is full-bleed. Floating chrome is glass.
 - The weather page (opened from the capsule) is Apple Weather's main screen: a live sky for the current weather behind a scrolling column of glass cards. Full screen on phones; a docked right column (400px) at 1100px and wider.
+- The live sky is a fragment shader (2D fallback without WebGL 2): procedural clouds lit from the sun's side (scattered puffs when mostly clear, half the sky when partly cloudy with blue between, a textured blanket when overcast), the sun on its real arc from sunrise (low left) to sunset (low right) with a small disc and soft glow, golden-hour warmth near either end, civil twilight, stars and the moon in its current phase at night, three depths of rain streaks, snow in three depths with drift, low rolling fog, and storms whose lightning lights the clouds from inside with an occasional bolt. Scene changes ease over about a second; it renders at CSS resolution, ~30 fps, and holds still for reduced motion.
 - No nested cards. Inside a card, separate with hairlines and space.
 
 ## Components
@@ -85,4 +86,4 @@ The original language (2026-10-05 v1), kept as a theme. Same layout and componen
 - Radius: all-sharp, 0. Exception: the location dot and the scrubber handle are round (a dot is a dot).
 - Materials: no blur. Floating chrome is solid `rgba(0,0,0,0.85)` with a `hairline` border; sheets and the weather page are solid `#000`.
 - Motion: 160ms `ease-out` for everything, including sheets and the page. The location halo does not pulse.
-- Weather-page sky: black, with the same effects drawn in white at low alpha (rain streaks, snow, stars, fog bands, lightning flashes); no colored gradients.
+- Weather-page sky: the same sky in dim grays (no color), so effects read in white.

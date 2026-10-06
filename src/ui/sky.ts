@@ -1,9 +1,11 @@
 /**
- * Live sky behind the weather page, Apple Weather style: a gradient for the
- * scene and time of day, with sun glow, stars, drifting clouds, rain, snow,
- * fog bands, and lightning drawn over it. Classic draws the same effects in
- * white on black. Renders at 1× and ~30 fps; it is a soft background.
+ * Live sky behind the weather page, Apple Weather style. The scene comes from
+ * the current weather code; the look comes from skyGL.ts (a shader sky) or,
+ * without WebGL 2, the 2D fallback here: a gradient with sun glow, stars,
+ * drifting clouds, rain, snow, fog bands, and lightning. Classic draws the
+ * same effects dimmed and gray.
  */
+import { SkyGL } from './skyGL';
 
 export type Scene = 'clear-day' | 'clear-night' | 'cloudy-day' | 'cloudy-night' | 'rain' | 'storm' | 'snow' | 'fog';
 
@@ -59,7 +61,41 @@ interface Star {
 
 const FRAME_MS = 1000 / 30;
 
+/**
+ * The page's sky: the shader sky (skyGL.ts) where WebGL 2 is available,
+ * otherwise the 2D sky below. One canvas can hold only one kind of context,
+ * so the choice is made once.
+ */
 export class SkyRenderer {
+  private readonly gl: SkyGL | null;
+  private readonly flat: Sky2D | null;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.gl = SkyGL.create(canvas);
+    this.flat = this.gl ? null : new Sky2D(canvas);
+  }
+
+  /** `sunPhase`: 0 at sunrise, 1 at sunset, outside that is night. */
+  setScene(scene: Scene, clouds: number, intensity: number, classic: boolean, sunPhase: number): void {
+    if (this.gl) this.gl.set({ scene, clouds, intensity, mono: classic, sunPhase });
+    else this.flat!.setScene(scene, clouds, intensity, classic);
+  }
+
+  start(): void {
+    (this.gl ?? this.flat)!.start();
+  }
+
+  stop(): void {
+    (this.gl ?? this.flat)!.stop();
+  }
+
+  resize(): void {
+    (this.gl ?? this.flat)!.resize();
+  }
+}
+
+/** The 2D fallback: gradient, glow, sprite clouds, streaks, flakes, bands, flashes. */
+class Sky2D {
   private readonly ctx: CanvasRenderingContext2D;
   private w = 0;
   private h = 0;

@@ -1156,7 +1156,10 @@ button {
 .page-head {
   text-align: center;
   margin: 0 0 28px;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.2);
+  /* Enough to hold white type over a bright sun or snow sky, soft enough not to read as a drop shadow. */
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    0 1px 16px rgba(0, 0, 0, 0.28);
 }
 
 .page-head p,
