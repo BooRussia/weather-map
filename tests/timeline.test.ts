@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frameSource, makeTimeline, offsetTime, relativeLabel, snap, utcHourKey, utcStamp } from '../src/data/timeline';
+import { frameSource, makeTimeline, offsetTime, relativeLabel, snap, tileMirrors, utcHourKey, utcStamp } from '../src/data/timeline';
 
 const at = (iso: string) => Date.parse(iso);
 
@@ -42,5 +42,17 @@ describe('radar timeline', () => {
     expect(relativeLabel(-0.75)).toBe('−45 min');
     expect(relativeLabel(-3)).toBe('−3 h');
     expect(relativeLabel(2.25)).toBe('+2 h 15 min');
+  });
+
+  it('spreads IEM tiles across its four hostnames', () => {
+    const url = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-202610052215/{z}/{x}/{y}.png';
+    const urls = tileMirrors(url);
+    expect(urls.map((u) => u.split('/')[2])).toEqual([
+      'mesonet.agron.iastate.edu',
+      'mesonet1.agron.iastate.edu',
+      'mesonet2.agron.iastate.edu',
+      'mesonet3.agron.iastate.edu',
+    ]);
+    expect(urls[3]).toContain('/ridge::USCOMP-N0Q-202610052215/{z}/{x}/{y}.png');
   });
 });

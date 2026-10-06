@@ -1,4 +1,4 @@
-import { FUTURE_RADAR_TILE_URL, HRRR_MAX_MINUTES, PAST_RADAR_TILE_URL, TIMELINE_PAST_HOURS } from '../config';
+import { FUTURE_RADAR_TILE_URL, HRRR_MAX_MINUTES, IEM_HOSTS, PAST_RADAR_TILE_URL, TIMELINE_PAST_HOURS } from '../config';
 
 const HOUR = 3_600_000;
 /** Frames are 15 minutes apart: the archive and HRRR both publish at that cadence. */
@@ -56,6 +56,9 @@ export function frameSource(t: Timeline, offset: number): FrameSource {
     url: FUTURE_RADAR_TILE_URL.replace('{minutes}', String(minutes).padStart(4, '0')).replace('{init}', utcStamp(t.init)),
   };
 }
+
+/** The same IEM tile URL on each of its hostnames (MapLibre spreads tiles across them). */
+export const tileMirrors = (url: string) => IEM_HOSTS.map((host) => url.replace('://mesonet.', `://${host}.`));
 
 /** "Now", "−45 min", "−3 h", "+2 h 15 min". */
 export function relativeLabel(offset: number): string {

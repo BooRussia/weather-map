@@ -1,13 +1,13 @@
-import type { Map as MlMap, RasterTileSource } from 'maplibre-gl';
+import type { Map as MlMap } from 'maplibre-gl';
 import type { ColorMode } from '../config';
-import { frameSource, STEP_H, type Timeline } from '../data/timeline';
+import { frameSource, STEP_H, tileMirrors, type Timeline } from '../data/timeline';
 import { aboveRadar, radarPaint, setImageryVisible } from './imagery';
 
 /**
  * Frame layers kept on the map at once. Each holds its tiles on the GPU
  * (about 4 MB a frame on a phone), so this bounds memory.
  */
-const MAX_FRAMES = 12;
+const MAX_FRAMES = 16;
 const LIVE = 'nws-radar';
 
 /**
@@ -57,14 +57,14 @@ export class RadarTimeline {
     this.blend(...this.last);
   }
 
-  /** Frame at `offset` is loaded and can go on screen without a gap. */
+  /** Frame at `offset` has every tile in view loaded (or failed), so it can go on screen without a gap. */
   ready(offset: number): boolean {
     const src = frameSource(this.timeline, offset);
     if (src.kind === 'live') return true;
     const id = this.frames.get(src.url);
-    if (!id) return false;
-    const source = this.map.getSource(id) as RasterTileSource | undefined;
-    return !!source && source.loaded();
+    // Ask the map, not the source: a raster source reports loaded() as soon as
+    // its URL template is set, before a single tile has arrived.
+    return !!id && !!this.map.getLayer(id) && this.map.isSourceLoaded(id) === true;
   }
 
   /** Create the next `count` frames from `offset` so their tiles start loading. */
@@ -93,11 +93,13 @@ export class RadarTimeline {
     }
     this.setLiveVisible(true);
     const ia = this.layerFor(a);
-    const ib = this.layerFor(b);
     const oa = this.opacityFor(ia);
-    const ob = this.opacityFor(ib);
     const want = new Map<string, number>();
-    if (ia === ib || f <= 0) {
+    // Only touch frame b mid-fade: on the last frame, b is past the end of the
+    // HRRR run and its tiles don't exist.
+    const ib = f > 0 && b <= this.timeline.maxOffset ? this.layerFor(b) : ia;
+    const ob = this.opacityFor(ib);
+    if (ia === ib) {
       want.set(ia, oa);
     } else if (f >= 1) {
       want.set(ib, ob);
@@ -151,7 +153,7 @@ export class RadarTimeline {
       return existing;
     }
     const id = `radar-frame-${this.seq++}`;
-    this.map.addSource(id, { type: 'raster', tiles: [url], tileSize: 256, minzoom: 3, maxzoom: 10 });
+    this.map.addSource(id, { type: 'raster', tiles: tileMirrors(url), tileSize: 256, minzoom: 3, maxzoom: 10 });
     this.map.addLayer(
       {
         id,

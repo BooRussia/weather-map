@@ -12,7 +12,11 @@ export const RADAR_SCALE = ['#4666a4', '#5eadcf', '#48d68f', '#42d810', '#ffc100
 /** Playback speed in frames per second (15-minute frames: one hour per second). */
 const FRAMES_PER_SECOND = 4;
 /** Frames requested ahead of the playhead. */
-const PREFETCH = 6;
+const PREFETCH = 8;
+/** After a stall, resume once this many frames ahead have loaded, so playback doesn't stutter. */
+const RESUME_FRAMES = 3;
+/** Stop waiting on a frame after this long (a hung tile) and show what has loaded, seconds. */
+const MAX_WAIT_S = 6;
 /** Pause on the last frame before looping, seconds. */
 const HOLD_S = 1.2;
 /** Say "Loading radar" if playback waits on the network longer than this, seconds. */
@@ -104,6 +108,8 @@ export class TimelineBar {
 
   play(): void {
     if (this.playing) return;
+    // Scrubbed and pressed play before that frame loaded: play from there.
+    if (this.pending != null) this.pos = this.pending;
     this.pending = null;
     // From the end, start over from the oldest frame; otherwise loop from here.
     if (Math.round(this.pos) >= this.maxQ) this.pos = this.minQ;
@@ -199,7 +205,7 @@ export class TimelineBar {
       return;
     }
     this.frames.prefetch(next * STEP_H, 1, PREFETCH);
-    if (!this.frames.ready(next * STEP_H)) {
+    if (!this.loadedAhead(next, this.waited > 0 ? RESUME_FRAMES : 1) && this.waited < MAX_WAIT_S) {
       // Wait for the network rather than fade into a half-loaded frame.
       this.waited += dt;
       if (this.waited > BUFFER_NOTE_S) $('#tl-kind').textContent = 'Loading radar';
@@ -210,6 +216,12 @@ export class TimelineBar {
     this.pos = Math.min(this.pos + dt * FRAMES_PER_SECOND, next);
     this.apply();
   };
+
+  /** The `count` frames from `q` (stopping at the end) have loaded. */
+  private loadedAhead(q: number, count: number): boolean {
+    for (let k = q; k < q + count && k <= this.maxQ; k++) if (!this.frames.ready(k * STEP_H)) return false;
+    return true;
+  }
 
   /** Push the playhead to the map (crossfade), the slider, and the label. */
   private apply(): void {

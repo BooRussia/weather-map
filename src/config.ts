@@ -75,5 +75,11 @@ export const PAST_RADAR_TILE_URL =
 /** HRRR simulated reflectivity (IEM): `{minutes}` = 4-digit forecast minute, `{init}` = UTC YYYYMMDDHHMM. */
 export const FUTURE_RADAR_TILE_URL =
   'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFD-F{minutes}-{init}/{z}/{x}/{y}.png';
+/**
+ * IEM serves the same tiles from four hostnames, over HTTP/1.1. Browsers open
+ * six connections per host, so spreading a frame's tiles across all four lets
+ * playback load four times as many at once.
+ */
+export const IEM_HOSTS = ['mesonet', 'mesonet1', 'mesonet2', 'mesonet3'];
 /** Latest HRRR run time (IEM). */
 export const HRRR_META_URL = 'https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_0000.json';
