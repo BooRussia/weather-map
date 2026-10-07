@@ -57,7 +57,30 @@ export interface StormGIS {
   points: FeatureCollection<Geometry, ForecastPointProps>;
   past: FeatureCollection;
   warnings: FeatureCollection<Geometry, { tcww?: string }>;
+  /** Current extent of 34-, 50-, and 64-kt winds. */
+  windField: FeatureCollection<Geometry, { radii: number }>;
+  /** Most likely arrival time of tropical-storm-force winds ("Wed 8 am"). */
+  arrival: FeatureCollection<Geometry, { arrival_time: string }>;
+  /** NHC has issued a potential storm surge flooding map for this storm. */
+  surge: boolean;
 }
+
+/** Layer offsets inside a storm slot's group (AT1 = 4, so AT1's cone is layer 8). */
+export const SLOT = {
+  points: 2,
+  track: 3,
+  cone: 4,
+  warnings: 5,
+  past: 8,
+  windField: 13,
+  arrivalMostLikely: 16,
+  surgeFootprint: 20,
+  surgeImage: 21,
+} as const;
+
+/** Wind-speed probability layers (all storms): chance of 34-, 50-, 64-kt winds over five days. */
+export const WIND_PROB_LAYER: Record<34 | 50 | 64, number> = { 34: 395, 50: 396, 64: 397 };
+export const NHC_GIS_URL = NHC_GIS;
 
 export interface ForecastPointProps {
   stormname: string;
@@ -143,23 +166,106 @@ function layer<P = Record<string, unknown>>(id: number, signal?: AbortSignal): P
 
 const EMPTY = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] });
 
-/** The official forecast cone, track, points, watches/warnings, and past track for a slot. */
+const emptyGIS = (): StormGIS => ({
+  cone: EMPTY(),
+  track: EMPTY(),
+  points: EMPTY() as StormGIS['points'],
+  past: EMPTY(),
+  warnings: EMPTY() as StormGIS['warnings'],
+  windField: EMPTY() as StormGIS['windField'],
+  arrival: EMPTY() as StormGIS['arrival'],
+  surge: false,
+});
+
+/** Whether a layer has any features (cheap: a count). */
+async function hasFeatures(id: number, signal?: AbortSignal): Promise<boolean> {
+  const q = new URLSearchParams({ where: '1=1', returnCountOnly: 'true', f: 'json' });
+  const r = await fetchJson<{ count?: number }>(`${NHC_GIS}/${id}/query?${q}`, { signal, timeoutMs: 10_000 });
+  return (r.count ?? 0) > 0;
+}
+
+/** Everything NHC publishes for a slot: forecast cone, track, points, watches/warnings, past track, wind field, arrival times, surge. */
 export async function getStormGIS(bin: string, signal?: AbortSignal): Promise<StormGIS> {
   const base = binBase(bin);
-  if (base == null) {
-    return { cone: EMPTY(), track: EMPTY(), points: EMPTY() as StormGIS['points'], past: EMPTY(), warnings: EMPTY() as StormGIS['warnings'] };
-  }
-  const safe = <T>(p: Promise<T>, empty: T) => p.catch(() => empty);
-  const [points, track, cone, warnings, past] = await Promise.all([
-    safe(layer<ForecastPointProps>(base + 2, signal), EMPTY() as StormGIS['points']),
-    safe(layer(base + 3, signal), EMPTY()),
-    safe(layer(base + 4, signal), EMPTY()),
-    safe(layer<{ tcww?: string }>(base + 5, signal), EMPTY() as StormGIS['warnings']),
-    safe(layer(base + 8, signal), EMPTY()),
+  if (base == null) return emptyGIS();
+  const empty = emptyGIS();
+  const safe = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
+  const [points, track, cone, warnings, past, windField, arrival, surge] = await Promise.all([
+    safe(layer<ForecastPointProps>(base + SLOT.points, signal), empty.points),
+    safe(layer(base + SLOT.track, signal), empty.track),
+    safe(layer(base + SLOT.cone, signal), empty.cone),
+    safe(layer<{ tcww?: string }>(base + SLOT.warnings, signal), empty.warnings),
+    safe(layer(base + SLOT.past, signal), empty.past),
+    safe(layer<{ radii: number }>(base + SLOT.windField, signal), empty.windField),
+    safe(layer<{ arrival_time: string }>(base + SLOT.arrivalMostLikely, signal), empty.arrival),
+    safe(hasFeatures(base + SLOT.surgeFootprint, signal), false),
   ]);
   points.features.sort((a, b) => (a.properties?.tau ?? 0) - (b.properties?.tau ?? 0));
-  return { cone, track, points, past, warnings };
+  return { cone, track, points, past, warnings, windField, arrival, surge };
 }
+
+/** Chance of winds of at least `kt` over the next five days, all storms, as probability bands ("10-20%"). */
+export function getWindProbs(kt: 34 | 50 | 64, signal?: AbortSignal): Promise<FeatureCollection<Geometry, { percentage: string }>> {
+  return layer<{ percentage: string }>(WIND_PROB_LAYER[kt], signal);
+}
+
+/** Map tiles of a storm's potential storm surge flooding (NHC's raster, through the map service's export). */
+export function surgeTiles(bin: string): string | null {
+  const base = binBase(bin);
+  if (base == null) return null;
+  const q = 'bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&f=image';
+  return `${NHC_GIS}/export?${q}&layers=show:${base + SLOT.surgeImage}`;
+}
+
+/* ---------- NHC graphics and NOAA satellite, for the storm panel ---------- */
+
+/** NHC's graphics folder for a storm: al092026 → AT09. */
+function graphicsDir(id: string): string | null {
+  const m = /^(al|ep|cp)(\d\d)(\d{4})$/i.exec(id);
+  if (!m) return null;
+  return `https://www.nhc.noaa.gov/storm_graphics/${({ al: 'AT', ep: 'EP', cp: 'CP' } as Record<string, string>)[m[1].toLowerCase()]}${m[2]}`;
+}
+
+export interface Graphic {
+  label: string;
+  /** Small version for the strip, and the full one to open. */
+  thumb: string;
+  full: string;
+}
+
+/** NHC's standard graphics for a storm (each loads lazily; a missing one simply hides). */
+export function stormGraphics(id: string): Graphic[] {
+  const dir = graphicsDir(id);
+  if (!dir) return [];
+  const ID = id.toUpperCase();
+  const png = (name: string, label: string): Graphic => ({ label, thumb: `${dir}/${ID}_${name}_sm2.png`, full: `${dir}/${ID}_${name}.png` });
+  const short = `${ID.slice(0, 4)}${ID.slice(6)}`; // AL092026 → AL0926
+  return [
+    png('key_messages', 'Key messages'),
+    png('5day_cone', '5-day cone'),
+    png('current_wind', 'Wind field now'),
+    png('wind_probs_34_F120', 'Tropical-storm wind odds'),
+    png('wind_probs_64_F120', 'Hurricane wind odds'),
+    png('most_likely_toa_34', 'Arrival of storm winds'),
+    { label: 'Rainfall (WPC)', thumb: `${dir}/${short}WPCQPF.gif`, full: `${dir}/${short}WPCQPF.gif` },
+  ];
+}
+
+export type SatBand = 'GEOCOLOR' | '13';
+
+/** NOAA STAR's storm-centered GOES imagery: the latest frame, and an animated loop (large). */
+export function floater(id: string, band: SatBand): { still: string; loop: string; page: string } {
+  const ID = id.toUpperCase();
+  const dir = `https://cdn.star.nesdis.noaa.gov/FLOATER/data/${ID}/${band}`;
+  return {
+    still: `${dir}/500x500.jpg`,
+    loop: `${dir}/${ID}-${band}-1000x1000.gif`,
+    page: `https://www.star.nesdis.noaa.gov/goes/floater.php?stormid=${ID}`,
+  };
+}
+
+/** NHC's graphics page for a storm's slot: AT4 → graphics_at4.shtml. */
+export const nhcGraphicsPage = (bin: string) => `https://www.nhc.noaa.gov/graphics_${bin.toLowerCase()}.shtml`;
 
 /** Areas NHC is watching for development over the next seven days. */
 export async function getOutlook(signal?: AbortSignal): Promise<Outlook> {
@@ -175,7 +281,7 @@ export async function discoverStorms(signal?: AbortSignal): Promise<Storm[]> {
   const found = await Promise.all(
     ALL_BINS.map(async (bin) => {
       const pts = await layer<ForecastPointProps & { lat: number; lon: number; stormtype: string; basin: string; stormnum: number }>(
-        binBase(bin)! + 2,
+        binBase(bin)! + SLOT.points,
         signal,
       ).catch(() => null);
       const now = pts?.features.find((f) => f.properties?.tau === 0) ?? pts?.features[0];

@@ -673,7 +673,15 @@ button {
   right: calc(var(--safe-r) + var(--edge) + 46px + 8px + var(--pad-right));
   width: min(320px, calc(100vw - var(--edge) * 2 - 54px));
   max-height: calc(100dvh - var(--safe-t) - 90px - 150px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.popover-body {
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
 }
 
@@ -2276,6 +2284,144 @@ body.trip-open .left-stack {
 .stop-arrow {
   color: var(--faint);
   font-size: var(--fs-foot);
+}
+
+/* A disclosure inside a row (Hurricanes → what it shows). */
+.row-more {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin: 0 -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.row .row-more .i-chevron {
+  transform: rotate(90deg);
+  transition: transform var(--dur) var(--ease);
+}
+
+.row .row-more[aria-expanded='true'] .i-chevron {
+  transform: rotate(-90deg);
+  color: var(--fg);
+}
+
+/* Options under a layer, indented to its label. */
+.sub-options {
+  border-top: 1px solid var(--hairline);
+}
+
+.sub-options + .row {
+  border-top: 1px solid var(--hairline);
+}
+
+.sub-options .row {
+  min-height: 44px;
+  padding-left: 54px;
+}
+
+.sub-options .row.is-nested {
+  padding-left: 66px;
+}
+
+/* Label above, control below: too wide to share a line in the popover. */
+.row-stack {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding-top: 8px;
+  padding-bottom: 10px;
+}
+
+.row-stack .row-label {
+  flex-basis: 100%;
+}
+
+.storm-sat-bands {
+  display: flex;
+  margin: 0 0 8px;
+}
+
+.storm-sat {
+  position: relative;
+  margin: 0 0 4px;
+  border-radius: var(--r-inner);
+  overflow: hidden;
+  background: var(--group-fill);
+}
+
+.storm-sat-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.storm-sat-play {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: var(--fs-foot);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.storm-sat-play:disabled {
+  cursor: progress;
+}
+
+:root[data-theme='classic'] .storm-sat,
+:root[data-theme='classic'] .storm-gfx-item img {
+  border-radius: 0;
+}
+
+:root[data-theme='classic'] .storm-sat-play {
+  border-radius: 0;
+  background: #000;
+  border: 1px solid var(--hairline);
+}
+
+.storm-gfx {
+  display: flex;
+  gap: 8px;
+  margin: 0 -16px 6px;
+  padding: 0 16px 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 16px;
+  scrollbar-width: thin;
+}
+
+.storm-gfx-item {
+  flex: none;
+  width: 132px;
+  scroll-snap-align: start;
+  color: var(--muted);
+  font-size: var(--fs-foot);
+  text-decoration: none;
+}
+
+.storm-gfx-item img {
+  display: block;
+  width: 132px;
+  height: 108px;
+  margin: 0 0 4px;
+  object-fit: cover;
+  border-radius: var(--r-inner);
+  background: var(--group-fill);
 }
 
 /* Four or so short options in a narrow panel. */

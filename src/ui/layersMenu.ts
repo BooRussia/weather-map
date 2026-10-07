@@ -55,6 +55,8 @@ export function segRow(label: string, control: HTMLElement): HTMLElement {
 export class LayersMenu {
   private readonly el = $('#layers-menu');
   private readonly btn = $('#layers-btn');
+  /** Hurricanes' options list is open (kept while the menu re-renders). */
+  private tropicsOpen = false;
 
   constructor(
     private readonly store: Store,
@@ -100,6 +102,100 @@ export class LayersMenu {
     });
   }
 
+  /**
+   * Hurricanes: the layer switch, and a disclosure for what it shows (cone,
+   * spaghetti, wind odds…), so people can look at just the parts they want.
+   */
+  private tropicsRows(): HTMLElement[] {
+    const s = this.store.get();
+    const t = s.tropics;
+    const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch', 'aria-label': 'Hurricanes' });
+    input.checked = s.layers.tropics;
+    input.addEventListener('change', () => {
+      this.store.set({ layers: { ...this.store.get().layers, tropics: input.checked } });
+      this.onLayer('tropics', input.checked);
+    });
+    const more = h(
+      'button',
+      {
+        type: 'button',
+        id: 'tropics-more',
+        class: 'row-more',
+        'aria-expanded': String(this.tropicsOpen),
+        'aria-controls': 'tropics-options',
+        'aria-label': 'What hurricanes show',
+      },
+      svg(chevronIcon),
+    );
+    more.addEventListener('click', () => {
+      this.tropicsOpen = !this.tropicsOpen;
+      this.render();
+      $('#tropics-more').focus();
+    });
+    const head = h(
+      'div',
+      { class: 'row' },
+      h('span', { class: 'row-mark is-alert' }, svg(hurricaneMark)),
+      h('span', { class: 'row-label' }, 'Hurricanes', h('span', { class: 'row-sub' }, 'NHC and models')),
+      more,
+      input,
+    );
+    if (!this.tropicsOpen) return [head];
+
+    const set = (patch: Partial<typeof t>) => this.store.set({ tropics: { ...this.store.get().tropics, ...patch } });
+    const opt = (key: keyof typeof t, label: string, sub?: string) =>
+      switchRow({ label, sub, checked: Boolean(t[key]), onChange: (on) => set({ [key]: on } as Partial<typeof t>) });
+    const members = switchRow({
+      label: 'Members',
+      sub: '31 faint GFS ensemble tracks',
+      checked: s.modelGroups.includes('member'),
+      onChange: (on) => {
+        const groups = this.store.get().modelGroups.filter((g) => g !== 'member');
+        this.store.set({ modelGroups: on ? [...groups, 'member'] : groups });
+      },
+    });
+    members.classList.add('is-nested');
+    // Wind-speed odds thresholds, in the user's unit: 34, 50, 64 kt.
+    const kmh = s.windUnit === 'kmh';
+    const odds = segmented<'0' | '34' | '50' | '64'>(
+      'Wind-speed odds',
+      [
+        { value: '0', label: 'Off' },
+        { value: '34', label: kmh ? '63+' : '39+' },
+        { value: '50', label: kmh ? '93+' : '58+' },
+        { value: '64', label: kmh ? '119+' : '74+' },
+      ],
+      String(t.windProb) as '0' | '34' | '50' | '64',
+      (v) => set({ windProb: Number(v) as typeof t.windProb }),
+    );
+    odds.classList.add('seg-compact');
+    const oddsRow = h(
+      'div',
+      { class: 'row row-stack' },
+      h('span', { class: 'row-label' }, 'Wind-speed odds', h('span', { class: 'row-sub' }, `Chance of winds this strong (${kmh ? 'km/h' : 'mph'}), 5 days`)),
+      odds,
+    );
+    return [
+      head,
+      h(
+        'div',
+        { id: 'tropics-options', class: 'sub-options' },
+        opt('cone', 'Forecast cone'),
+        opt('track', 'Forecast track'),
+        opt('models', 'Spaghetti models', 'Groups: tap a storm'),
+        members,
+        opt('past', 'Past track'),
+        opt('warnings', 'Warnings', 'Coastal watches and warnings'),
+        opt('windField', 'Wind field', 'Storm- and hurricane-force winds now'),
+        oddsRow,
+        opt('arrival', 'Wind arrival', 'When storm winds likely start'),
+        opt('surge', 'Storm surge', 'When NHC issues a flooding map'),
+        opt('outlook', 'Possible storms', 'NHC’s 7-day outlook'),
+        opt('sst', 'Sea temperature', '80 °F (26.5 °C) and warmer fuels storms'),
+      ),
+    ];
+  }
+
   private render(): void {
     const s = this.store.get();
     const settings = h(
@@ -114,7 +210,11 @@ export class LayersMenu {
       this.onSettings();
     });
 
-    this.el.replaceChildren(
+    // The list scrolls inside the panel, so the glass edge stays put; keep the place across re-renders.
+    const scroll = this.el.querySelector('.popover-body')?.scrollTop ?? 0;
+    const body = h(
+      'div',
+      { class: 'popover-body' },
       h('p', { class: 'pop-title' }, 'Map'),
       h(
         'div',
@@ -134,7 +234,7 @@ export class LayersMenu {
         this.layer('wind', 'Wind', windIcon, ''),
         this.layer('thunder', 'Lightning', boltMark, 'is-bolt', 'Approximate'),
         this.layer('clouds', 'Clouds', cloudMark, '', 'Live satellite'),
-        this.layer('tropics', 'Hurricanes', hurricaneMark, 'is-alert', 'NHC forecast and models'),
+        ...this.tropicsRows(),
         switchRow({
           label: 'Alert areas',
           mark: alertMark,
@@ -157,5 +257,7 @@ export class LayersMenu {
       ),
       h('div', { class: 'group' }, settings),
     );
+    this.el.replaceChildren(body);
+    body.scrollTop = scroll;
   }
 }

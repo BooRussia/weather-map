@@ -1,6 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseADeck, selectModels } from '../scripts/tropical.mjs';
-import { binBase, category, modelLines, stormTitle, type ModelGroup, type Storm } from '../src/data/tropical';
+import {
+  binBase,
+  category,
+  floater,
+  modelLines,
+  nhcGraphicsPage,
+  SLOT,
+  stormGraphics,
+  stormTitle,
+  surgeTiles,
+  type ModelGroup,
+  type Storm,
+} from '../src/data/tropical';
+import { createStore, DEFAULT_TROPICS } from '../src/state';
 
 /** A few a-deck lines: two OFCL runs, one interpolated GFS, its raw run, a stale model, members, an intensity-only aid. */
 const ADECK = [
@@ -84,5 +97,63 @@ describe('storms', () => {
     const lines = modelLines(storm, new Set<ModelGroup>(['official']));
     expect(lines.features).toHaveLength(1);
     expect(lines.features[0].geometry).toEqual({ type: 'LineString', coordinates: [[-96, 22], [-93, 23]] });
+  });
+});
+
+describe('what hurricanes show', () => {
+  it('finds each part of a storm in its NHC map-service slot', () => {
+    // AT1's group is layer 4: its cone is 8, wind field 17, surge image 25.
+    expect(binBase('AT1')! + SLOT.cone).toBe(8);
+    expect(binBase('AT1')! + SLOT.windField).toBe(17);
+    expect(binBase('AT4')! + SLOT.points).toBe(84);
+    const tiles = surgeTiles('AT1')!;
+    expect(tiles).toContain('layers=show:25');
+    expect(tiles).toContain('bbox={bbox-epsg-3857}');
+    expect(surgeTiles('WP1')).toBeNull();
+  });
+
+  it("links NHC's graphics and NOAA's satellite floater for a storm", () => {
+    const g = stormGraphics('al092026');
+    expect(g[0].thumb).toBe('https://www.nhc.noaa.gov/storm_graphics/AT09/AL092026_key_messages_sm2.png');
+    expect(g[0].full).toBe('https://www.nhc.noaa.gov/storm_graphics/AT09/AL092026_key_messages.png');
+    expect(g.at(-1)!.full).toBe('https://www.nhc.noaa.gov/storm_graphics/AT09/AL0926WPCQPF.gif');
+    expect(stormGraphics('ep182026')[1].thumb).toContain('/storm_graphics/EP18/EP182026_5day_cone_sm2.png');
+    expect(stormGraphics('invest')).toEqual([]);
+
+    const f = floater('ep182026', '13');
+    expect(f.still).toBe('https://cdn.star.nesdis.noaa.gov/FLOATER/data/EP182026/13/500x500.jpg');
+    expect(f.loop).toBe('https://cdn.star.nesdis.noaa.gov/FLOATER/data/EP182026/13/EP182026-13-1000x1000.gif');
+    expect(nhcGraphicsPage('AT4')).toBe('https://www.nhc.noaa.gov/graphics_at4.shtml');
+  });
+});
+
+describe('hurricane choices are remembered', () => {
+  const storage = (init: Record<string, string>) => {
+    const m = new Map(Object.entries(init));
+    return {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, v),
+      removeItem: (k: string) => void m.delete(k),
+      dump: m,
+    };
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('fills choices saved by an older version with the defaults', () => {
+    vi.stubGlobal('localStorage', storage({ 'weather-map:prefs:v2': JSON.stringify({ tropics: { models: false } }) }));
+    const store = createStore({ lat: 0, lon: 0 }, false);
+    expect(store.get().tropics).toEqual({ ...DEFAULT_TROPICS, models: false });
+  });
+
+  it('moves model groups saved under the old key, and saves changes', () => {
+    const ls = storage({ 'weather-map:models:v1': JSON.stringify(['official', 'member']) });
+    vi.stubGlobal('localStorage', ls);
+    const store = createStore({ lat: 0, lon: 0 }, false);
+    expect(store.get().modelGroups).toEqual(['official', 'member']);
+    store.set({ tropics: { ...store.get().tropics, cone: false, windProb: 64 } });
+    const saved = JSON.parse(ls.dump.get('weather-map:prefs:v2')!);
+    expect(saved.tropics.cone).toBe(false);
+    expect(saved.tropics.windProb).toBe(64);
+    expect(saved.modelGroups).toEqual(['official', 'member']);
   });
 });

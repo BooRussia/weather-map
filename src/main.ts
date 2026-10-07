@@ -19,8 +19,9 @@ import { LocationDot } from './map/location';
 import { RadarLayer } from './map/radarLayer';
 import { TripLayer } from './map/tripLayer';
 import { TropicalLayer } from './map/tropicalLayer';
-import { getOutlook, getStormGIS, getStorms, type ModelGroup, type Outlook, type Storm, type StormGIS } from './data/tropical';
-import { DEFAULT_GROUPS, stormPanel, stormShort, stormTitle } from './ui/storm';
+import type { FeatureCollection } from 'geojson';
+import { getOutlook, getStormGIS, getStorms, getWindProbs, type ModelGroup, type Outlook, type Storm, type StormGIS } from './data/tropical';
+import { stormPanel, stormShort, stormTitle } from './ui/storm';
 import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
@@ -374,25 +375,26 @@ async function main(): Promise<void> {
 
   /* ---------- hurricanes ---------- */
 
-  const GROUPS_KEY = 'weather-map:models:v1';
-  const readGroups = (): Set<ModelGroup> => {
-    try {
-      const v = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? 'null') as ModelGroup[] | null;
-      if (Array.isArray(v)) return new Set(v);
-    } catch {
-      // Storage blocked: defaults.
-    }
-    return new Set(DEFAULT_GROUPS);
-  };
-  let modelGroups = readGroups();
+  // What's shown (Layers → Hurricanes) and which model groups live in the store, remembered.
+  const modelGroups = () => new Set<ModelGroup>(store.get().modelGroups);
   let storms: Storm[] = [];
   let stormGIS = new Map<string, StormGIS>();
   let outlook: Outlook | null = null;
+  let windProbs: FeatureCollection | null = null;
+  let windProbsKt = 0;
   let tropicsGenerated: string | null = null;
   let selectedStorm: string | null = null;
   let tropicsAt = 0;
   const tropical = new TropicalLayer(map, (id) => openStorm(id));
-  const drawTropics = () => tropical.set(storms, stormGIS, outlook, modelGroups);
+  tropical.setOptions(store.get().tropics);
+  const drawTropics = () => tropical.set(storms, stormGIS, outlook, modelGroups(), windProbs);
+  /** Wind-speed odds for the chosen threshold (fetched only when shown). */
+  const loadWindProbs = async () => {
+    const kt = store.get().tropics.windProb;
+    windProbsKt = kt;
+    windProbs = kt ? await getWindProbs(kt).catch(() => null) : null;
+    if (kt === store.get().tropics.windProb) drawTropics();
+  };
   const strongest = () => [...storms].sort((a, b) => b.intensityKt - a.intensityKt)[0];
 
   const stormPill = $<HTMLButtonElement>('#storm-pill');
@@ -409,18 +411,11 @@ async function main(): Promise<void> {
   const stormContent = () =>
     stormPanel(storms, stormGIS, tropicsGenerated, selectedStorm ?? storms[0].id, {
       state: () => store.get(),
-      groups: () => modelGroups,
+      groups: modelGroups,
+      // The store redraws the map and the panel (see the subscription below).
       setGroup: (group, on) => {
-        modelGroups = new Set(modelGroups);
-        if (on) modelGroups.add(group);
-        else modelGroups.delete(group);
-        try {
-          localStorage.setItem(GROUPS_KEY, JSON.stringify([...modelGroups]));
-        } catch {
-          // The choice lasts for this visit.
-        }
-        drawTropics();
-        rerenderStorm();
+        const groups = store.get().modelGroups.filter((g) => g !== group);
+        store.set({ modelGroups: on ? [...groups, group] : groups });
       },
       select: (id) => {
         selectedStorm = id;
@@ -429,7 +424,7 @@ async function main(): Promise<void> {
       showOnMap: (id) => {
         sheet.close();
         const s = storms.find((x) => x.id === id);
-        if (s) tropical.fit(s, stormGIS.get(id), modelGroups, { top: 90, bottom: 170, left: 40, right: 70 });
+        if (s) tropical.fit(s, stormGIS.get(id), modelGroups(), { top: 90, bottom: 170, left: 40, right: 70 });
       },
     });
   const rerenderStorm = () => {
@@ -458,6 +453,8 @@ async function main(): Promise<void> {
       // Keep what's on the map.
     }
     outlook = await getOutlook().catch(() => outlook);
+    const kt = store.get().tropics.windProb;
+    if (kt) windProbs = await getWindProbs(kt).catch(() => windProbs);
     drawTropics();
     renderStormPill();
     rerenderStorm();
@@ -516,6 +513,14 @@ async function main(): Promise<void> {
       renderStormPill();
       if (s.layers.tropics && Date.now() - tropicsAt > 60_000) void refreshTropics();
     }
+    if (s.tropics !== prev.tropics) {
+      tropical.setOptions(s.tropics);
+      if (s.tropics.windProb !== windProbsKt) void loadWindProbs();
+    }
+    if (s.modelGroups !== prev.modelGroups) {
+      drawTropics();
+      rerenderStorm();
+    }
     if (s.followMap !== prev.followMap) {
       // Pinning the weather while looking around: back to your location's weather (the map stays put).
       if (!s.followMap && mode === 'center' && dot.position) {
@@ -525,7 +530,7 @@ async function main(): Promise<void> {
       renderLocate();
     }
     if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
-    if (s.basemap !== prev.basemap || s.layers.clouds !== prev.layers.clouds || s.layers.rain !== prev.layers.rain) {
+    if (s.basemap !== prev.basemap || s.layers !== prev.layers || s.tropics !== prev.tropics) {
       renderCredits(s);
     }
     if (s.theme !== prev.theme) {
@@ -587,6 +592,7 @@ function renderCredits(s: AppState): void {
   $('[data-credit="iem"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
+  $('[data-credit="gibs"]').hidden = !(s.layers.tropics && s.tropics.sst);
 }
 
 void main();

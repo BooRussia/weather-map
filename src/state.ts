@@ -1,7 +1,47 @@
 import type { Basemap, ColorMode, LatLon } from './config';
+import type { ModelGroup } from './data/tropical';
 
 export type Theme = 'liquid' | 'classic';
 import type { TempUnit, WindUnit } from './util/units';
+
+/** What the Hurricanes layer shows (the dropdown under it in Layers). */
+export interface TropicalOptions {
+  cone: boolean;
+  /** Forecast track and points. */
+  track: boolean;
+  /** Spaghetti models; which groups is `modelGroups`. */
+  models: boolean;
+  past: boolean;
+  warnings: boolean;
+  /** Current extent of tropical-storm- and hurricane-force winds. */
+  windField: boolean;
+  /** Wind-speed odds: off (0), or the threshold in kt. */
+  windProb: 0 | 34 | 50 | 64;
+  /** Most likely arrival time of tropical-storm-force winds. */
+  arrival: boolean;
+  /** Potential storm surge flooding, when NHC issues it. */
+  surge: boolean;
+  /** Seven-day development outlook areas. */
+  outlook: boolean;
+  /** Sea surface temperature. */
+  sst: boolean;
+}
+
+export const DEFAULT_TROPICS: TropicalOptions = {
+  cone: true,
+  track: true,
+  models: true,
+  past: true,
+  warnings: true,
+  windField: true,
+  windProb: 0,
+  arrival: false,
+  surge: true,
+  outlook: true,
+  sst: false,
+};
+
+export const DEFAULT_MODEL_GROUPS: ModelGroup[] = ['official', 'consensus', 'hurricane', 'global', 'ensembleMean', 'member'];
 
 export interface AppState {
   /** `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
@@ -24,6 +64,9 @@ export interface AppState {
    * readout stays on your location, or the place you searched, while you look around.
    */
   followMap: boolean;
+  tropics: TropicalOptions;
+  /** Spaghetti model groups drawn. */
+  modelGroups: ModelGroup[];
   /** The point the HUD describes. */
   selected: LatLon;
   /** The selected point came from the device location (shows the GPS arrow). */
@@ -46,6 +89,8 @@ interface Prefs {
   alertAreas?: boolean;
   theme?: Theme;
   followMap?: boolean;
+  tropics?: Partial<TropicalOptions>;
+  modelGroups?: ModelGroup[];
 }
 
 function readPrefs(): Prefs {
@@ -72,10 +117,22 @@ function writePrefs(s: AppState): void {
       alertAreas: s.alertAreas,
       theme: s.theme,
       followMap: s.followMap,
+      tropics: s.tropics,
+      modelGroups: s.modelGroups,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
     // Private mode or storage blocked: preferences last for this visit only.
+  }
+}
+
+/** Model groups saved before they moved into prefs (2026-10-06). */
+function legacyGroups(): ModelGroup[] | null {
+  try {
+    const v = JSON.parse(localStorage.getItem('weather-map:models:v1') ?? 'null') as ModelGroup[] | null;
+    return Array.isArray(v) ? v : null;
+  } catch {
+    return null;
   }
 }
 
@@ -93,6 +150,8 @@ export function createStore(selected: LatLon, gps: boolean) {
     alertAreas: prefs.alertAreas ?? true,
     theme: prefs.theme === 'classic' ? 'classic' : 'liquid',
     followMap: prefs.followMap ?? true,
+    tropics: { ...DEFAULT_TROPICS, ...prefs.tropics },
+    modelGroups: Array.isArray(prefs.modelGroups) ? prefs.modelGroups : legacyGroups() ?? DEFAULT_MODEL_GROUPS,
     selected,
     gps,
   };
@@ -112,7 +171,9 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.rainStreaks !== undefined ||
         patch.alertAreas !== undefined ||
         patch.theme !== undefined ||
-        patch.followMap !== undefined
+        patch.followMap !== undefined ||
+        patch.tropics !== undefined ||
+        patch.modelGroups !== undefined
       ) {
         writePrefs(state);
       }

@@ -1,4 +1,4 @@
-import { category, categoryLabel, stormTitle, type ModelGroup, type Storm, type StormGIS } from '../data/tropical';
+import { category, categoryLabel, floater, nhcGraphicsPage, stormGraphics, stormTitle, type ModelGroup, type SatBand, type Storm, type StormGIS } from '../data/tropical';
 import { CATEGORY_COLOR, MODEL_STYLE } from '../map/tropicalLayer';
 import type { AppState } from '../state';
 import { compass16 } from '../util/units';
@@ -16,8 +16,6 @@ const BANDS: [number, string][] = [
   [113, '4'],
   [137, '5'],
 ];
-
-export const DEFAULT_GROUPS: ModelGroup[] = ['official', 'consensus', 'hurricane', 'global', 'ensembleMean', 'member'];
 
 const windText = (kt: number, s: AppState) => (s.windUnit === 'kmh' ? `${Math.round(kt * 1.852)} km/h` : `${Math.round(kt * 1.15078)} mph`);
 const ago = (ms: number) => {
@@ -96,6 +94,8 @@ export function stormPanel(storms: Storm[], gis: Map<string, StormGIS>, generate
     storm.advisoryUrl ? h('a', { href: storm.advisoryUrl, target: '_blank', rel: 'noopener' }, 'Advisory') : null,
     storm.discussionUrl ? ' · ' : '',
     storm.discussionUrl ? h('a', { href: storm.discussionUrl, target: '_blank', rel: 'noopener' }, 'Discussion') : null,
+    ' · ',
+    h('a', { href: nhcGraphicsPage(storm.bin), target: '_blank', rel: 'noopener' }, 'Graphics'),
   );
 
   // NHC's official forecast points.
@@ -154,6 +154,7 @@ export function stormPanel(storms: Storm[], gis: Map<string, StormGIS>, generate
     picker,
     now,
     advisory,
+    satellite(storm),
     h('p', { class: 'group-label' }, 'NHC forecast'),
     forecast,
     storm.models.length ? h('p', { class: 'group-label' }, 'Intensity guidance') : null,
@@ -169,6 +170,7 @@ export function stormPanel(storms: Storm[], gis: Map<string, StormGIS>, generate
           `Latest run ${new Date(latestRun).toISOString().slice(11, 13)}Z (${ago(latestRun)}). Checked every 30 minutes${generated ? `, last ${ago(Date.parse(generated))}` : ''}.`,
         )
       : null,
+    graphics(storm),
     show,
     h(
       'p',
@@ -176,6 +178,90 @@ export function stormPanel(storms: Storm[], gis: Map<string, StormGIS>, generate
       'Model tracks are computer guidance from NHC’s ATCF, not forecasts; individual models can be far off. The white cone and track are NHC’s official forecast. For decisions, follow NHC and local officials.',
     ),
   );
+}
+
+/**
+ * NOAA STAR's storm-centered GOES imagery: the latest frame, GeoColor or
+ * infrared, and the animated loop on request (it's several megabytes). The
+ * section hides itself if the storm has no floater yet.
+ */
+function satellite(storm: Storm): HTMLElement {
+  let band: SatBand = 'GEOCOLOR';
+  let looping = false;
+  const img = h('img', { class: 'storm-sat-img', alt: '', decoding: 'async', width: 500, height: 500 });
+  const play = h('button', { type: 'button', class: 'storm-sat-play' });
+  const section = h(
+    'div',
+    { class: 'storm-sat-section' },
+    h('p', { class: 'group-label' }, 'Satellite'),
+    h(
+      'div',
+      { class: 'storm-sat-bands' },
+      segmented<SatBand>(
+        'Satellite band',
+        [
+          { value: 'GEOCOLOR', label: 'Color' },
+          { value: '13', label: 'Infrared' },
+        ],
+        band,
+        (v) => {
+          band = v;
+          load();
+        },
+      ),
+    ),
+    h('div', { class: 'storm-sat' }, img, play),
+    h(
+      'p',
+      { class: 'pop-note' },
+      'GOES imagery centered on the storm, from NOAA STAR. Infrared works at night; colored areas are the coldest, tallest clouds. ',
+      h('a', { href: floater(storm.id, band).page, target: '_blank', rel: 'noopener' }, 'More bands'),
+    ),
+  );
+  const load = () => {
+    const f = floater(storm.id, band);
+    img.src = looping ? f.loop : f.still;
+    img.alt = `${band === 'GEOCOLOR' ? 'Color' : 'Infrared'} satellite ${looping ? 'loop' : 'image'} of ${storm.name}`;
+    play.textContent = looping ? 'Loading loop…' : 'Play loop · about 8 MB';
+    play.disabled = looping;
+  };
+  img.addEventListener('load', () => {
+    if (!looping) return;
+    play.textContent = 'Latest image';
+    play.disabled = false;
+  });
+  img.addEventListener('error', () => {
+    if (looping) {
+      // No loop: keep the still.
+      looping = false;
+      load();
+      play.hidden = true;
+    } else section.hidden = true;
+  });
+  play.addEventListener('click', () => {
+    looping = !looping;
+    load();
+  });
+  load();
+  return section;
+}
+
+/** NHC's standard graphics as a strip of thumbnails; each opens full size. Missing ones drop out. */
+function graphics(storm: Storm): HTMLElement | null {
+  const items = stormGraphics(storm.id);
+  if (!items.length) return null;
+  const strip = h('div', { class: 'storm-gfx' });
+  const section = h('div', {}, h('p', { class: 'group-label' }, 'NHC graphics'), strip);
+  for (const g of items) {
+    const img = h('img', { src: g.thumb, alt: '', loading: 'lazy', decoding: 'async' });
+    const a = h('a', { class: 'storm-gfx-item', href: g.full, target: '_blank', rel: 'noopener' }, img, h('span', {}, g.label));
+    img.addEventListener('error', () => {
+      a.remove();
+      if (!strip.childElementCount) section.hidden = true;
+    });
+    strip.append(a);
+  }
+  return section;
 }
 
 /** Wind (kt) over the forecast for the model groups shown, with the Saffir–Simpson thresholds. */

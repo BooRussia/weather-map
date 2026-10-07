@@ -1,14 +1,18 @@
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { GeoJSONSource, LngLatBoundsLike, Map as MlMap, PaddingOptions, PointLike } from 'maplibre-gl';
-import { category, modelLines, type ModelGroup, type Outlook, type Storm, type StormGIS } from '../data/tropical';
+import { category, modelLines, surgeTiles, type ModelGroup, type Outlook, type Storm, type StormGIS } from '../data/tropical';
+import type { TropicalOptions } from '../state';
 
 /**
- * Hurricanes on the map, bottom to top: NHC's seven-day outlook areas, the
- * forecast cone, coastal watches and warnings, the spaghetti (model tracks,
- * ensemble members faintest, the official forecast boldest), the past and
- * forecast track, forecast points colored by intensity, and each storm's
- * marker. Colors here are hazard data (DESIGN.md: the documented exception):
- * the Saffir–Simpson scale, NHC's watch/warning colors, a color per model group.
+ * Hurricanes on the map, bottom to top: sea surface temperature, NHC's
+ * seven-day outlook areas, wind-speed odds, potential storm surge, the
+ * forecast cone, the wind field, coastal watches and warnings, arrival times
+ * of storm-force winds, the spaghetti (ensemble members faintest, the
+ * official forecast boldest), the past and forecast track, forecast points
+ * colored by intensity, and each storm's marker. Each part can be switched
+ * off (Layers → Hurricanes). Colors are hazard data (DESIGN.md: the
+ * documented exception): Saffir–Simpson, NHC's watch/warning, wind-radii, and
+ * probability colors, and a color per model group.
  */
 
 /** Saffir–Simpson colors, as tropical-weather maps use them. */
@@ -33,14 +37,34 @@ export const MODEL_STYLE: Record<ModelGroup, { color: string; width: number; lab
   official: { color: '#ffffff', width: 3.5, label: 'NHC official', rank: 6 },
 };
 
+/** NHC's wind-speed probability bands, green (low) to purple (near certain). */
+export const PROB_BANDS: [string, string][] = [
+  ['5-10%', '#1e8a3c'],
+  ['10-20%', '#4cb04c'],
+  ['20-30%', '#9ccc3c'],
+  ['30-40%', '#e6e63c'],
+  ['40-50%', '#f0c040'],
+  ['50-60%', '#f09030'],
+  ['60-70%', '#e85a28'],
+  ['70-80%', '#d22020'],
+  ['80-90%', '#a01060'],
+  ['>90%', '#6a0a7a'],
+];
+
+/** Wind radii: tropical-storm force (34 kt), 50 kt, hurricane force (64 kt). */
+export const RADII_COLOR: Record<number, string> = { 34: '#ffd60a', 50: '#ff9f0a', 64: '#ff453a' };
+
 /** NHC watch/warning colors (tcww codes). */
 const WARNING_COLOR = ['match', ['get', 'tcww'], 'HWR', '#ff453a', 'HWA', '#ff6fb5', 'TWR', '#0a84ff', 'TWA', '#ffd60a', '#ffffff'];
 
 const S = {
   outlook: 'trop-outlook',
   outlookPts: 'trop-outlook-pts',
+  prob: 'trop-prob',
   cone: 'trop-cone',
+  wind: 'trop-wind',
   warn: 'trop-warn',
+  arrival: 'trop-arrival',
   models: 'trop-models',
   ends: 'trop-model-ends',
   past: 'trop-past',
@@ -49,15 +73,40 @@ const S = {
   storms: 'trop-storms',
 } as const;
 
+const SST = 'trop-sst';
+const SURGE = 'trop-surge-';
+
+/** Which layers each option switches. Storm markers stay whenever the layer is on. */
+const PARTS: Record<Exclude<keyof TropicalOptions, 'windProb' | 'surge'>, string[]> = {
+  sst: [SST],
+  outlook: [`${S.outlook}-fill`, `${S.outlook}-line`, S.outlookPts],
+  cone: [`${S.cone}-fill`, `${S.cone}-line`],
+  windField: [`${S.wind}-fill`, `${S.wind}-line`],
+  warnings: [S.warn],
+  arrival: [`${S.arrival}-line`, `${S.arrival}-label`],
+  models: [S.models, S.ends],
+  past: [S.past],
+  track: [S.track, S.points, `${S.points}-label`, `${S.points}-time`],
+};
+
 const empty = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] });
 const tag = (fc: FeatureCollection, storm: string): Feature[] => fc.features.map((f) => ({ ...f, properties: { ...f.properties, storm } }));
 const ICON = 'trop-hurricane';
+
+/** NASA GIBS: daily multi-scale sea surface temperature (MUR), yesterday's analysis. */
+function sstTiles(): string {
+  const day = new Date(Date.now() - 36 * 3_600_000).toISOString().slice(0, 10);
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GHRSST_L4_MUR_Sea_Surface_Temperature/default/${day}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`;
+}
 
 export class TropicalLayer {
   private installed = false;
   private visible = true;
   private hasText = false;
   private layerIds: string[] = [];
+  private opts: TropicalOptions | null = null;
+  private surgeIds = new Set<string>();
+  private before: string | undefined;
 
   constructor(
     private readonly map: MlMap,
@@ -68,18 +117,23 @@ export class TropicalLayer {
     if (this.installed) return;
     this.installed = true;
     const m = this.map;
-    const before = m.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+    this.before = m.getStyle().layers.find((l) => l.type === 'symbol')?.id;
     // The fallback style has no glyphs: no text then.
     this.hasText = !!m.getStyle().glyphs;
     const font = ['Montserrat Medium', 'Open Sans Bold', 'Noto Sans Regular'];
     for (const id of Object.values(S)) m.addSource(id, { type: 'geojson', data: empty() });
     if (!m.hasImage(ICON)) m.addImage(ICON, hurricaneIcon(), { pixelRatio: 2 });
 
-    const add = (layer: Parameters<MlMap['addLayer']>[0]) => {
+    const add = (layer: Parameters<MlMap['addLayer']>[0], before = this.before) => {
       if (layer.type === 'symbol' && !this.hasText && (layer.layout as Record<string, unknown> | undefined)?.['text-field']) return;
       m.addLayer(layer, before);
       this.layerIds.push(layer.id);
     };
+
+    // Sea temperature sits under the radar, like the satellite imagery.
+    m.addSource(SST, { type: 'raster', tiles: [sstTiles()], tileSize: 256, maxzoom: 7, attribution: 'NASA GIBS (GHRSST MUR)' });
+    add({ id: SST, type: 'raster', source: SST, paint: { 'raster-opacity': 0.55 } }, m.getLayer('radar') ? 'radar' : this.before);
+
     const risk = ['match', ['get', 'risk7day'], 'High', '#ff453a', 'Medium', '#ff9f0a', '#ffd60a'];
     add({ id: `${S.outlook}-fill`, type: 'fill', source: S.outlook, paint: { 'fill-color': risk as never, 'fill-opacity': 0.14 } });
     add({ id: `${S.outlook}-line`, type: 'line', source: S.outlook, paint: { 'line-color': risk as never, 'line-width': 1.5, 'line-dasharray': [3, 2] } });
@@ -87,22 +141,34 @@ export class TropicalLayer {
       id: S.outlookPts,
       type: 'symbol',
       source: S.outlookPts,
-      layout: {
-        'text-field': ['concat', '✕ ', ['get', 'prob7day']],
-        'text-font': font,
-        'text-size': 13,
-        'text-allow-overlap': true,
-      },
+      layout: { 'text-field': ['concat', '✕ ', ['get', 'prob7day']], 'text-font': font, 'text-size': 13, 'text-allow-overlap': true },
       paint: { 'text-color': risk as never, 'text-halo-color': '#000', 'text-halo-width': 1.4 },
+    });
+    add({
+      id: `${S.prob}-fill`,
+      type: 'fill',
+      source: S.prob,
+      filter: ['!=', ['get', 'percentage'], '<5%'],
+      paint: { 'fill-color': ['match', ['get', 'percentage'], ...PROB_BANDS.flat(), '#000'] as never, 'fill-opacity': 0.42 },
     });
     add({ id: `${S.cone}-fill`, type: 'fill', source: S.cone, paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.1 } });
     add({ id: `${S.cone}-line`, type: 'line', source: S.cone, paint: { 'line-color': '#ffffff', 'line-opacity': 0.6, 'line-width': 1.2 } });
+    const radii = ['match', ['get', 'radii'], 34, RADII_COLOR[34], 50, RADII_COLOR[50], 64, RADII_COLOR[64], '#fff'];
+    add({ id: `${S.wind}-fill`, type: 'fill', source: S.wind, paint: { 'fill-color': radii as never, 'fill-opacity': 0.2 } });
+    add({ id: `${S.wind}-line`, type: 'line', source: S.wind, paint: { 'line-color': radii as never, 'line-width': 1.2, 'line-opacity': 0.9 } });
+    add({ id: S.warn, type: 'line', source: S.warn, layout: { 'line-cap': 'round' }, paint: { 'line-color': WARNING_COLOR as never, 'line-width': 5 } });
     add({
-      id: S.warn,
+      id: `${S.arrival}-line`,
       type: 'line',
-      source: S.warn,
-      layout: { 'line-cap': 'round' },
-      paint: { 'line-color': WARNING_COLOR as never, 'line-width': 5 },
+      source: S.arrival,
+      paint: { 'line-color': '#ffffff', 'line-opacity': 0.7, 'line-width': 1.2, 'line-dasharray': [1, 2] },
+    });
+    add({
+      id: `${S.arrival}-label`,
+      type: 'symbol',
+      source: S.arrival,
+      layout: { 'symbol-placement': 'line', 'text-field': ['get', 'arrival_time'], 'text-font': font, 'text-size': 11, 'symbol-spacing': 280 },
+      paint: { 'text-color': '#ffffff', 'text-halo-color': '#000', 'text-halo-width': 1.4 },
     });
     const by = (key: 'color' | 'width') => ['match', ['get', 'group'], ...Object.entries(MODEL_STYLE).flatMap(([g, st]) => [g, st[key]]), key === 'color' ? '#fff' : 1];
     add({
@@ -136,26 +202,14 @@ export class TropicalLayer {
       id: `${S.points}-label`,
       type: 'symbol',
       source: S.points,
-      layout: {
-        'text-field': ['get', 'dvlbl'],
-        'text-font': font,
-        'text-size': 10,
-        'text-allow-overlap': true,
-      },
+      layout: { 'text-field': ['get', 'dvlbl'], 'text-font': font, 'text-size': 10, 'text-allow-overlap': true },
       paint: { 'text-color': '#000' },
     });
     add({
       id: `${S.points}-time`,
       type: 'symbol',
       source: S.points,
-      layout: {
-        'text-field': ['get', 'datelbl'],
-        'text-font': font,
-        'text-size': 11,
-        'text-offset': [0.9, 0],
-        'text-anchor': 'left',
-        'text-optional': true,
-      },
+      layout: { 'text-field': ['get', 'datelbl'], 'text-font': font, 'text-size': 11, 'text-offset': [0.9, 0], 'text-anchor': 'left', 'text-optional': true },
       paint: { 'text-color': '#ffffff', 'text-halo-color': '#000', 'text-halo-width': 1.3 },
     });
     // The marker: a disc in the storm's intensity color under a white hurricane symbol.
@@ -174,14 +228,7 @@ export class TropicalLayer {
         'icon-size': 1,
         'icon-allow-overlap': true,
         ...(this.hasText
-          ? {
-              'text-field': ['get', 'label'],
-              'text-font': font,
-              'text-size': 13,
-              'text-offset': [0, 1.7],
-              'text-anchor': 'top',
-              'text-allow-overlap': true,
-            }
+          ? { 'text-field': ['get', 'label'], 'text-font': font, 'text-size': 13, 'text-offset': [0, 1.7], 'text-anchor': 'top', 'text-allow-overlap': true }
           : {}),
       },
       paint: this.hasText ? { 'text-color': '#ffffff', 'text-halo-color': '#000', 'text-halo-width': 1.6 } : {},
@@ -202,7 +249,8 @@ export class TropicalLayer {
   /** The storm under a screen point, if any (so a tap on a storm doesn't also move the map). */
   hit(point: PointLike): string | null {
     if (!this.installed || !this.visible) return null;
-    const layers = [S.storms, `${S.storms}-dot`, S.points, `${S.cone}-fill`].filter((id) => this.map.getLayer(id));
+    const layers = [S.storms, `${S.storms}-dot`, S.points, `${S.cone}-fill`].filter((id) => this.map.getLayer(id) && this.isShown(id));
+    if (!layers.length) return null;
     const f = this.map.queryRenderedFeatures(point, { layers })[0];
     return (f?.properties?.storm as string | undefined) ?? null;
   }
@@ -212,20 +260,44 @@ export class TropicalLayer {
     this.applyVisibility();
   }
 
-  private applyVisibility(): void {
-    if (!this.installed) return;
-    for (const id of this.layerIds) this.map.setLayoutProperty(id, 'visibility', this.visible ? 'visible' : 'none');
+  setOptions(opts: TropicalOptions): void {
+    this.opts = opts;
+    this.applyVisibility();
   }
 
-  /** Draw every active storm, its official forecast, the chosen model groups, and the outlook. */
-  set(storms: Storm[], gis: Map<string, StormGIS>, outlook: Outlook | null, groups: Set<ModelGroup>): void {
+  private isShown(id: string): boolean {
+    if (!this.visible) return false;
+    const o = this.opts;
+    if (!o) return true;
+    if (id === `${S.prob}-fill`) return o.windProb > 0;
+    if (id.startsWith(SURGE)) return o.surge;
+    for (const [key, ids] of Object.entries(PARTS)) if (ids.includes(id)) return o[key as keyof typeof PARTS];
+    return true;
+  }
+
+  private applyVisibility(): void {
+    if (!this.installed) return;
+    for (const id of [...this.layerIds, ...this.surgeIds]) {
+      if (this.map.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', this.isShown(id) ? 'visible' : 'none');
+    }
+  }
+
+  /** Draw every active storm and the chosen parts; `windProbs` is the odds layer for the chosen threshold. */
+  set(
+    storms: Storm[],
+    gis: Map<string, StormGIS>,
+    outlook: Outlook | null,
+    groups: Set<ModelGroup>,
+    windProbs: FeatureCollection | null,
+  ): void {
     if (!this.map.isStyleLoaded() && !this.installed) {
-      this.map.once('load', () => this.set(storms, gis, outlook, groups));
+      this.map.once('load', () => this.set(storms, gis, outlook, groups, windProbs));
       return;
     }
     this.install();
     const fc = (features: Feature[]): FeatureCollection => ({ type: 'FeatureCollection', features });
-    const pick = (key: keyof StormGIS) => fc(storms.flatMap((s) => (gis.get(s.id) ? tag(gis.get(s.id)![key], s.id) : [])));
+    type Collections = Exclude<keyof StormGIS, 'surge'>;
+    const pick = (key: Collections) => fc(storms.flatMap((s) => (gis.get(s.id) ? tag(gis.get(s.id)![key] as FeatureCollection, s.id) : [])));
     const points = pick('points');
     for (const f of points.features) {
       const p = f.properties as Record<string, unknown>;
@@ -251,15 +323,39 @@ export class TropicalLayer {
     );
     const set = (id: string, data: FeatureCollection) => (this.map.getSource(id) as GeoJSONSource | undefined)?.setData(data);
     set(S.cone, pick('cone'));
+    set(S.wind, pick('windField'));
     set(S.warn, pick('warnings'));
+    set(S.arrival, pick('arrival'));
     set(S.past, pick('past'));
     set(S.track, pick('track'));
     set(S.points, points);
     set(S.models, models);
     set(S.ends, ends);
     set(S.storms, markers);
+    set(S.prob, windProbs ?? empty());
     set(S.outlook, (outlook?.areas as FeatureCollection | undefined) ?? empty());
     set(S.outlookPts, (outlook?.points as FeatureCollection | undefined) ?? empty());
+    this.syncSurge(storms, gis);
+    this.applyVisibility();
+  }
+
+  /** One raster per storm with a surge map, under the cone. */
+  private syncSurge(storms: Storm[], gis: Map<string, StormGIS>): void {
+    const want = new Map(storms.filter((s) => gis.get(s.id)?.surge).map((s) => [`${SURGE}${s.id}`, s.bin]));
+    for (const id of [...this.surgeIds]) {
+      if (want.has(id)) continue;
+      if (this.map.getLayer(id)) this.map.removeLayer(id);
+      if (this.map.getSource(id)) this.map.removeSource(id);
+      this.surgeIds.delete(id);
+    }
+    for (const [id, bin] of want) {
+      if (this.surgeIds.has(id)) continue;
+      const tiles = surgeTiles(bin);
+      if (!tiles) continue;
+      this.map.addSource(id, { type: 'raster', tiles: [tiles], tileSize: 256, attribution: 'NHC potential storm surge flooding' });
+      this.map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0.8 } }, `${S.cone}-fill`);
+      this.surgeIds.add(id);
+    }
   }
 
   /** Frame a storm: its cone, track, and the models shown. */
@@ -274,7 +370,9 @@ export class TropicalLayer {
     };
     gis?.cone.features.forEach((f) => walk(f.geometry));
     gis?.points.features.forEach((f) => walk(f.geometry));
-    for (const m of storm.models) if (groups.has(m.group) && m.group !== 'member') for (const [, lat, lon] of m.pts) coords.push([lon, lat]);
+    if (!this.opts || this.opts.models) {
+      for (const m of storm.models) if (groups.has(m.group) && m.group !== 'member') for (const [, lat, lon] of m.pts) coords.push([lon, lat]);
+    }
     const xs = coords.map((c) => c[0]);
     const ys = coords.map((c) => c[1]);
     const bounds: LngLatBoundsLike = [
