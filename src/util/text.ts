@@ -29,3 +29,12 @@ export function formatCoord(lat: number, lon: number): string {
   const ew = lon >= 0 ? 'E' : 'W';
   return `${Math.abs(lat).toFixed(2)}°${ns} ${Math.abs(lon).toFixed(2)}°${ew}`;
 }
+
+/** Places whose U.S. name differs from the one map data carries (the Gulf, renamed in 2025). */
+export const RENAMED_PLACES: Record<string, string> = {
+  'Gulf of Mexico': 'Gulf of America',
+  'Golfo de México': 'Gulf of America',
+  'Golfo de Mexico': 'Gulf of America',
+};
+
+export const placeName = (name: string) => RENAMED_PLACES[name] ?? name;

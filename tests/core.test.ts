@@ -5,7 +5,9 @@ import { compass16, compass8, formatTemp, formatWind } from '../src/util/units';
 import { planGrid, rainIntensity, WeatherGrid, type FieldSample } from '../src/field/grid';
 import type { GridSample } from '../src/data/openmeteo';
 import { placeLabel, rankAlerts, type Alert, type NwsPoint } from '../src/data/nws';
-import { parseColor, toGray, desaturateStyle } from '../src/map/style';
+import { parseColor, toGray, desaturateStyle, renameLabels } from '../src/map/style';
+import { createExpression, validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
+import { toPlace } from '../src/data/photon';
 import { conditionLine } from '../src/ui/format';
 import { reflow, shortPeriodName } from '../src/ui/format';
 import { makeStrike } from '../src/layers/thunder';
@@ -276,6 +278,41 @@ describe('basemap desaturation', () => {
     });
     expect(style.layers[0].paint!['fill-color']).toEqual(['interpolate', ['linear'], ['zoom'], 5, 'rgb(52, 52, 52)', 10, 'rgb(86, 86, 86)']);
     expect(style.layers[0].paint!['fill-opacity']).toBe(0.5);
+  });
+});
+
+describe('Gulf of America', () => {
+  const layer = (id: string, field: unknown) => ({ id, type: 'symbol', source: 'v', 'source-layer': 'water_name', layout: { 'text-field': field } });
+  const style = () =>
+    renameLabels({
+      version: 8 as const,
+      sources: { v: { type: 'vector' as const, url: 'https://example.com/tiles.json' } },
+      layers: [
+        layer('sea', '{name}'),
+        layer('lake', { stops: [[8, '{name_en}'], [13, '{name}']] }),
+        layer('expr', ['coalesce', ['get', 'name_en'], ['get', 'name']]),
+        layer('template', '{name} {ele}'),
+      ],
+    });
+
+  it('renames the Gulf in map labels and keeps the style valid', () => {
+    const s = style();
+    expect(validateStyleMin(s as never)).toEqual([]);
+    const label = (i: number, name: string, zoom = 6) => {
+      const e = createExpression(s.layers[i].layout['text-field'], `layers[${i}].layout.text-field`);
+      if (e.result !== 'success') throw new Error('bad expression');
+      return e.value.evaluate({ zoom }, { type: 1, properties: { name, name_en: name } } as never);
+    };
+    expect(String(label(0, 'Golfo de México'))).toBe('Gulf of America');
+    expect(String(label(0, 'Caribbean Sea'))).toBe('Caribbean Sea');
+    expect(String(label(1, 'Gulf of Mexico', 10))).toBe('Gulf of America');
+    expect(String(label(2, 'Gulf of Mexico'))).toBe('Gulf of America');
+    // A template it can't rewrite is left alone.
+    expect(s.layers[3].layout['text-field']).toBe('{name} {ele}');
+  });
+
+  it('renames it in search results', () => {
+    expect(toPlace({ name: 'Gulf of Mexico', type: 'other' } as never, -90, 25).title).toBe('Gulf of America');
   });
 });
 

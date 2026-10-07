@@ -4,7 +4,7 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { BASEMAP_STYLE_URL, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, type LatLon } from '../config';
 import { fetchJson } from '../util/http';
-import { desaturateStyle } from './style';
+import { desaturateStyle, renameLabels } from './style';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -18,7 +18,7 @@ const FALLBACK_STYLE: StyleSpecification = {
 async function loadStyle(): Promise<StyleSpecification> {
   try {
     const style = await fetchJson<StyleSpecification>(BASEMAP_STYLE_URL, { timeoutMs: 8000 });
-    return desaturateStyle(style as StyleSpecification & { layers: { paint?: Record<string, unknown> }[] });
+    return renameLabels(desaturateStyle(style as StyleSpecification & { layers: { paint?: Record<string, unknown> }[] }));
   } catch {
     return FALLBACK_STYLE;
   }

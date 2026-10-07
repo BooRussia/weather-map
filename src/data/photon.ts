@@ -1,5 +1,6 @@
 import type { LatLon } from '../config';
 import { fetchJson } from '../util/http';
+import { placeName } from '../util/text';
 
 /** Photon by Komoot: OpenStreetMap geocoder built for search-as-you-type. Free, no key, fair use. */
 const PHOTON = 'https://photon.komoot.io';
@@ -55,7 +56,7 @@ const AREA_TYPES = ['city', 'town', 'village', 'district', 'county', 'state', 'l
 export function toPlace(p: PhotonProps, lon: number, lat: number): Place {
   const address = p.street ? [p.housenumber, p.street].filter(Boolean).join(' ') : '';
   const isArea = AREA_TYPES.includes(p.type ?? '');
-  const title = p.name || address || p.city || p.county || region(p) || 'Unnamed place';
+  const title = (p.name && placeName(p.name)) || address || p.city || p.county || region(p) || 'Unnamed place';
   const parts = [
     p.name && address && address !== title ? address : null,
     p.city && p.city !== title ? p.city : null,

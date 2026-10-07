@@ -1,3 +1,5 @@
+import { RENAMED_PLACES } from '../util/text';
+
 /**
  * Basemap color handling. DESIGN.md allows neutrals plus one accent, so every
  * color in the Carto style is converted to its grayscale luminance at load.
@@ -73,6 +75,43 @@ export function desaturateStyle<T extends StyleLike>(style: T): T {
     for (const key of Object.keys(layer.paint)) {
       if (key.endsWith('-color')) layer.paint[key] = grayDeep(layer.paint[key]);
     }
+  }
+  return style;
+}
+
+/** A legacy label token ("{name}") as an expression, a plain string as itself; null for templates. */
+function tokenExpr(v: unknown): unknown {
+  if (typeof v !== 'string') return null;
+  const m = /^\{([\w:]+)\}$/.exec(v);
+  if (m) return ['get', m[1]];
+  return v.includes('{') ? null : v;
+}
+
+/**
+ * Show places by their U.S. names (RENAMED_PLACES) in every label layer that
+ * draws a name. Legacy "{name}" values and zoom stops of them are rewritten
+ * as expressions; zoom steps stay at the top, as the style spec requires.
+ */
+export function renameLabels<T extends { layers: { type?: string; layout?: Record<string, unknown> }[] }>(style: T): T {
+  const cases = Object.entries(RENAMED_PLACES).flat();
+  const rename = (e: unknown) => ['let', 'label', ['to-string', e], ['match', ['var', 'label'], ...cases, ['var', 'label']]];
+  for (const layer of style.layers) {
+    const field = layer.type === 'symbol' ? layer.layout?.['text-field'] : undefined;
+    if (field == null || !JSON.stringify(field).includes('name')) continue;
+    let next: unknown = null;
+    if (typeof field === 'string') {
+      const e = tokenExpr(field);
+      if (e !== null) next = rename(e);
+    } else if (Array.isArray(field)) {
+      // An expression: wrap it unless it depends on zoom (then it must stay top-level).
+      if (!JSON.stringify(field).includes('"zoom"')) next = rename(field);
+    } else if (typeof field === 'object' && Array.isArray((field as { stops?: unknown }).stops)) {
+      const stops = (field as { stops: [number, unknown][] }).stops;
+      const parts = stops.map(([, x]) => tokenExpr(x));
+      // Below the first stop the first value applies, as with legacy stops.
+      if (!parts.includes(null)) next = ['step', ['zoom'], rename(parts[0]), ...stops.slice(1).flatMap(([z], i) => [z, rename(parts[i + 1])])];
+    }
+    if (next !== null) layer.layout!['text-field'] = next;
   }
   return style;
 }
