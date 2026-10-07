@@ -88,3 +88,9 @@ export const GLYPHS: Record<string, string> = {
     `<path class="g-sun" d="M7 18a5 5 0 0 1 10 0z" /><path class="g-fog" d="M3 18h18" /><path class="g-arrow" d="M12 3.5v5M9.6 6 12 8.5 14.4 6" />`,
   ),
 };
+
+/** Corners out: show only the map. */
+export const expandIcon = `${open('i-expand')}<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>`;
+
+/** Corners in: bring the controls back. */
+export const shrinkIcon = `${open('i-shrink')}<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>`;

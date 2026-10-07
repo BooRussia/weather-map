@@ -2585,6 +2585,51 @@ body.trip-open .left-stack {
   padding: 0 8px;
 }
 
+/* Map only: the controls go; the map, its layers, and the credits stay. */
+body.map-only .top,
+body.map-only .left-stack,
+body.map-only .controls,
+body.map-only .drawer,
+body.map-only .trip,
+body.map-only .reticle,
+body.map-only .note,
+body.map-only .timeline,
+body.map-only .page,
+body.map-only .sheet {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.full-exit {
+  position: fixed;
+  z-index: 8;
+  top: calc(var(--safe-t) + 10px);
+  right: calc(var(--safe-r) + var(--edge));
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--fg);
+  transition: opacity var(--dur) var(--ease);
+}
+
+.full-exit .icon {
+  width: 21px;
+  height: 21px;
+}
+
+/* Out of the way while you look; any touch or mouse move brings it back (taps pass through meanwhile). */
+.full-exit.idle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+:root[data-theme='classic'] .full-exit {
+  border-radius: 0;
+}
+
 /* Hurricanes on: the mark in the storm pill's orange. */
 #tropics-btn[aria-pressed='true'] {
   color: var(--c-alert);

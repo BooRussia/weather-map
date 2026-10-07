@@ -37,6 +37,7 @@ import { $, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule } from './ui/capsule';
 import { hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
 import { LayersMenu } from './ui/layersMenu';
+import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
 import { WeatherPage } from './ui/page';
 import { SearchBox } from './ui/search';
@@ -234,7 +235,8 @@ async function main(): Promise<void> {
     const pad = docked ? parseInt(token('--page-w'), 10) || 400 : 0;
     if (pad !== padRight) {
       padRight = pad;
-      map.setPadding({ top: 0, bottom: 0, left: 0, right: pad });
+      // Map only hides the page, so no padding until it ends (it restores this).
+      if (!document.body.classList.contains('map-only')) map.setPadding({ top: 0, bottom: 0, left: 0, right: pad });
     }
   };
   const page = new WeatherPage(onPageLayout);
@@ -567,7 +569,7 @@ async function main(): Promise<void> {
   /* ---------- layers popover + settings ---------- */
 
   const openSettings = () => sheet.open('settings', 'Settings', settingsPanel(store), $('#layers-btn'));
-  new LayersMenu(
+  const layersMenu = new LayersMenu(
     store,
     openSettings,
     (layer, on) => {
@@ -580,6 +582,15 @@ async function main(): Promise<void> {
     },
     (id) => mapSource.supports(id),
   );
+
+  // Map only (last button on the right): every control hides; the docked weather page's padding goes too.
+  const mapOnly = new MapOnly((on) => {
+    if (on) {
+      layersMenu.toggle(false);
+      sheet.close();
+    }
+    map.setPadding({ top: 0, bottom: 0, left: 0, right: on ? 0 : Math.max(0, padRight) });
+  });
 
   store.subscribe((s, prev) => {
     for (const layer of LAYERS) {
@@ -664,7 +675,12 @@ async function main(): Promise<void> {
     if (sheet.isOpen || e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target as HTMLElement;
     const typing = !!t.closest('input:not([type=range]), textarea, select');
-    if (e.key === '/' && !typing) {
+    if ((e.key === 'f' || e.key === 'F') && !typing) {
+      e.preventDefault();
+      mapOnly.toggle();
+      return;
+    }
+    if (e.key === '/' && !typing && !mapOnly.on) {
       e.preventDefault();
       search.focus();
       return;
