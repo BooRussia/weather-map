@@ -272,6 +272,8 @@ export class RadarLayer implements CustomLayerInterface {
 
   /** Every tile in view for the frame at `offset` has arrived (or failed). */
   ready(offset: number): boolean {
+    // Radar off: nothing to wait for (the timeline still drives wind and the weather map).
+    if (!this.radarOn) return true;
     const frame = this.frameAt(offset);
     const c = this.cover();
     for (let x = c.x0; x <= c.x1; x++) {

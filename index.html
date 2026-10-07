@@ -68,7 +68,7 @@
       <span class="ctrl-sep" aria-hidden="true"></span>
       <button id="trip-btn" class="ctrl" type="button" aria-label="Trip weather" aria-expanded="false" aria-controls="trip" title="Trip weather"></button>
     </div>
-    <div id="layers-menu" class="popover glass-thick" role="dialog" aria-label="Map layers" hidden></div>
+    <div id="layers-menu" class="drawer glass-thick" role="dialog" aria-label="Map layers" inert></div>
 
     <!-- Trip weather: bottom panel on phones (folds under the search bar), left column on wide screens -->
     <section id="trip" class="trip glass-thick" aria-label="Trip weather" hidden>
@@ -98,12 +98,14 @@
         </div>
         <input id="tl-range" class="tl-range" type="range" min="-24" max="0" step="any" value="0" aria-label="Radar time" title="Drag, or use ← → to step an hour" />
         <div id="tl-scale" class="tl-scale" aria-hidden="true"></div>
+        <div id="map-legend" class="map-legend" role="img" hidden></div>
       </div>
       <footer class="credits">
         <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
         <span> · <a href="https://www.weather.gov/" target="_blank" rel="noopener">NWS</a></span>
         <span data-credit="iem" hidden> · <a href="https://mesonet.agron.iastate.edu/" target="_blank" rel="noopener">IEM</a></span>
         <span data-credit="goes" hidden> · <a href="https://nowcoast.noaa.gov/" target="_blank" rel="noopener">NOAA GOES</a></span>
+        <span data-credit="eccc" hidden> · <a href="https://eccc-msc.github.io/open-data/msc-geomet/readme_en/" target="_blank" rel="noopener">Environment and Climate Change Canada</a></span>
         <span data-credit="gibs" hidden> · <a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noopener">NASA GIBS</a></span>
         <span data-credit="esri" hidden> · <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri, Vantor, Earthstar Geographics, GIS User Community</a></span>
         <span> · <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a></span>

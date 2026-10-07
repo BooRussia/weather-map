@@ -1,5 +1,6 @@
 import type { Basemap, ColorMode, LatLon } from './config';
 import type { ModelGroup } from './data/tropical';
+import { WEATHER_MAPS, type WeatherMapId } from './maps/catalog';
 
 export type Theme = 'liquid' | 'classic';
 import type { TempUnit, WindUnit } from './util/units';
@@ -67,6 +68,8 @@ export interface AppState {
   tropics: TropicalOptions;
   /** Spaghetti model groups drawn. */
   modelGroups: ModelGroup[];
+  /** The colored weather map under everything (Windy's layers), or none. */
+  weatherMap: WeatherMapId;
   /** The point the HUD describes. */
   selected: LatLon;
   /** The selected point came from the device location (shows the GPS arrow). */
@@ -91,6 +94,7 @@ interface Prefs {
   followMap?: boolean;
   tropics?: Partial<TropicalOptions>;
   modelGroups?: ModelGroup[];
+  weatherMap?: WeatherMapId;
 }
 
 function readPrefs(): Prefs {
@@ -119,6 +123,7 @@ function writePrefs(s: AppState): void {
       followMap: s.followMap,
       tropics: s.tropics,
       modelGroups: s.modelGroups,
+      weatherMap: s.weatherMap,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
@@ -152,6 +157,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     followMap: prefs.followMap ?? true,
     tropics: { ...DEFAULT_TROPICS, ...prefs.tropics },
     modelGroups: Array.isArray(prefs.modelGroups) ? prefs.modelGroups : legacyGroups() ?? DEFAULT_MODEL_GROUPS,
+    weatherMap: WEATHER_MAPS.some((m) => m.id === prefs.weatherMap) ? prefs.weatherMap! : 'none',
     selected,
     gps,
   };
@@ -173,7 +179,8 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.theme !== undefined ||
         patch.followMap !== undefined ||
         patch.tropics !== undefined ||
-        patch.modelGroups !== undefined
+        patch.modelGroups !== undefined ||
+        patch.weatherMap !== undefined
       ) {
         writePrefs(state);
       }

@@ -17,6 +17,13 @@ import { addImagery, refreshClouds, setBasemap, setCloudsVisible, setColorMode }
 import { AlertAreas } from './map/alertAreas';
 import { LocationDot } from './map/location';
 import { RadarLayer } from './map/radarLayer';
+import { FieldLayer } from './map/fieldLayer';
+import { plainLabel, weatherMap } from './maps/catalog';
+import { FieldController } from './maps/fieldController';
+import { OpenMeteoSource } from './maps/openMeteoSource';
+import { GEOMET_MAPS, GeoMetSource, RoutedSource } from './maps/geometSource';
+import { GibsInfraredSource } from './maps/gibsSource';
+import { renderMapLegend } from './ui/mapLegend';
 import { TripLayer } from './map/tripLayer';
 import { TropicalLayer } from './map/tropicalLayer';
 import type { FeatureCollection } from 'geojson';
@@ -84,12 +91,34 @@ async function main(): Promise<void> {
   let timeline = makeTimeline(Date.now(), hrrrInit, liveAt);
   const radar = new RadarLayer(map, timeline, store.get().colorMode, store.get().layers.rain);
 
+  // Weather maps (Windy's layers): one colored variable under borders, radar, and labels.
+  const field = new FieldLayer(map);
+  const mapSource = new RoutedSource([new GeoMetSource(), new GibsInfraredSource(), new OpenMeteoSource()]);
+  let legendKey = '';
+  const renderLegend = () => {
+    const s = store.get();
+    const m = weatherMap(s.weatherMap);
+    const here = m ? fields.valueAt(s.selected.lon, s.selected.lat) : null;
+    const key = `${s.weatherMap}|${s.tempUnit}|${s.windUnit}|${here == null ? '' : here.toPrecision(3)}`;
+    if (key === legendKey) return;
+    legendKey = key;
+    renderMapLegend($('#map-legend'), m, { temp: s.tempUnit, wind: s.windUnit }, here);
+  };
+  const fields = new FieldController(map, field, mapSource, renderLegend, () => showNote('Weather map data unavailable. Retrying.'));
+  const showWeatherMap = (s: AppState) => {
+    const m = weatherMap(s.weatherMap);
+    field.setRamp(m?.ramp ?? null, m?.opacity);
+    fields.setMap(m ? s.weatherMap : 'none');
+  };
+
   map.once('load', () => {
     const s = store.get();
-    // Bottom to top: imagery, radar, alert areas, labels.
+    // Bottom to top: imagery, weather map, borders, radar, alert areas, labels.
     addImagery(map, { clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
+    field.install();
     radar.install();
     alertAreas.install();
+    showWeatherMap(s);
   });
 
   // Rain streaks need the Rain layer on AND the falling-rain setting on; radar needs only the layer.
@@ -119,7 +148,13 @@ async function main(): Promise<void> {
   const bar = new TimelineBar(timeline, radar, (offset) => {
     grids.setTime(offset === 0 ? null : offsetTime(timeline, offset));
   });
-  const renderBar = () => bar.render({ colorMode: store.get().colorMode, radarOn: store.get().layers.rain });
+  // The weather map blends its frames itself: hand it the playhead continuously.
+  bar.onPlayhead = (offset) => fields.setTime(offset === 0 ? null : offsetTime(timeline, offset));
+  const renderBar = () => {
+    const s = store.get();
+    const m = weatherMap(s.weatherMap);
+    bar.render({ colorMode: s.colorMode, radarOn: s.layers.rain, mapLabel: m && plainLabel(m) });
+  };
   renderBar();
   // Open on motion: loop the last hour into the next until the timeline is touched.
   // Not for people who've asked their device to reduce motion.
@@ -483,14 +518,19 @@ async function main(): Promise<void> {
   /* ---------- layers popover + settings ---------- */
 
   const openSettings = () => sheet.open('settings', 'Settings', settingsPanel(store), $('#layers-btn'));
-  new LayersMenu(store, openSettings, (layer, on) => {
-    // Turning Lightning on is the user gesture that unlocks audio.
-    if (layer === 'thunder' && on) {
-      primeAudio();
-      if (!grids.current) showNote('Storm data loading');
-      else if (!animator.stormsInView()) showNote('No thunderstorms in view');
-    }
-  });
+  new LayersMenu(
+    store,
+    openSettings,
+    (layer, on) => {
+      // Turning Lightning on is the user gesture that unlocks audio.
+      if (layer === 'thunder' && on) {
+        primeAudio();
+        if (!grids.current) showNote('Storm data loading');
+        else if (!animator.stormsInView()) showNote('No thunderstorms in view');
+      }
+    },
+    (id) => mapSource.supports(id),
+  );
 
   store.subscribe((s, prev) => {
     for (const layer of LAYERS) {
@@ -506,7 +546,7 @@ async function main(): Promise<void> {
       setColorMode(map, s.colorMode);
       radar.setColorMode(s.colorMode);
     }
-    if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode) renderBar();
+    if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode || s.weatherMap !== prev.weatherMap) renderBar();
     if (s.alertAreas !== prev.alertAreas) alertAreas.setVisible(s.alertAreas);
     if (s.layers.tropics !== prev.layers.tropics) {
       tropical.setVisible(s.layers.tropics);
@@ -530,7 +570,11 @@ async function main(): Promise<void> {
       renderLocate();
     }
     if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
-    if (s.basemap !== prev.basemap || s.layers !== prev.layers || s.tropics !== prev.tropics) {
+    if (s.weatherMap !== prev.weatherMap) showWeatherMap(s);
+    if (s.weatherMap !== prev.weatherMap || s.selected !== prev.selected || s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit) {
+      renderLegend();
+    }
+    if (s.basemap !== prev.basemap || s.layers !== prev.layers || s.tropics !== prev.tropics || s.weatherMap !== prev.weatherMap) {
       renderCredits(s);
     }
     if (s.theme !== prev.theme) {
@@ -592,7 +636,8 @@ function renderCredits(s: AppState): void {
   $('[data-credit="iem"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
-  $('[data-credit="gibs"]').hidden = !(s.layers.tropics && s.tropics.sst);
+  $('[data-credit="gibs"]').hidden = !((s.layers.tropics && s.tropics.sst) || s.weatherMap === 'infrared');
+  $('[data-credit="eccc"]').hidden = !GEOMET_MAPS.has(s.weatherMap);
 }
 
 void main();

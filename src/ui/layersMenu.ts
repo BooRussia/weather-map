@@ -1,6 +1,8 @@
+import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
-import { alertMark, boltMark, chevronIcon, cloudMark, gearIcon, hurricaneMark, layersIcon, rainMark, windIcon } from './icons';
+import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, gearIcon, hurricaneMark, layersIcon, rainMark, windIcon } from './icons';
+import { mapThumb } from './mapThumbs';
 
 type LayerKey = keyof AppState['layers'];
 
@@ -49,8 +51,9 @@ export function segRow(label: string, control: HTMLElement): HTMLElement {
 }
 
 /**
- * The layers popover (Apple Maps' "Choose Map"): map style, the layer
- * switches, radar options, and a way into Settings.
+ * The layers drawer, on the right like Windy's menu: the weather map (one
+ * colored variable at a time, picked from thumbnails), the switches for
+ * what's drawn over it, the map style and radar options, and Settings.
  */
 export class LayersMenu {
   private readonly el = $('#layers-menu');
@@ -62,6 +65,8 @@ export class LayersMenu {
     private readonly store: Store,
     private readonly onSettings: () => void,
     private readonly onLayer: (layer: LayerKey, on: boolean) => void,
+    /** Weather maps that have data right now (others are left out of the picker). */
+    private readonly mapAvailable: (id: WeatherMapId) => boolean = () => true,
   ) {
     this.btn.append(svg(layersIcon));
     this.btn.addEventListener('click', () => this.toggle());
@@ -78,14 +83,49 @@ export class LayersMenu {
   }
 
   get open(): boolean {
-    return !this.el.hidden;
+    return this.el.classList.contains('open');
   }
 
+  /** Slides in from the right; closed, it's inert (CSS hides it once the slide ends). */
   toggle(force?: boolean): void {
     const on = force ?? !this.open;
     if (on) this.render();
-    this.el.hidden = !on;
+    this.el.classList.toggle('open', on);
+    this.el.inert = !on;
     this.btn.setAttribute('aria-expanded', String(on));
+    if (on) (this.el.querySelector('.map-tile[aria-pressed="true"]') as HTMLElement | null)?.focus({ preventScroll: true });
+  }
+
+  /** Thumbnail tiles, one per weather map, plus None. */
+  private mapTiles(): HTMLElement {
+    const current = this.store.get().weatherMap;
+    // Sparse maps get their thumbnails nudged toward the colored end so they read as what they are.
+    const bias: Partial<Record<WeatherMapId, number>> = {
+      wind: 0.32, gust: 0.4, rain: 0.34, rainTotal: 0.32, thunder: 0.4, humidity: 0.55, visibility: 0.22,
+      waves: 0.3, swell: 0.28, currents: 0.3, sst: 0.6, aqi: 0.22, snowDepth: 0.36, newSnow: 0.32, infrared: 0.6,
+    };
+    const tile = (id: WeatherMapId, label: string, img: string) => {
+      const b = h(
+        'button',
+        { type: 'button', class: 'map-tile', 'aria-pressed': String(id === current) },
+        h('img', { src: img, alt: '', width: 120, height: 84, decoding: 'async' }),
+        h('span', {}, label),
+      );
+      b.addEventListener('click', () => {
+        this.store.set({ weatherMap: id });
+        // On phones the drawer covers the map: close it to show the choice.
+        if (window.matchMedia('(max-width: 699px)').matches) this.toggle(false);
+        else this.render();
+      });
+      return b;
+    };
+    const maps = WEATHER_MAPS.filter((m) => this.mapAvailable(m.id));
+    return h(
+      'div',
+      { class: 'map-tiles', role: 'group', 'aria-label': 'Weather map' },
+      tile('none', 'None', mapThumb('none', null, 1)),
+      ...maps.map((m, i) => tile(m.id, m.label, mapThumb(m.id, m.ramp, i + 7, bias[m.id] ?? 0.5))),
+    );
   }
 
   private layer(key: LayerKey, label: string, mark: string, markClass: string, sub?: string): HTMLElement {
@@ -212,21 +252,18 @@ export class LayersMenu {
 
     // The list scrolls inside the panel, so the glass edge stays put; keep the place across re-renders.
     const scroll = this.el.querySelector('.popover-body')?.scrollTop ?? 0;
+    const close = h('button', { type: 'button', class: 'sheet-close', 'aria-label': 'Close map layers' }, svg(closeIcon));
+    close.addEventListener('click', () => {
+      this.toggle(false);
+      this.btn.focus();
+    });
+    const head = h('div', { class: 'drawer-head' }, h('p', { class: 'pop-title' }, 'Map layers'), close);
     const body = h(
       'div',
       { class: 'popover-body' },
-      h('p', { class: 'pop-title' }, 'Map'),
-      h(
-        'div',
-        { class: 'group' },
-        segRow(
-          'Style',
-          segmented('Map style', [{ value: 'satellite', label: 'Satellite' }, { value: 'dark', label: 'Dark' }], s.basemap, (v) =>
-            this.store.set({ basemap: v }),
-          ),
-        ),
-      ),
-      h('p', { class: 'group-label' }, 'Layers'),
+      h('p', { class: 'group-label' }, 'Weather map'),
+      this.mapTiles(),
+      h('p', { class: 'group-label' }, 'On the map'),
       h(
         'div',
         { class: 'group' },
@@ -243,12 +280,18 @@ export class LayersMenu {
           onChange: (on) => this.store.set({ alertAreas: on }),
         }),
       ),
-      h('p', { class: 'group-label' }, 'Radar'),
+      h('p', { class: 'group-label' }, 'Map and radar'),
       h(
         'div',
         { class: 'group' },
         segRow(
-          'Colors',
+          'Style',
+          segmented('Map style', [{ value: 'satellite', label: 'Satellite' }, { value: 'dark', label: 'Dark' }], s.basemap, (v) =>
+            this.store.set({ basemap: v }),
+          ),
+        ),
+        segRow(
+          'Radar colors',
           segmented('Radar colors', [{ value: 'color', label: 'Color' }, { value: 'mono', label: 'Mono' }], s.colorMode, (v) =>
             this.store.set({ colorMode: v }),
           ),
@@ -257,7 +300,7 @@ export class LayersMenu {
       ),
       h('div', { class: 'group' }, settings),
     );
-    this.el.replaceChildren(body);
+    this.el.replaceChildren(head, body);
     body.scrollTop = scroll;
   }
 }

@@ -31,6 +31,8 @@ export interface Frames {
 export interface TimelineBarState {
   colorMode: ColorMode;
   radarOn: boolean;
+  /** The weather map shown, for the label when the radar is off ("Temperature · +2 h"). */
+  mapLabel: string | null;
 }
 
 /** "Tue 3:15 PM" in the viewer's time zone. */
@@ -62,6 +64,9 @@ export class TimelineBar {
   private pendingSince = 0;
   /** Autoplay's loop, in frames; null for ordinary playback (to the end, back to where it started). */
   private loopWindow: { from: number; to: number } | null = null;
+  private state: TimelineBarState = { colorMode: 'color', radarOn: true, mapLabel: null };
+  /** The playhead, continuously (hours from now), for layers that blend in time themselves. */
+  onPlayhead: ((offsetH: number) => void) | null = null;
 
   constructor(
     timeline: Timeline,
@@ -175,7 +180,9 @@ export class TimelineBar {
   }
 
   render(s: TimelineBarState): void {
+    this.state = s;
     $('#radar-legend').hidden = !(s.colorMode === 'color' && s.radarOn);
+    this.label(Math.round(this.pos), false);
   }
 
   /** Jump to a frame; the current frame stays on screen until the new one has loaded. */
@@ -241,7 +248,7 @@ export class TimelineBar {
     if (!this.loadedAhead(next, this.waited > 0 ? RESUME_FRAMES : 1) && this.waited < MAX_WAIT_S) {
       // Wait for the network rather than fade into a half-loaded frame.
       this.waited += dt;
-      if (this.waited > BUFFER_NOTE_S) $('#tl-kind').textContent = 'Loading radar';
+      if (this.waited > BUFFER_NOTE_S) $('#tl-kind').textContent = this.state.radarOn ? 'Loading radar' : 'Loading';
       return;
     }
     if (this.waited > BUFFER_NOTE_S) this.shownQ = Number.NaN; // restore the label
@@ -262,6 +269,7 @@ export class TimelineBar {
     const f = this.pos - a;
     this.frames.blend(a * STEP_H, (a + 1) * STEP_H, f < 1e-3 ? 0 : f);
     this.range.value = String(this.pos * STEP_H);
+    this.onPlayhead?.(this.pos * STEP_H);
     const q = Math.round(this.pos);
     if (q !== this.shownQ) {
       this.shownQ = q;
@@ -273,12 +281,14 @@ export class TimelineBar {
   private label(q: number, loading: boolean): void {
     const offset = q * STEP_H;
     const at = offsetTime(this.timeline, offset);
-    const kind = offset === 0 ? 'Live radar' : offset < 0 ? 'Radar' : 'Forecast radar';
+    const radar = this.state.radarOn;
+    // Radar off: name what the timeline is moving (the weather map, or the wind).
+    const kind = radar ? (offset === 0 ? 'Live radar' : offset < 0 ? 'Radar' : 'Forecast radar') : (this.state.mapLabel ?? 'Wind');
     $('#tl-time').textContent = offset === 0 ? 'Now' : clock(at);
-    $('#tl-kind').textContent = loading ? 'Loading radar' : offset === 0 ? kind : `${kind} · ${relativeLabel(offset)}`;
+    $('#tl-kind').textContent = loading ? (radar ? 'Loading radar' : 'Loading') : offset === 0 ? kind : `${kind} · ${relativeLabel(offset)}`;
     this.range.setAttribute(
       'aria-valuetext',
-      offset === 0 ? 'Now, live radar' : `${clock(at)}, ${kind.toLowerCase()}, ${relativeLabel(offset)}`,
+      offset === 0 ? `Now, ${kind.toLowerCase()}` : `${clock(at)}, ${kind.toLowerCase()}, ${relativeLabel(offset)}`,
     );
   }
 

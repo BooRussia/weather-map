@@ -666,16 +666,97 @@ button {
   color: var(--accent);
 }
 
-.popover {
+/* Layers: a drawer on the right, like Windy's menu; the map stays visible to its left. */
+.drawer {
   position: fixed;
   z-index: 7;
-  top: calc(var(--safe-t) + 10px + 46px + 10px);
-  right: calc(var(--safe-r) + var(--edge) + 46px + 8px + var(--pad-right));
-  width: min(320px, calc(100vw - var(--edge) * 2 - 54px));
-  max-height: calc(100dvh - var(--safe-t) - 90px - 150px);
+  top: calc(var(--safe-t) + 10px);
+  bottom: calc(var(--safe-b) + 10px);
+  right: calc(var(--safe-r) + var(--edge) + var(--pad-right));
+  width: min(360px, calc(100vw - var(--edge) * 2 - 40px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition:
+    transform var(--dur-sheet) var(--ease-sheet),
+    visibility 0s linear var(--dur-sheet);
+}
+
+.drawer:not(.open) {
+  transform: translateX(calc(100% + var(--edge) + var(--safe-r) + 24px));
+  visibility: hidden;
+}
+
+.drawer.open {
+  transition:
+    transform var(--dur-sheet) var(--ease-sheet),
+    visibility 0s;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 0 16px;
+}
+
+.drawer-head .pop-title {
+  margin: 0;
+}
+
+/* Weather maps: thumbnails in three columns, the chosen one ringed in the accent. */
+.map-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 8px;
+  margin: 0 2px 4px;
+}
+
+.map-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-foot);
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-tile img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 10 / 7;
+  border-radius: var(--r-inner);
+  box-shadow: 0 0 0 1px var(--hairline);
+  transition: box-shadow var(--dur) var(--ease);
+}
+
+.map-tile[aria-pressed='true'] img {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.map-tile[aria-pressed='true'] span {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+:root[data-theme='classic'] .map-tile img {
+  border-radius: 0;
+}
+
+/* Classic keeps its accent for alerts: the chosen map is ringed in white. */
+:root[data-theme='classic'] .map-tile[aria-pressed='true'] img {
+  box-shadow: 0 0 0 2px var(--fg);
+}
+
+:root[data-theme='classic'] .map-tile[aria-pressed='true'] span {
+  color: var(--fg);
 }
 
 .popover-body {
@@ -1115,6 +1196,80 @@ button {
 .tl-scale .is-now {
   color: var(--fg);
   font-weight: 600;
+}
+
+/* The colored map's legend, at the bottom of the timeline card. */
+.map-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.ml-name {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  max-width: 34%;
+  font-size: var(--fs-foot);
+  line-height: 1.2;
+}
+
+.ml-here {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ml-scale {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ml-unit {
+  flex: none;
+  font-size: 11px;
+  line-height: 8px;
+  color: var(--muted);
+}
+
+.ml-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 14px;
+}
+
+.ml-bar {
+  display: block;
+  height: 8px;
+  border-radius: var(--r-btn);
+}
+
+:root[data-theme='classic'] .ml-bar {
+  border-radius: 0;
+}
+
+.ml-ticks span {
+  position: absolute;
+  top: 11px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ml-ticks span:first-child {
+  transform: translateX(-20%);
+}
+
+.ml-ticks span:last-child {
+  transform: translateX(-80%);
 }
 
 .credits {
