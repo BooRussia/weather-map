@@ -28,7 +28,10 @@ export class Animator {
   private readonly wind = new WindLayer();
   private readonly rain = new RainLayer();
   private readonly thunder = new ThunderLayer();
+  /** Rain, storms, and (if there's no `wind`) wind, from Open-Meteo. */
   private grid: WeatherGrid | null = null;
+  /** Wind for the particles, from GeoMet's model. */
+  private modelWind: WeatherGrid | null = null;
   private fieldDirty = true;
   private refA: LngLat | null = null;
   private refB: LngLat | null = null;
@@ -70,6 +73,13 @@ export class Animator {
   setGrid(grid: WeatherGrid): void {
     this.grid = grid;
     this.thunder.setCells(grid.stormCells(), grid.cellDeg);
+    this.fieldDirty = true;
+  }
+
+  /** The model wind the particles follow (null: use the Open-Meteo grid's). */
+  setWind(grid: WeatherGrid | null): void {
+    if (grid === this.modelWind) return;
+    this.modelWind = grid;
     this.fieldDirty = true;
   }
 
@@ -151,7 +161,7 @@ export class Animator {
     const dt = Math.min(0.05, Math.max(0, (t - this.last) / 1000));
     this.last = t;
     if (this.fieldDirty) {
-      this.field.rebuild(this.grid, this.proj, this.w, this.h);
+      this.field.rebuild(this.modelWind, this.grid, this.proj, this.w, this.h);
       this.fieldDirty = false;
     }
     const f = this.flags();

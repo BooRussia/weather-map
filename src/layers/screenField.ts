@@ -27,7 +27,8 @@ export class ScreenField {
   /** Mean rain density across the screen, 0..1. */
   meanRain = 0;
 
-  rebuild(grid: WeatherGrid | null, proj: Projector, width: number, height: number): void {
+  /** `wind` moves the particles (falling back to `weather`'s wind); `weather` has the rain. */
+  rebuild(wind: WeatherGrid | null, weather: WeatherGrid | null, proj: Projector, width: number, height: number): void {
     this.cols = Math.ceil(width / this.cell) + 1;
     this.rows = Math.ceil(height / this.cell) + 1;
     const n = this.cols * this.rows;
@@ -36,24 +37,29 @@ export class ScreenField {
       this.vy = new Float32Array(n);
       this.rain = new Float32Array(n);
     }
+    const grid = wind ?? weather;
     if (!grid) {
       this.ready = false;
       return;
     }
-    const fxs = new Float32Array(this.cols);
-    for (let c = 0; c < this.cols; c++) fxs[c] = grid.fx(proj.lonAt(c * this.cell));
+    const lons = new Float32Array(this.cols);
+    for (let c = 0; c < this.cols; c++) lons[c] = proj.lonAt(c * this.cell);
     const s: FieldSample = { u: 0, v: 0, rain: 0, storm: false };
+    const w: FieldSample = { u: 0, v: 0, rain: 0, storm: false };
     let rainSum = 0;
     for (let r = 0; r < this.rows; r++) {
-      const fy = grid.fy(proj.latAt(r * this.cell));
+      const lat = proj.latAt(r * this.cell);
+      const fy = grid.fy(lat);
+      const wy = weather ? weather.fy(lat) : 0;
       for (let c = 0; c < this.cols; c++) {
-        grid.sampleAt(fxs[c], fy, s);
+        grid.sampleAt(grid.fx(lons[c]), fy, s);
+        const rain = weather ? (weather === grid ? s.rain : weather.sampleAt(weather.fx(lons[c]), wy, w).rain) : 0;
         const i = r * this.cols + c;
         // Screen y grows downward, so north (v > 0) is negative dy.
         this.vx[i] = s.u * PX_PER_MPH;
         this.vy[i] = -s.v * PX_PER_MPH;
-        this.rain[i] = s.rain;
-        rainSum += s.rain;
+        this.rain[i] = rain;
+        rainSum += rain;
       }
     }
     this.meanRain = rainSum / n;

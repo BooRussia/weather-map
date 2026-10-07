@@ -1,9 +1,10 @@
-import type { Bounds } from '../field/grid';
+import { WeatherGrid, type Bounds } from '../field/grid';
 import type { FieldGrid } from '../map/fieldLayer';
 import { fetchBuffer, fetchText } from '../util/http';
+import { windToUV } from '../util/geo';
 import type { WeatherMapId } from './catalog';
-import type { Area, FieldSource } from './fieldController';
-import { readGeoTiff } from './geotiff';
+import type { Area, FieldSource, FrameSource } from './fieldController';
+import { readGeoTiff, type Raster } from './geotiff';
 
 /** Environment and Climate Change Canada's MSC GeoMet: raw model fields (WCS) with open CORS, no key. */
 const GEOMET = 'https://geo.weather.gc.ca/geomet';
@@ -116,13 +117,85 @@ export function slots(caps: { times: number[]; refs: number[] }, from: number, t
 const iso = (t: number) => new Date(t).toISOString().replace('.000Z', 'Z');
 const num = (n: number) => String(+n.toFixed(4));
 
+/** The padded view snapped to a coarse step (so small pans reuse areas and cached frames), sampled near `res`. */
+function planArea(view: Bounds, zoom: number, res: number, maxCells: number, prefix: string): Area {
+  const lonPad = (view.east - view.west) * PAD;
+  const latPad = (view.north - view.south) * PAD;
+  const snap = res * 8;
+  const west = Math.max(-180, Math.floor((view.west - lonPad) / snap) * snap);
+  const east = Math.min(180, Math.ceil((view.east + lonPad) / snap) * snap);
+  const south = Math.max(-LAT_LIMIT, Math.floor((view.south - latPad) / snap) * snap);
+  const north = Math.min(LAT_LIMIT, Math.ceil((view.north + latPad) / snap) * snap);
+  let cols = Math.max(16, Math.round((east - west) / res));
+  let rows = Math.max(16, Math.round((north - south) / res));
+  // Zoomed out, the model has more detail than the screen needs: resample down.
+  const k = Math.sqrt(maxCells / (cols * rows));
+  if (k < 1) {
+    cols = Math.max(16, Math.floor(cols * k));
+    rows = Math.max(16, Math.floor(rows * k));
+  }
+  return { west, east, south, north, cols, rows, zoom, key: `${prefix}:${num(west)},${num(south)},${num(east)},${num(north)},${cols}x${rows}` };
+}
+
+const capsCache = new Map<string, Promise<Caps>>();
+
+/** A coverage's runs and valid times, from the layer's WMS capabilities (small), cached a few minutes. */
+function capabilities(coverage: string, signal: AbortSignal): Promise<Caps> {
+  const hit = capsCache.get(coverage);
+  if (hit) return hit.then((c) => (Date.now() - c.at < CAPS_TTL ? c : fetchCaps(coverage, signal)));
+  return fetchCaps(coverage, signal);
+}
+
+function fetchCaps(coverage: string, signal: AbortSignal): Promise<Caps> {
+  const q = new URLSearchParams({ service: 'WMS', version: '1.3.0', request: 'GetCapabilities', layer: coverage });
+  const p = fetchText(`${GEOMET}?${q}`, { signal, timeoutMs: 15_000 }).then((xml) => {
+    const dim = (name: string) => new RegExp(`<Dimension name="${name}"[^>]*>([^<]*)</Dimension>`).exec(xml)?.[1] ?? '';
+    const caps = { at: Date.now(), times: parseTimes(dim('time')), refs: parseTimes(dim('reference_time')) };
+    if (!caps.times.length) throw new Error(`no times for ${coverage}`);
+    return caps;
+  });
+  capsCache.set(coverage, p);
+  p.catch(() => capsCache.delete(coverage));
+  return p;
+}
+
+/**
+ * One coverage over an area at one run and valid time, as a raster. GeoMet
+ * resamples by nearest neighbor (checked), so even directions stay exact.
+ */
+async function getCoverage(coverage: string, area: Area, slot: Slot, signal: AbortSignal): Promise<Raster> {
+  const q = new URLSearchParams({
+    service: 'WCS',
+    version: '2.0.1',
+    request: 'GetCoverage',
+    coverageId: coverage,
+    format: 'image/tiff',
+    TIME: iso(slot.valid),
+    DIM_REFERENCE_TIME: iso(slot.ref),
+  });
+  // Repeated keys: URLSearchParams can't hold these in one init object.
+  q.append('subset', `lat(${num(area.south)},${num(area.north)})`);
+  q.append('subset', `long(${num(area.west)},${num(area.east)})`);
+  q.append('SCALESIZE', `long(${area.cols}),lat(${area.rows})`);
+  return readGeoTiff(await fetchBuffer(`${GEOMET}?${q}`, { signal, timeoutMs: 25_000 }));
+}
+
+/** Raster cells → lattice points at their centers. */
+const lattice = (r: Raster) => ({
+  west: r.west + r.dx / 2,
+  east: r.west + (r.cols - 0.5) * r.dx,
+  north: r.north - r.dy / 2,
+  south: r.north - (r.rows - 0.5) * r.dy,
+  cols: r.cols,
+  rows: r.rows,
+});
+
 /**
  * Weather maps from GeoMet's global model (GDPS, 15 km), wave model (GDWPS,
  * 25 km), and ocean model (GIOPS): each frame is one WCS request for the
  * padded view, resampled to about the model's own resolution.
  */
 export class GeoMetSource implements FieldSource {
-  private readonly caps = new Map<string, Promise<Caps>>();
   /** Moment shown → the request that draws it, per map. */
   private readonly slotsById = new Map<WeatherMapId, Map<number, Slot>>();
 
@@ -131,51 +204,13 @@ export class GeoMetSource implements FieldSource {
   }
 
   plan(id: WeatherMapId, view: Bounds, zoom: number): Area {
-    const res = LAYERS[id]?.res ?? GDPS;
-    const lonPad = (view.east - view.west) * PAD;
-    const latPad = (view.north - view.south) * PAD;
-    // Snap to a coarse step so small pans reuse the same area (and cached frames).
-    const snap = res * 8;
-    const west = Math.max(-180, Math.floor((view.west - lonPad) / snap) * snap);
-    const east = Math.min(180, Math.ceil((view.east + lonPad) / snap) * snap);
-    const south = Math.max(-LAT_LIMIT, Math.floor((view.south - latPad) / snap) * snap);
-    const north = Math.min(LAT_LIMIT, Math.ceil((view.north + latPad) / snap) * snap);
-    let cols = Math.max(16, Math.round((east - west) / res));
-    let rows = Math.max(16, Math.round((north - south) / res));
-    // Zoomed out, the model has more detail than the screen needs: resample down.
-    const k = Math.sqrt(MAX_CELLS / (cols * rows));
-    if (k < 1) {
-      cols = Math.max(16, Math.floor(cols * k));
-      rows = Math.max(16, Math.floor(rows * k));
-    }
-    return { west, east, south, north, cols, rows, zoom, key: `gm:${west},${south},${east},${north},${cols}x${rows}` };
-  }
-
-  private capabilities(coverage: string, signal: AbortSignal): Promise<Caps> {
-    const hit = this.caps.get(coverage);
-    if (hit) {
-      return hit.then((c) => (Date.now() - c.at < CAPS_TTL ? c : this.fetchCaps(coverage, signal)));
-    }
-    return this.fetchCaps(coverage, signal);
-  }
-
-  private fetchCaps(coverage: string, signal: AbortSignal): Promise<Caps> {
-    const q = new URLSearchParams({ service: 'WMS', version: '1.3.0', request: 'GetCapabilities', layer: coverage });
-    const p = fetchText(`${GEOMET}?${q}`, { signal, timeoutMs: 15_000 }).then((xml) => {
-      const dim = (name: string) => new RegExp(`<Dimension name="${name}"[^>]*>([^<]*)</Dimension>`).exec(xml)?.[1] ?? '';
-      const caps = { at: Date.now(), times: parseTimes(dim('time')), refs: parseTimes(dim('reference_time')) };
-      if (!caps.times.length) throw new Error(`no times for ${coverage}`);
-      return caps;
-    });
-    this.caps.set(coverage, p);
-    p.catch(() => this.caps.delete(coverage));
-    return p;
+    return planArea(view, zoom, LAYERS[id]?.res ?? GDPS, MAX_CELLS, 'gm');
   }
 
   async times(id: WeatherMapId, from: number, to: number, signal: AbortSignal): Promise<number[]> {
     const layer = LAYERS[id];
     if (!layer) throw new Error(`no GeoMet layer for ${id}`);
-    const list = slots(await this.capabilities(layer.coverage, signal), from, to, layer.ahead);
+    const list = slots(await capabilities(layer.coverage, signal), from, to, layer.ahead);
     this.slotsById.set(id, new Map(list.map((s) => [s.shown, s])));
     return list.map((s) => s.shown);
   }
@@ -184,21 +219,7 @@ export class GeoMetSource implements FieldSource {
     const layer = LAYERS[id];
     const slot = this.slotsById.get(id)?.get(time);
     if (!layer || !slot) throw new Error(`no ${id} frame at ${iso(time)}`);
-    const q = new URLSearchParams({
-      service: 'WCS',
-      version: '2.0.1',
-      request: 'GetCoverage',
-      coverageId: layer.coverage,
-      format: 'image/tiff',
-      TIME: iso(slot.valid),
-      DIM_REFERENCE_TIME: iso(slot.ref),
-    });
-    // Repeated keys: URLSearchParams can't hold these in one init object.
-    q.append('subset', `lat(${num(area.south)},${num(area.north)})`);
-    q.append('subset', `long(${num(area.west)},${num(area.east)})`);
-    q.append('SCALESIZE', `long(${area.cols}),lat(${area.rows})`);
-    const buf = await fetchBuffer(`${GEOMET}?${q}`, { signal, timeoutMs: 25_000 });
-    const r = readGeoTiff(buf);
+    const r = await getCoverage(layer.coverage, area, slot, signal);
     const values = r.values;
     for (let i = 0; i < values.length; i++) {
       let v = values[i];
@@ -206,16 +227,46 @@ export class GeoMetSource implements FieldSource {
       else if (layer.scale) v = layer.scale(v);
       values[i] = v;
     }
-    // Raster cells → lattice points at their centers.
-    return {
-      west: r.west + r.dx / 2,
-      east: r.west + (r.cols - 0.5) * r.dx,
-      north: r.north - r.dy / 2,
-      south: r.north - (r.rows - 0.5) * r.dy,
-      cols: r.cols,
-      rows: r.rows,
-      values,
-    };
+    return { ...lattice(r), values };
+  }
+}
+
+const WIND_SPEED = 'GDPS_15km_WindSpeed_10m';
+const WIND_DIR = 'GDPS_15km_WindDir_10m';
+/** The particles sample the wind about every 16 screen pixels: a modest lattice is plenty. */
+const WIND_CELLS = 12_000;
+const MS_TO_MPH = 2.236936;
+
+/**
+ * Wind for the particles from GeoMet's global model: speed and direction
+ * (the "from" bearing) for the same run and hour, turned into a lattice of
+ * u/v components in mph, the units the particles move in.
+ */
+export class GeoMetWindSource implements FrameSource<WeatherGrid, 'wind'> {
+  private slotByTime = new Map<number, Slot>();
+
+  plan(_id: 'wind', view: Bounds, zoom: number): Area {
+    return planArea(view, zoom, GDPS, WIND_CELLS, 'gw');
+  }
+
+  async times(_id: 'wind', from: number, to: number, signal: AbortSignal): Promise<number[]> {
+    const list = slots(await capabilities(WIND_SPEED, signal), from, to);
+    this.slotByTime = new Map(list.map((s) => [s.shown, s]));
+    return list.map((s) => s.shown);
+  }
+
+  async frame(_id: 'wind', area: Area, time: number, signal: AbortSignal): Promise<WeatherGrid> {
+    const slot = this.slotByTime.get(time);
+    if (!slot) throw new Error(`no wind at ${iso(time)}`);
+    const [speed, dir] = await Promise.all([getCoverage(WIND_SPEED, area, slot, signal), getCoverage(WIND_DIR, area, slot, signal)]);
+    if (speed.cols !== dir.cols || speed.rows !== dir.rows) throw new Error('wind speed and direction grids differ');
+    const grid = new WeatherGrid(lattice(speed), null, Date.now(), area.zoom);
+    for (let i = 0; i < speed.values.length; i++) {
+      const { u, v } = windToUV(speed.values[i] * MS_TO_MPH, dir.values[i]);
+      grid.u[i] = u;
+      grid.v[i] = v;
+    }
+    return grid;
   }
 }
 

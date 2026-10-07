@@ -11,15 +11,19 @@ export interface Area extends Bounds {
   key: string;
 }
 
-/** Where a weather map's data comes from. */
-export interface FieldSource {
-  supports(id: WeatherMapId): boolean;
+/** Where time-stepped gridded data comes from (weather maps, wind for the particles). */
+export interface FrameSource<T, Id extends string = string> {
   /** The area (and detail) to fetch for a view. */
-  plan(id: WeatherMapId, view: Bounds, zoom: number): Area;
+  plan(id: Id, view: Bounds, zoom: number): Area;
   /** Valid times within [from, to], epoch ms, ascending. */
-  times(id: WeatherMapId, from: number, to: number, signal: AbortSignal): Promise<number[]>;
-  /** The map at one of those times over an area. */
-  frame(id: WeatherMapId, area: Area, time: number, signal: AbortSignal): Promise<FieldGrid>;
+  times(id: Id, from: number, to: number, signal: AbortSignal): Promise<number[]>;
+  /** The data at one of those times over an area. */
+  frame(id: Id, area: Area, time: number, signal: AbortSignal): Promise<T>;
+}
+
+/** Where a weather map's data comes from. */
+export interface FieldSource extends FrameSource<FieldGrid, WeatherMapId> {
+  supports(id: WeatherMapId): boolean;
 }
 
 /** The timeline's reach: 24 h back, 16 h ahead, with an hour's margin each side. */
@@ -51,38 +55,37 @@ export function sampleGrid(g: FieldGrid, lon: number, lat: number): number {
   return at(r0, c0) * (1 - tx) * (1 - ty) + at(r0, c0 + 1) * tx * (1 - ty) + at(r0 + 1, c0) * (1 - tx) * ty + at(r0 + 1, c0 + 1) * tx * ty;
 }
 
-interface Entry {
-  grid: FieldGrid | null;
-  failed: boolean;
+interface Entry<T> {
+  data: T | null;
   at: number;
 }
 
 /**
- * Keeps the chosen weather map covering the view and hands the field layer
- * the two frames around the timeline's moment, with the mix between them, so
- * the colors flow as the timeline plays. Frames load on demand (the moment's
- * pair first, then a couple ahead) and stay cached; until a new pair arrives
- * the last one stays up, so the map never blinks out.
+ * Keeps one time-stepped dataset covering the view and hands its sink the
+ * two frames around the timeline's moment, with the mix between them.
+ * Frames load on demand (the moment's pair first, then a couple ahead) and
+ * stay cached; until a new pair arrives the last one stays, so whatever
+ * draws it never blinks out.
  */
-export class FieldController {
-  private id: WeatherMapId = 'none';
+export class FrameController<T, Id extends string = string> {
+  protected id: Id | null = null;
   private area: Area | null = null;
   private times: number[] = [];
   private timesAt = 0;
   private time: number | null = null;
-  private readonly frames = new Map<string, Entry>();
-  private readonly queue: { key: string; time: number; area: Area; id: WeatherMapId }[] = [];
+  private readonly frames = new Map<string, Entry<T>>();
+  private readonly queue: { key: string; time: number; area: Area; id: Id }[] = [];
   private inflight = 0;
   private ctrl = new AbortController();
-  private shown: [FieldGrid | null, FieldGrid | null, number] = [null, null, 0];
+  protected shown: [T | null, T | null, number] = [null, null, 0];
   private settle = 0;
   private failures = 0;
   private retry = 0;
 
   constructor(
     private readonly map: MlMap,
-    private readonly layer: FieldLayer,
-    private readonly source: FieldSource,
+    private readonly source: FrameSource<T, Id>,
+    private readonly sink: (a: T | null, b: T | null, f: number) => void,
     private readonly onChange: () => void,
     private readonly onError: (err: unknown) => void,
   ) {
@@ -92,17 +95,14 @@ export class FieldController {
     });
     // "Now" moves on, and new model runs arrive.
     window.setInterval(() => {
-      if (this.id === 'none') return;
+      if (this.id == null) return;
       if (Date.now() - this.timesAt > TIMES_TTL) void this.loadTimes();
       else if (this.time == null) this.apply();
     }, 60_000);
   }
 
-  get mapId(): WeatherMapId {
-    return this.id;
-  }
-
-  setMap(id: WeatherMapId): void {
+  /** What to show (null: nothing). */
+  protected select(id: Id | null): void {
     if (id === this.id) return;
     this.id = id;
     this.ctrl.abort();
@@ -110,11 +110,12 @@ export class FieldController {
     this.queue.length = 0;
     this.frames.clear();
     this.times = [];
+    this.timesAt = 0;
     this.area = null;
     this.shown = [null, null, 0];
-    this.layer.setFrames(null);
+    this.sink(null, null, 0);
     this.failures = 0;
-    if (id !== 'none') {
+    if (id != null) {
       this.replan();
       void this.loadTimes();
     }
@@ -127,24 +128,14 @@ export class FieldController {
     this.apply();
   }
 
-  /** The map's value at a point at the current moment (base units), or null. */
-  valueAt(lon: number, lat: number): number | null {
-    const [a, b, f] = this.shown;
-    if (!a) return null;
-    const va = sampleGrid(a, lon, lat);
-    const vb = b ? sampleGrid(b, lon, lat) : va;
-    const v = Number.isFinite(va) && Number.isFinite(vb) ? va + (vb - va) * f : Number.isFinite(va) ? va : vb;
-    return Number.isFinite(v) ? v : null;
-  }
-
   private view(): Bounds {
     const b = this.map.getBounds();
     return { west: b.getWest(), east: b.getEast(), south: b.getSouth(), north: b.getNorth() };
   }
 
-  /** A new area when the view leaves the current one or wants more detail. */
+  /** A new area when the view leaves the current one or wants more (or much less) detail. */
   private replan(): void {
-    if (this.id === 'none') return;
+    if (this.id == null) return;
     const view = this.view();
     const zoom = this.map.getZoom();
     const a = this.area;
@@ -159,6 +150,7 @@ export class FieldController {
 
   private async loadTimes(): Promise<void> {
     const id = this.id;
+    if (id == null) return;
     const now = Date.now();
     try {
       const times = await this.source.times(id, now - SPAN_BACK, now + SPAN_AHEAD, this.ctrl.signal);
@@ -182,24 +174,21 @@ export class FieldController {
     this.retry = window.setTimeout(again, Math.min(300_000, 15_000 * 2 ** (this.failures - 1)));
   }
 
-  private key(area: Area, time: number): string {
-    return `${this.id}|${area.key}|${time}`;
-  }
-
   /** A frame if it's here (and fresh); otherwise queue it. */
-  private get(time: number, urgent: boolean): FieldGrid | null {
+  private get(time: number, urgent: boolean): T | null {
     const area = this.area;
-    if (!area) return null;
-    const key = this.key(area, time);
+    const id = this.id;
+    if (!area || id == null) return null;
+    const key = `${id}|${area.key}|${time}`;
     const e = this.frames.get(key);
     if (e && Date.now() - e.at < FRAME_TTL) {
       // Recently used: move to the back of the eviction order.
       this.frames.delete(key);
       this.frames.set(key, e);
-      return e.grid;
+      return e.data;
     }
     if (!this.queue.some((q) => q.key === key)) {
-      const item = { key, time, area, id: this.id };
+      const item = { key, time, area, id };
       if (urgent) this.queue.unshift(item);
       else this.queue.push(item);
     }
@@ -211,15 +200,14 @@ export class FieldController {
     while (this.inflight < MAX_INFLIGHT && this.queue.length) {
       const q = this.queue.shift()!;
       if (q.id !== this.id) continue;
-      const placeholder: Entry = { grid: null, failed: false, at: Date.now() };
-      this.frames.set(q.key, placeholder);
+      this.frames.set(q.key, { data: null, at: Date.now() });
       this.inflight++;
       const signal = this.ctrl.signal;
       this.source
         .frame(q.id, q.area, q.time, signal)
-        .then((grid) => {
+        .then((data) => {
           if (signal.aborted) return;
-          this.frames.set(q.key, { grid, failed: false, at: Date.now() });
+          this.frames.set(q.key, { data, at: Date.now() });
           this.failures = 0;
           this.evict();
           this.apply();
@@ -240,13 +228,13 @@ export class FieldController {
   private evict(): void {
     for (const k of this.frames.keys()) {
       if (this.frames.size <= MAX_FRAMES) break;
-      if (this.frames.get(k)?.grid) this.frames.delete(k);
+      if (this.frames.get(k)?.data) this.frames.delete(k);
     }
   }
 
   private apply(): void {
     const times = this.times;
-    if (this.id === 'none' || !times.length || !this.area) return;
+    if (this.id == null || !times.length || !this.area) return;
     const t = this.time ?? Date.now();
     let i = 0;
     while (i < times.length - 1 && times[i + 1] <= t) i++;
@@ -260,7 +248,32 @@ export class FieldController {
     if (a && (b || f === 0)) this.shown = [a, b, b ? f : 0];
     else if (a) this.shown = [a, null, 0];
     else if (b) this.shown = [b, null, 0];
-    if (this.shown[0]) this.layer.setFrames(...this.shown);
+    if (this.shown[0]) this.sink(...this.shown);
     this.onChange();
+  }
+}
+
+/** The chosen weather map: frames to the field layer, and its value at a point for the legend. */
+export class FieldController extends FrameController<FieldGrid, WeatherMapId> {
+  constructor(map: MlMap, layer: FieldLayer, source: FieldSource, onChange: () => void, onError: (err: unknown) => void) {
+    super(map, source, (a, b, f) => layer.setFrames(a, b, f), onChange, onError);
+  }
+
+  get mapId(): WeatherMapId {
+    return this.id ?? 'none';
+  }
+
+  setMap(id: WeatherMapId): void {
+    this.select(id === 'none' ? null : id);
+  }
+
+  /** The map's value at a point at the current moment (base units), or null. */
+  valueAt(lon: number, lat: number): number | null {
+    const [a, b, f] = this.shown;
+    if (!a) return null;
+    const va = sampleGrid(a, lon, lat);
+    const vb = b ? sampleGrid(b, lon, lat) : va;
+    const v = Number.isFinite(va) && Number.isFinite(vb) ? va + (vb - va) * f : Number.isFinite(va) ? va : vb;
+    return Number.isFinite(v) ? v : null;
   }
 }

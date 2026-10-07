@@ -8,6 +8,7 @@ import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_
 import { loadConditions, type Conditions } from './data/conditions';
 import { geoPermission, getPosition } from './data/geolocate';
 import { GridController } from './data/gridController';
+import { WindController } from './data/windController';
 import { getHrrrInit, getLatestComposite } from './data/iem';
 import { makeTimeline, offsetTime } from './data/timeline';
 import type { Place } from './data/photon';
@@ -135,18 +136,44 @@ async function main(): Promise<void> {
   };
   animator.start();
 
+  // Wind for the particles: GeoMet's model (15 km). Open-Meteo's lattice brings falling rain
+  // and storm cells, so it fetches only while those are on, or for wind if GeoMet is down.
+  let windDown = false;
   const grids = new GridController(
     map,
     (g) => animator.setGrid(g),
     () => showNote('Wind and rain data unavailable. Retrying.'),
   );
+  const syncGrids = () => {
+    const s = store.get();
+    grids.setEnabled(streaksOn(s) || s.layers.thunder || (s.layers.wind && windDown));
+  };
+  const wind = new WindController(
+    map,
+    (g) => {
+      animator.setWind(g);
+      if (g && windDown) {
+        windDown = false;
+        syncGrids();
+      }
+    },
+    () => {
+      if (windDown) return;
+      windDown = true;
+      syncGrids();
+    },
+  );
+  syncGrids();
+  wind.setActive(store.get().layers.wind);
   void grids.update(true);
 
   /* ---------- timeline: 24 h of radar history into the HRRR forecast ---------- */
 
   // The bar drives the radar crossfade; wind/rain particles follow the nearest hour.
   const bar = new TimelineBar(timeline, radar, (offset) => {
-    grids.setTime(offset === 0 ? null : offsetTime(timeline, offset));
+    const t = offset === 0 ? null : offsetTime(timeline, offset);
+    grids.setTime(t);
+    wind.setTime(t);
   });
   // The weather map blends its frames itself: hand it the playhead continuously.
   bar.onPlayhead = (offset) => fields.setTime(offset === 0 ? null : offsetTime(timeline, offset));
@@ -476,7 +503,10 @@ async function main(): Promise<void> {
   stormPill.addEventListener('click', () => openStorm(selectedStorm ?? strongest().id));
 
   // Storms, their NHC forecasts, and the outlook: every 10 minutes while the layer is on.
-  const refreshTropics = async () => {
+  // One load at a time: callers that arrive mid-load share it.
+  let tropicsLoading: Promise<void> | null = null;
+  const refreshTropics = (): Promise<void> => (tropicsLoading ??= loadTropics().finally(() => (tropicsLoading = null)));
+  const loadTropics = async () => {
     if (!store.get().layers.tropics) return;
     tropicsAt = Date.now();
     try {
@@ -495,6 +525,25 @@ async function main(): Promise<void> {
     rerenderStorm();
   };
   map.once('load', () => void refreshTropics());
+
+  // The hurricane tracker button (top right): on shows storms and opens the tracker; off hides them.
+  const tropicsBtn = $<HTMLButtonElement>('#tropics-btn');
+  tropicsBtn.append(svg(hurricaneMark));
+  const renderTropicsBtn = () => {
+    const on = store.get().layers.tropics;
+    tropicsBtn.setAttribute('aria-pressed', String(on));
+    tropicsBtn.setAttribute('aria-label', on ? 'Hide hurricanes' : 'Hurricane tracker');
+  };
+  renderTropicsBtn();
+  tropicsBtn.addEventListener('click', async () => {
+    const on = !store.get().layers.tropics;
+    store.set({ layers: { ...store.get().layers, tropics: on } });
+    if (!on) return;
+    if (!storms.length || Date.now() - tropicsAt > 60_000) await refreshTropics();
+    if (!store.get().layers.tropics) return;
+    if (storms.length) openStorm(selectedStorm ?? strongest().id);
+    else showNote('No active tropical systems');
+  });
 
   /* ---------- refresh ---------- */
 
@@ -541,6 +590,8 @@ async function main(): Promise<void> {
       else animator.layerChanged(layer, on);
     }
     if (streaksOn(s) !== streaksOn(prev)) animator.layerChanged('rain', streaksOn(s));
+    if (s.layers.wind !== prev.layers.wind) wind.setActive(s.layers.wind);
+    if (streaksOn(s) !== streaksOn(prev) || s.layers.thunder !== prev.layers.thunder || s.layers.wind !== prev.layers.wind) syncGrids();
     if (s.layers.clouds !== prev.layers.clouds) refreshClouds(map, s.layers.clouds);
     if (s.colorMode !== prev.colorMode) {
       setColorMode(map, s.colorMode);
@@ -551,6 +602,7 @@ async function main(): Promise<void> {
     if (s.layers.tropics !== prev.layers.tropics) {
       tropical.setVisible(s.layers.tropics);
       renderStormPill();
+      renderTropicsBtn();
       if (s.layers.tropics && Date.now() - tropicsAt > 60_000) void refreshTropics();
     }
     if (s.tropics !== prev.tropics) {
@@ -637,7 +689,7 @@ function renderCredits(s: AppState): void {
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="gibs"]').hidden = !((s.layers.tropics && s.tropics.sst) || s.weatherMap === 'infrared');
-  $('[data-credit="eccc"]').hidden = !GEOMET_MAPS.has(s.weatherMap);
+  $('[data-credit="eccc"]').hidden = !(GEOMET_MAPS.has(s.weatherMap) || s.layers.wind);
 }
 
 void main();

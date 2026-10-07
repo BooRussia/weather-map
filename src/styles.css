@@ -2585,6 +2585,15 @@ body.trip-open .left-stack {
   padding: 0 8px;
 }
 
+/* Hurricanes on: the mark in the storm pill's orange. */
+#tropics-btn[aria-pressed='true'] {
+  color: var(--c-alert);
+}
+
+#tropics-btn .icon {
+  stroke-width: 2.2;
+}
+
 #trip-btn[aria-expanded='true'] {
   color: var(--accent);
 }

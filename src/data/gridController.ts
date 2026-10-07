@@ -97,6 +97,7 @@ export class GridController {
   private settleTimer = 0;
   private retryTimer = 0;
   private failures = 0;
+  private enabled = true;
 
   constructor(
     private readonly map: MlMap,
@@ -108,6 +109,22 @@ export class GridController {
     window.setInterval(() => {
       if (this.time == null) this.emit();
     }, 60_000);
+  }
+
+  /**
+   * Fetch only while something needs it: falling rain, lightning, or wind when
+   * the model wind (GeoMet) is unavailable. Each lattice point counts against
+   * Open-Meteo's fair use, so idle means no requests.
+   */
+  setEnabled(on: boolean): void {
+    if (on === this.enabled) return;
+    this.enabled = on;
+    if (on) void this.update();
+    else {
+      this.inflight?.abort();
+      clearTimeout(this.retryTimer);
+      clearTimeout(this.settleTimer);
+    }
   }
 
   /** The grid the particles are using. */
@@ -153,6 +170,7 @@ export class GridController {
   }
 
   async update(force = false): Promise<void> {
+    if (!this.enabled) return;
     const now = Date.now();
     const b = this.bounds();
     const { spec, points } = planGrid(b, GRID_TARGET_POINTS);

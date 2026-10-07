@@ -93,7 +93,7 @@ export class LayersMenu {
     this.el.classList.toggle('open', on);
     this.el.inert = !on;
     this.btn.setAttribute('aria-expanded', String(on));
-    if (on) (this.el.querySelector('.map-tile[aria-pressed="true"]') as HTMLElement | null)?.focus({ preventScroll: true });
+    if (on) (this.el.querySelector('.sheet-close') as HTMLElement | null)?.focus({ preventScroll: true });
   }
 
   /** Thumbnail tiles, one per weather map, plus None. */
@@ -261,8 +261,6 @@ export class LayersMenu {
     const body = h(
       'div',
       { class: 'popover-body' },
-      h('p', { class: 'group-label' }, 'Weather map'),
-      this.mapTiles(),
       h('p', { class: 'group-label' }, 'On the map'),
       h(
         'div',
@@ -280,6 +278,8 @@ export class LayersMenu {
           onChange: (on) => this.store.set({ alertAreas: on }),
         }),
       ),
+      h('p', { class: 'group-label' }, 'Weather map'),
+      this.mapTiles(),
       h('p', { class: 'group-label' }, 'Map and radar'),
       h(
         'div',
