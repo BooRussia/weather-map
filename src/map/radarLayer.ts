@@ -8,8 +8,8 @@ const MIN_Z = 3;
 const MAX_Z = 8;
 /** MapLibre's in-tile coordinate range. */
 const EXTENT = 8192;
-/** Decoded tiles kept on the GPU (64 KB each). */
-const MAX_TILES = 360;
+/** Decoded tiles kept on the GPU (128 KB each: strength and echo). */
+const MAX_TILES = 240;
 const MAX_INFLIGHT = 20;
 /** Failed tiles (e.g. a 503) are retried after this long, ms. */
 const RETRY_MS = 30_000;
@@ -48,7 +48,14 @@ in vec2 a_pos;
 out vec2 v_uv;
 void main() { v_uv = a_pos; gl_Position = vec4(a_pos * 2.0 - 1.0, 0.0, 1.0); }`;
 
-/** Tile colors → palette entry (reflectivity), via the 3-D lookup. */
+/**
+ * Tile colors → (reflectivity, echo) via the 3-D lookup: r is the palette
+ * entry / 255 where there's an echo (0 elsewhere), g is 1 where there's an
+ * echo. Keeping "how strong" and "is there one" apart lets every later
+ * filter average strength over echoes only (normalized convolution), so
+ * small or scattered rain keeps its real intensity instead of being diluted
+ * by the empty pixels around it.
+ */
 const DECODE_FS = `#version 300 es
 precision highp float;
 precision highp sampler3D;
@@ -59,7 +66,8 @@ void main() {
   vec4 c = texelFetch(u_src, ivec2(gl_FragCoord.xy), 0);
   if (c.a < 0.5) { o = vec4(0.0); return; }
   ivec3 q = ivec3(c.rgb * 255.0 + 0.5) >> ${8 - LUT_BITS};
-  o = vec4(texelFetch(u_lut, q, 0).r, 0.0, 0.0, 1.0);
+  float v = texelFetch(u_lut, q, 0).r;
+  o = vec4(v, v > 0.0 ? 1.0 : 0.0, 0.0, 1.0);
 }`;
 
 const TILE_VS = `#version 300 es
@@ -72,15 +80,15 @@ void main() {
   gl_Position = u_matrix * vec4(a_pos * ${EXTENT}.0, 0.0, 1.0);
 }`;
 
-/** Reflectivity, bilinearly filtered: the first step of smoothing. */
+/** (strength sum, echo share), bilinearly filtered; the color mask routes frame a to rg, frame b to ba. */
 const TILE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_tex;
 in vec2 v_uv;
 out vec4 o;
-void main() { float v = texture(u_tex, v_uv).r; o = vec4(v, v, 0.0, 1.0); }`;
+void main() { vec2 vc = texture(u_tex, v_uv).rg; o = vec4(vc, vc); }`;
 
-/** One direction of a 9-tap Gaussian, on both frames (r, g) at once. */
+/** One direction of a 9-tap Gaussian, on all four channels (both frames' strength and echo share). */
 const BLUR_FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_tex;
@@ -89,18 +97,20 @@ in vec2 v_uv;
 out vec4 o;
 const float W[5] = float[](0.2270270270, 0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162);
 void main() {
-  vec2 acc = texture(u_tex, v_uv).rg * W[0];
+  vec4 acc = texture(u_tex, v_uv) * W[0];
   for (int i = 1; i < 5; i++) {
     vec2 d = u_step * float(i);
-    acc += (texture(u_tex, v_uv + d).rg + texture(u_tex, v_uv - d).rg) * W[i];
+    acc += (texture(u_tex, v_uv + d) + texture(u_tex, v_uv - d)) * W[i];
   }
-  o = vec4(acc, 0.0, 1.0);
+  o = acc;
 }`;
 
 /**
- * Color both frames from the ramp and crossfade them. Where both have rain the
- * combined coverage stays constant (B over A), so nothing pulses mid-fade.
- * Output is premultiplied, as MapLibre blends.
+ * Color both frames from the ramp and crossfade them. Strength is the mean
+ * over echoes nearby (strength sum / echo share), so a small storm keeps its
+ * color; the echo share only softens the edge. Where both frames have rain
+ * the combined coverage stays constant (B over A), so nothing pulses
+ * mid-fade. Output is premultiplied, as MapLibre blends.
  */
 const COMPOSITE_FS = `#version 300 es
 precision highp float;
@@ -111,10 +121,16 @@ uniform float u_opacity;
 in vec2 v_uv;
 out vec4 o;
 vec4 ramp(float v) { return texture(u_ramp, vec2((v * 255.0 + 0.5) / 256.0, 0.5)); }
+vec4 frame(vec2 sc) {
+  float share = sc.y;
+  vec4 c = ramp(sc.x / max(share, 1e-4));
+  c.a *= smoothstep(0.06, 0.38, share);
+  return c;
+}
 void main() {
-  vec2 v = texture(u_field, v_uv).rg;
-  vec4 ca = ramp(v.r);
-  vec4 cb = ramp(v.g);
+  vec4 f = texture(u_field, v_uv);
+  vec4 ca = frame(f.rg);
+  vec4 cb = frame(f.ba);
   float A = ca.a * (1.0 - u_f);
   float T = mix(ca.a, cb.a, u_f);
   float B = A > 0.999 ? 0.0 : clamp((T - A) / (1.0 - A), 0.0, 1.0);
@@ -167,6 +183,8 @@ interface Gl {
   scratch: WebGLTexture;
   fbo: WebGLFramebuffer;
   field: [WebGLTexture, WebGLTexture];
+  /** Half-float smoothing buffers where the GPU can render to them (exact averages), else 8-bit. */
+  fieldFloat: boolean;
   fieldW: number;
   fieldH: number;
 }
@@ -417,6 +435,7 @@ export class RadarLayer implements CustomLayerInterface {
       scratch: texture2d(gl, gl.NEAREST),
       fbo: gl.createFramebuffer()!,
       field: [texture2d(gl, gl.LINEAR), texture2d(gl, gl.LINEAR)],
+      fieldFloat: !!gl.getExtension('EXT_color_buffer_float'),
       fieldW: 0,
       fieldH: 0,
     };
@@ -448,7 +467,7 @@ export class RadarLayer implements CustomLayerInterface {
       const h = t.img.naturalHeight;
 
       const tex = texture2d(gl, gl.LINEAR);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, w, h, 0, gl.RED, gl.UNSIGNED_BYTE, null);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, w, h, 0, gl.RG, gl.UNSIGNED_BYTE, null);
       this.target(gl, r, tex, w, h);
       gl.useProgram(r.decode.prog);
       gl.activeTexture(gl.TEXTURE0);
@@ -488,7 +507,8 @@ export class RadarLayer implements CustomLayerInterface {
     if (fw !== r.fieldW || fh !== r.fieldH) {
       for (const tex of r.field) {
         gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, fw, fh, 0, gl.RG, gl.UNSIGNED_BYTE, null);
+        if (r.fieldFloat) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, fw, fh, 0, gl.RGBA, gl.HALF_FLOAT, null);
+        else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, fw, fh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       }
       r.fieldW = fw;
       r.fieldH = fh;
@@ -561,7 +581,7 @@ export class RadarLayer implements CustomLayerInterface {
     this.decodeArrivals(gl, r);
     this.evict(gl);
 
-    // 1. Both frames' reflectivity into the field: frame a → red, frame b → green.
+    // 1. Both frames into the field as (strength sum, echo share): frame a → rg, frame b → ba.
     const s = this.resizeField(gl, r);
     const c = this.cover();
     const [a, b, f] = this.last;
@@ -571,10 +591,10 @@ export class RadarLayer implements CustomLayerInterface {
     gl.useProgram(r.tile.prog);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(r.tile.u.u_tex, 0);
-    gl.colorMask(true, false, false, false);
+    gl.colorMask(true, true, false, false);
     this.drawFrame(gl, r, args, this.frameAt(a), c);
     if (f > 0 && b <= this.timeline.maxOffset) {
-      gl.colorMask(false, true, false, false);
+      gl.colorMask(false, false, true, true);
       this.drawFrame(gl, r, args, this.frameAt(b), c);
     }
     gl.colorMask(true, true, true, true);
