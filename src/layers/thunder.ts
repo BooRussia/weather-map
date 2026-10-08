@@ -17,8 +17,9 @@ export interface Strike {
 }
 
 /**
- * Approximate lightning. There is no free live strike feed, so strikes are
- * placed inside forecast thunderstorm cells (WMO codes 95–99) at random times.
+ * Animated bolts inside lightning cells: live GOES lightning mapper flashes
+ * when available (data/lightning), else forecast thunderstorm cells (WMO
+ * codes 95–99). Where comes from the data; the exact timing is for show.
  */
 export class ThunderLayer {
   private cells: StormCell[] = [];

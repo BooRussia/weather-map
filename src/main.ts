@@ -19,6 +19,9 @@ import { addImagery, refreshClouds, setBasemap, setCloudsVisible, setColorMode }
 import { AlertAreas } from './map/alertAreas';
 import { OutlookLayer } from './map/outlookLayer';
 import { StormLayer, type StormHit } from './map/stormLayer';
+import { LightningLayer } from './map/lightningLayer';
+import { getLightning } from './data/lightning';
+import type { Bounds } from './field/grid';
 import { cellPanel, cellTitle, reportPanel, reportTitle } from './ui/cellPanel';
 import { LocationDot } from './map/location';
 import { RadarLayer } from './map/radarLayer';
@@ -112,6 +115,7 @@ async function main(): Promise<void> {
   const alertAreas = new AlertAreas(map, store.get().alertAreas);
   const stormOutlook = new OutlookLayer(map);
   const stormCells = new StormLayer(map);
+  const lightning = new LightningLayer(map);
 
   // Radar: 24 h of history, now, and the HRRR forecast, smoothed (radarLayer.ts).
   let hrrrInit: number | null = null;
@@ -150,6 +154,8 @@ async function main(): Promise<void> {
     stormOutlook.set(s.layers.outlook, s.outlookKind, s.outlookDay);
     showWeatherMap(s);
     // Storm cells over the radar; their data loads just after the first frame.
+    lightning.install();
+    lightning.setVisible(s.layers.thunder);
     stormCells.install();
     window.setTimeout(() => stormCells.set(s.layers.cells, s.stormReports), 600);
   });
@@ -176,9 +182,11 @@ async function main(): Promise<void> {
     (g) => animator.setGrid(g),
     () => showNote('Wind and rain data unavailable. Retrying.'),
   );
+  // Lightning is live from GOES; forecast storm cells stand in only if that feed is down.
+  let lightningDown = false;
   const syncGrids = () => {
     const s = store.get();
-    grids.setEnabled(streaksOn(s) || s.layers.thunder || (s.layers.wind && windDown));
+    grids.setEnabled(streaksOn(s) || (s.layers.thunder && lightningDown) || (s.layers.wind && windDown));
   };
   const wind = new WindController(
     map,
@@ -198,6 +206,46 @@ async function main(): Promise<void> {
   syncGrids();
   wind.setActive(store.get().layers.wind);
   void grids.update(true);
+
+  /* ---------- live lightning (GOES lightning mapper) ---------- */
+
+  let lightningCtrl: AbortController | null = null;
+  let lightningArea: { covers: Bounds; zoom: number } | null = null;
+  /** The latest minute of flashes over the view: the glow and the bolts. `announce`: say so if there's none in view. */
+  const loadLightning = async (announce = false): Promise<void> => {
+    if (!store.get().layers.thunder || document.hidden) return;
+    lightningCtrl?.abort();
+    const ctrl = new AbortController();
+    lightningCtrl = ctrl;
+    const b = map.getBounds();
+    try {
+      const d = await getLightning({ west: b.getWest(), east: b.getEast(), south: b.getSouth(), north: b.getNorth() }, map.getZoom(), ctrl.signal);
+      if (ctrl.signal.aborted || !store.get().layers.thunder) return;
+      lightningArea = { covers: d.covers, zoom: map.getZoom() };
+      lightning.setFlashes(d.cells);
+      animator.setLightning(d.cells, d.cellDeg);
+      if (announce && !animator.stormsInView()) showNote('No lightning in view right now');
+      if (lightningDown) {
+        lightningDown = false;
+        syncGrids();
+      }
+    } catch {
+      if (ctrl.signal.aborted || lightningDown) return;
+      lightningDown = true;
+      lightning.setFlashes([]);
+      animator.setLightning(null);
+      syncGrids();
+      showNote('Live lightning is unavailable. Showing approximate lightning from the forecast.');
+    }
+  };
+  // Panned off the area (or zoomed far): fetch for the new view.
+  map.on('moveend', () => {
+    const a = lightningArea;
+    if (!store.get().layers.thunder || !a) return;
+    const b = map.getBounds();
+    const outside = b.getWest() < a.covers.west || b.getEast() > a.covers.east || b.getSouth() < a.covers.south || b.getNorth() > a.covers.north;
+    if (outside || Math.abs(map.getZoom() - a.zoom) >= 1.5) void loadLightning();
+  });
 
   /* ---------- timeline: 24 h of radar history into the HRRR forecast ---------- */
 
@@ -620,6 +668,8 @@ async function main(): Promise<void> {
     alertAreas.refreshIfStale();
     stormOutlook.refreshIfStale();
     void stormCells.refresh();
+    // A new lightning frame every minute.
+    void loadLightning();
     void refreshLive();
     refreshTimeline();
     if (Date.now() - hrrrCheckedAt > 15 * 60_000) void refreshHrrr();
@@ -705,8 +755,7 @@ async function main(): Promise<void> {
       // Turning Lightning on is the user gesture that unlocks audio.
       if (layer === 'thunder' && on) {
         primeAudio();
-        if (!grids.current) showNote('Storm data loading');
-        else if (!animator.stormsInView()) showNote('No thunderstorms in view');
+        void loadLightning(true);
       }
     },
     (id) => mapSource.supports(id),
@@ -739,6 +788,15 @@ async function main(): Promise<void> {
     }
     if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode || s.weatherMap !== prev.weatherMap) renderBar();
     if (s.layers.cells !== prev.layers.cells || s.stormReports !== prev.stormReports) stormCells.set(s.layers.cells, s.stormReports);
+    if (s.layers.thunder !== prev.layers.thunder) {
+      lightning.setVisible(s.layers.thunder);
+      if (!s.layers.thunder) {
+        lightningCtrl?.abort();
+        lightningArea = null;
+        lightningDown = false;
+        animator.setLightning(null);
+      }
+    }
     if (s.layers.outlook !== prev.layers.outlook || s.outlookKind !== prev.outlookKind || s.outlookDay !== prev.outlookDay) {
       stormOutlook.set(s.layers.outlook, s.outlookKind, s.outlookDay);
     }
@@ -845,6 +903,7 @@ function renderCredits(s: AppState): void {
   $('[data-credit="iem"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
+  $('[data-credit="glm"]').hidden = !s.layers.thunder;
   $('[data-credit="gibs"]').hidden = !((s.layers.tropics && s.tropics.sst) || s.weatherMap === 'infrared');
   $('[data-credit="eccc"]').hidden = !(GEOMET_MAPS.has(s.weatherMap) || s.layers.wind);
 }

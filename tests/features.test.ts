@@ -159,3 +159,16 @@ describe('storm tracks', () => {
     expect(reportKind('SNOW')).toBe('other');
   });
 });
+
+describe('live lightning', () => {
+  it('reads RealEarth frame times and flash colors', async () => {
+    const { realEarthTime, flashLevel } = await import('../src/data/lightning');
+    expect(new Date(realEarthTime('20261008.222400')).toISOString()).toBe('2026-10-08T22:24:00.000Z');
+    expect(realEarthTime('nope')).toBeNaN();
+    // Dark blue is a flash or two; brighter blue more; cyan and beyond many.
+    expect(flashLevel(0, 0, 150)).toBe(1);
+    expect(flashLevel(0, 28, 255)).toBe(2);
+    expect(flashLevel(0, 140, 255)).toBe(3);
+    expect(flashLevel(200, 200, 255)).toBe(4);
+  });
+});

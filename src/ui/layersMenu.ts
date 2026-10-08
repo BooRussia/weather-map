@@ -388,7 +388,7 @@ export class LayersMenu {
         { class: 'group' },
         this.layer('rain', 'Radar', rainMark, 'is-precip'),
         this.layer('wind', 'Wind', windIcon, ''),
-        this.layer('thunder', 'Lightning', boltMark, 'is-bolt', 'Approximate'),
+        this.layer('thunder', 'Lightning', boltMark, 'is-bolt', 'Live from GOES satellite'),
         this.layer('clouds', 'Clouds', cloudMark, '', 'Live satellite'),
         ...this.tropicsRows(),
         ...this.cellRows(),

@@ -1,5 +1,5 @@
 import type { Map as MlMap, LngLat } from 'maplibre-gl';
-import type { WeatherGrid } from '../field/grid';
+import type { StormCell, WeatherGrid } from '../field/grid';
 import { ScreenField, type Projector } from './screenField';
 import { WindLayer } from './wind';
 import { RainLayer } from './rain';
@@ -32,6 +32,8 @@ export class Animator {
   private grid: WeatherGrid | null = null;
   /** Wind for the particles, from GeoMet's model. */
   private modelWind: WeatherGrid | null = null;
+  /** The bolts follow live flashes rather than forecast cells. */
+  private liveLightning = false;
   private fieldDirty = true;
   private refA: LngLat | null = null;
   private refB: LngLat | null = null;
@@ -72,8 +74,17 @@ export class Animator {
 
   setGrid(grid: WeatherGrid): void {
     this.grid = grid;
-    this.thunder.setCells(grid.stormCells(), grid.cellDeg);
+    // Forecast thunderstorm cells place the bolts only when there's no live lightning.
+    if (!this.liveLightning) this.thunder.setCells(grid.stormCells(), grid.cellDeg);
     this.fieldDirty = true;
+  }
+
+  /** Live flashes (GOES lightning mapper) for the bolts; null goes back to forecast cells. */
+  setLightning(cells: StormCell[] | null, cellDeg?: { lon: number; lat: number }): void {
+    this.liveLightning = !!cells;
+    if (cells && cellDeg) this.thunder.setCells(cells, cellDeg);
+    else if (this.grid) this.thunder.setCells(this.grid.stormCells(), this.grid.cellDeg);
+    else this.thunder.setCells([], { lon: 0, lat: 0 });
   }
 
   /** The model wind the particles follow (null: use the Open-Meteo grid's). */

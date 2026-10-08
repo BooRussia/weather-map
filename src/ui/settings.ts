@@ -53,7 +53,7 @@ export function settingsPanel(store: Store): HTMLElement {
     h(
       'p',
       { class: 'pop-note' },
-      'Lightning is approximate: strikes are placed inside forecast thunderstorm cells at random times, not from a live strike feed.',
+      'Lightning is live from the GOES satellites’ lightning mapper, about a minute behind: the glow is where flashes are, and the bolts strike inside it (their exact timing is for show).',
     ),
     h('p', { class: 'group-label' }, 'Data'),
     h(
