@@ -172,3 +172,59 @@ describe('live lightning', () => {
     expect(flashLevel(200, 200, 255)).toBe(4);
   });
 });
+
+describe('single-site radar', () => {
+  it('picks the newest scan at or before a moment', async () => {
+    const { scanAt } = await import('../src/data/radarSites');
+    expect(scanAt([10, 20, 30], 25)).toBe(20);
+    expect(scanAt([10, 20, 30], Infinity)).toBe(30);
+    expect(scanAt([10, 20, 30], 5)).toBe(10);
+    expect(scanAt([], 5)).toBeNull();
+  });
+
+  it('names towers the way NWS does', async () => {
+    const { siteCall } = await import('../src/data/radarSites');
+    expect(siteCall({ id: 'MOB', state: 'AL' })).toBe('KMOB');
+    expect(siteCall({ id: 'ABC', state: 'AK' })).toBe('PABC');
+    expect(siteCall({ id: 'JUA', state: 'PR' })).toBe('TJUA');
+  });
+
+  it('shows the site’s own scans for the past and now, the model ahead', async () => {
+    const { makeTimeline, frameSource } = await import('../src/data/timeline');
+    const now = Date.parse('2026-10-08T22:40:00Z');
+    const init = Date.parse('2026-10-08T22:00:00Z');
+    const scans = [Date.parse('2026-10-08T22:21:00Z'), Date.parse('2026-10-08T22:28:00Z'), Date.parse('2026-10-08T22:34:00Z')];
+    const t = makeTimeline(now, init, now, { id: 'MOB', product: 'N0B', scans });
+    expect(frameSource(t, 0).url).toContain('ridge::MOB-N0B-202610082234');
+    expect(frameSource(t, -0.25).url).toContain('ridge::MOB-N0B-202610082221');
+    expect(frameSource(t, 1).url).toContain('hrrr::REFD');
+    // Velocity has no forecast: the timeline ends at now.
+    expect(makeTimeline(now, init, now, { id: 'MOB', product: 'N0S', scans }).maxOffset).toBe(0);
+    expect(makeTimeline(now, init, now).maxOffset).toBeGreaterThan(0);
+  });
+
+  it('decodes velocity tile colors and colors them toward green, away red', async () => {
+    const { buildVelocityLut, buildVelocityRamp, LUT_BITS, LUT_SIZE } = await import('../src/map/radarPalette');
+    const lut = buildVelocityLut();
+    const slot = (r: number, g: number, b: number) => {
+      const s = 8 - LUT_BITS;
+      return lut[((b >> s) * LUT_SIZE + (g >> s)) * LUT_SIZE + (r >> s)];
+    };
+    const toward = slot(2, 252, 2);
+    const away = slot(254, 0, 0);
+    expect(toward).toBeGreaterThan(0);
+    expect(away).toBeGreaterThan(toward);
+    expect(slot(10, 20, 30)).toBe(0);
+    const ramp = buildVelocityRamp();
+    expect(ramp[toward * 4 + 1]).toBeGreaterThan(ramp[toward * 4]);
+    expect(ramp[away * 4]).toBeGreaterThan(ramp[away * 4 + 1]);
+  });
+
+  it('draws the range ring around the tower', async () => {
+    const { ring } = await import('../src/map/radarSitesLayer');
+    const r = ring(-88, 30, 110.57);
+    const lats = r.geometry.coordinates[0].map((c) => c[1]);
+    expect(Math.max(...lats)).toBeCloseTo(31, 1);
+    expect(Math.min(...lats)).toBeCloseTo(29, 1);
+  });
+});

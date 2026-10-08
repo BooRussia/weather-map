@@ -1,7 +1,10 @@
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MlMap } from 'maplibre-gl';
 import type { ColorMode } from '../config';
 import { frameSource, tileMirrors, type Timeline } from '../data/timeline';
-import { buildLut, buildRamp, LUT_BITS, LUT_SIZE } from './radarPalette';
+import { buildLut, buildRamp, buildVelocityLut, buildVelocityRamp, LUT_BITS, LUT_SIZE } from './radarPalette';
+
+/** What the tiles on screen are: reflectivity (composite, site N0B, HRRR) or a site's storm-relative velocity. */
+export type RadarProduct = 'reflectivity' | 'velocity';
 
 /** Tile zooms requested. IEM's composite is ~0.5 km, about z8. */
 const MIN_Z = 3;
@@ -216,6 +219,8 @@ export class RadarLayer implements CustomLayerInterface {
   private ahead: string[] = [];
   private last: [number, number, number] = [0, 0, 0];
   private rampDirty = true;
+  private product: RadarProduct = 'reflectivity';
+  private lutDirty = false;
   private moveTimer = 0;
   /** Frame → the frame it replaced, drawn wherever its own tiles haven't arrived. */
   private standIns = new Map<string, string>();
@@ -244,6 +249,18 @@ export class RadarLayer implements CustomLayerInterface {
   }
 
   setTimeline(t: Timeline): void {
+    const product: RadarProduct = t.site?.product === 'N0S' ? 'velocity' : 'reflectivity';
+    if (product !== this.product) {
+      // Velocity and reflectivity decode differently: no stand-ins across the switch.
+      this.product = product;
+      this.lutDirty = true;
+      this.rampDirty = true;
+      this.timeline = t;
+      this.standIns.clear();
+      this.replan(true);
+      this.map.triggerRepaint();
+      return;
+    }
     // A new scan (or HRRR run) renames the frames on screen. Until the new
     // tiles arrive, the old ones stand in, so the radar never blinks out.
     const [a, b] = this.last;
@@ -487,6 +504,14 @@ export class RadarLayer implements CustomLayerInterface {
     if (this.toDecode.length) this.map.triggerRepaint();
   }
 
+  /** Forget every decoded tile (after the decoder changed); they reload from the browser cache. */
+  private dropDecoded(gl: WebGL2RenderingContext): void {
+    for (const t of this.tiles.values()) if (t.tex) gl.deleteTexture(t.tex);
+    this.tiles.clear();
+    this.toDecode = [];
+    this.replan(true);
+  }
+
   private evict(gl: WebGL2RenderingContext): void {
     if (this.tiles.size <= MAX_TILES) return;
     const old = [...this.tiles.entries()]
@@ -574,10 +599,21 @@ export class RadarLayer implements CustomLayerInterface {
     gl.disable(gl.CULL_FACE);
     gl.disable(gl.SCISSOR_TEST);
 
+    const velocity = this.product === 'velocity';
+    if (this.lutDirty) {
+      // The color → value lookup for the product on screen (tiles decoded before the switch are dropped).
+      gl.bindTexture(gl.TEXTURE_3D, r.lut);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, LUT_SIZE, LUT_SIZE, LUT_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, velocity ? buildVelocityLut() : buildLut());
+      this.dropDecoded(gl);
+      this.lutDirty = false;
+    }
     if (this.rampDirty) {
       gl.bindTexture(gl.TEXTURE_2D, r.ramp);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, buildRamp(this.mode));
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, velocity ? buildVelocityRamp() : buildRamp(this.mode));
       this.rampDirty = false;
     }
     this.decodeArrivals(gl, r);
@@ -602,8 +638,9 @@ export class RadarLayer implements CustomLayerInterface {
     gl.colorMask(true, true, true, true);
 
     // 2. Blur, horizontal then vertical. Wider when zoomed past the data's resolution.
+    // Velocity is smoothed lightly: blurring would average a rotation couplet's inbound and outbound away.
     const texelCss = 2 * 2 ** (this.map.getZoom() - c.z);
-    const sigma = Math.max(BLUR_PX, BLUR_PER_TEXEL * texelCss) * s;
+    const sigma = velocity ? Math.max(1, 0.45 * texelCss) * s : Math.max(BLUR_PX, BLUR_PER_TEXEL * texelCss) * s;
     const spacing = sigma / 1.75;
     gl.useProgram(r.blur.prog);
     gl.uniform1i(r.blur.u.u_tex, 0);

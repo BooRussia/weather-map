@@ -4,7 +4,7 @@ import '@fontsource/ibm-plex-sans/latin-400.css';
 import '@fontsource/ibm-plex-sans/latin-500.css';
 import './styles.css';
 
-import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_AGE_MS, INITIAL_ZOOM, type LatLon } from './config';
+import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_AGE_MS, INITIAL_ZOOM, TIMELINE_PAST_HOURS, type LatLon } from './config';
 import { loadConditions, type Conditions } from './data/conditions';
 import { geoPermission } from './data/geolocate';
 import { GridController } from './data/gridController';
@@ -20,6 +20,9 @@ import { AlertAreas } from './map/alertAreas';
 import { OutlookLayer } from './map/outlookLayer';
 import { StormLayer, type StormHit } from './map/stormLayer';
 import { LightningLayer } from './map/lightningLayer';
+import { RadarSitesLayer } from './map/radarSitesLayer';
+import { getRadarSites, getSiteScans, siteCall, type RadarSite, type SiteFrames, type SiteProduct } from './data/radarSites';
+import { renderSiteBar } from './ui/siteBar';
 import { getLightning } from './data/lightning';
 import type { Bounds } from './field/grid';
 import { cellPanel, cellTitle, reportPanel, reportTitle } from './ui/cellPanel';
@@ -120,6 +123,10 @@ async function main(): Promise<void> {
   // Radar: 24 h of history, now, and the HRRR forecast, smoothed (radarLayer.ts).
   let hrrrInit: number | null = null;
   let liveAt: number | null = null;
+  /** One radar chosen (tap a tower): its own scans replace the composite for the past and now. */
+  let chosenSite: RadarSite | null = null;
+  let siteFrames: SiteFrames | null = null;
+  let siteScansAt = 0;
   let timeline = makeTimeline(Date.now(), hrrrInit, liveAt);
   const radar = new RadarLayer(map, timeline, store.get().colorMode, store.get().layers.rain);
 
@@ -154,6 +161,11 @@ async function main(): Promise<void> {
     stormOutlook.set(s.layers.outlook, s.outlookKind, s.outlookDay);
     showWeatherMap(s);
     // Storm cells over the radar; their data loads just after the first frame.
+    sitesLayer.install();
+    sitesLayer.setVisible(s.layers.rain);
+    void getRadarSites()
+      .then((sites) => sitesLayer.setSites(sites))
+      .catch(() => {});
     lightning.install();
     lightning.setVisible(s.layers.thunder);
     stormCells.install();
@@ -260,7 +272,13 @@ async function main(): Promise<void> {
   const renderBar = () => {
     const s = store.get();
     const m = weatherMap(s.weatherMap);
-    bar.render({ colorMode: s.colorMode, radarOn: s.layers.rain, mapLabel: m && plainLabel(m) });
+    bar.render({
+      colorMode: s.colorMode,
+      radarOn: s.layers.rain,
+      mapLabel: m && plainLabel(m),
+      site: chosenSite && siteCall(chosenSite),
+      velocity: siteFrames?.product === 'N0S',
+    });
   };
   renderBar();
   // Open on motion: loop the last hour into the next until the timeline is touched.
@@ -270,12 +288,13 @@ async function main(): Promise<void> {
   });
 
   const refreshTimeline = () => {
-    const next = makeTimeline(Date.now(), hrrrInit, liveAt);
+    const next = makeTimeline(Date.now(), hrrrInit, liveAt, siteFrames);
     if (
       next.base === timeline.base &&
       next.maxOffset === timeline.maxOffset &&
       next.init === timeline.init &&
-      next.live === timeline.live
+      next.live === timeline.live &&
+      next.site === timeline.site
     ) {
       return;
     }
@@ -304,6 +323,56 @@ async function main(): Promise<void> {
     }
   };
   void refreshLive();
+
+  /* ---------- one radar (tap a tower) ---------- */
+
+  const sitesLayer = new RadarSitesLayer(map, token('--accent') || '#0a84ff');
+  const renderSite = () =>
+    renderSiteBar(chosenSite, siteFrames?.product ?? 'N0B', {
+      product: (p) => void chooseSite(chosenSite, p),
+      close: () => void chooseSite(null),
+    });
+  /** Show one tower's own scans (its past 24 hours and now), or go back to the composite (null). */
+  const chooseSite = async (site: RadarSite | null, product: SiteProduct = 'N0B'): Promise<void> => {
+    if (!site) {
+      chosenSite = null;
+      siteFrames = null;
+    } else {
+      try {
+        const scans = await getSiteScans(site.id, product, TIMELINE_PAST_HOURS + 0.5);
+        if (!scans.length) {
+          showNote(`${siteCall(site)} has no recent scans.`);
+          return;
+        }
+        chosenSite = site;
+        siteFrames = { id: site.id, product, scans };
+        siteScansAt = Date.now();
+      } catch {
+        showNote(`${siteCall(site)}’s scans couldn’t load. Try again in a moment.`);
+        return;
+      }
+    }
+    sitesLayer.select(chosenSite, siteFrames?.product);
+    refreshTimeline();
+    renderSite();
+    renderBar();
+  };
+  /** New scans every few minutes: pick them up (they become "now"). */
+  const refreshSiteScans = async () => {
+    const f = siteFrames;
+    if (!f || Date.now() - siteScansAt < 2 * 60_000) return;
+    siteScansAt = Date.now();
+    try {
+      const recent = await getSiteScans(f.id, f.product, 1);
+      if (siteFrames !== f) return;
+      const scans = [...new Set([...f.scans.filter((t) => t > Date.now() - (TIMELINE_PAST_HOURS + 0.5) * 3_600_000), ...recent])].sort((a, b) => a - b);
+      if (scans[scans.length - 1] === f.scans[f.scans.length - 1]) return;
+      siteFrames = { ...f, scans };
+      refreshTimeline();
+    } catch {
+      // Keep the scans we have; the next tick tries again.
+    }
+  };
 
   /* ---------- weather page (live sky + cards) ---------- */
 
@@ -420,6 +489,12 @@ async function main(): Promise<void> {
   // Tap: bring that spot under the cross. (With the weather pinned, a tap changes nothing.)
   map.on('click', (e) => {
     // A storm's own click handler opens it; the map stays put.
+    // A radar tower shows that radar's own scans.
+    const tower = sitesLayer.hit(e.point);
+    if (tower) {
+      if (tower.id !== chosenSite?.id) void chooseSite(tower, siteFrames?.product ?? 'N0B');
+      return;
+    }
     // A storm cell or report opens its details; the map stays put.
     const cell = stormCells.hit(e.point);
     if (cell) {
@@ -670,6 +745,7 @@ async function main(): Promise<void> {
     void stormCells.refresh();
     // A new lightning frame every minute.
     void loadLightning();
+    void refreshSiteScans();
     void refreshLive();
     refreshTimeline();
     if (Date.now() - hrrrCheckedAt > 15 * 60_000) void refreshHrrr();
@@ -774,7 +850,10 @@ async function main(): Promise<void> {
     for (const layer of LAYERS) {
       const on = s.layers[layer];
       if (on === prev.layers[layer]) continue;
-      if (layer === 'rain') radar.setRadarOn(on);
+      if (layer === 'rain') {
+        radar.setRadarOn(on);
+        sitesLayer.setVisible(on);
+      }
       else if (layer === 'clouds') setCloudsVisible(map, on);
       else animator.layerChanged(layer, on);
     }

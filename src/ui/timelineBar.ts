@@ -1,6 +1,6 @@
 import type { ColorMode } from '../config';
 import { offsetTime, relativeLabel, STEP_H, type Timeline } from '../data/timeline';
-import { RADAR_LEGEND } from '../map/radarPalette';
+import { RADAR_LEGEND, VELOCITY_LEGEND } from '../map/radarPalette';
 import { $, h, svg } from './dom';
 import { pauseIcon, playIcon } from './icons';
 
@@ -33,6 +33,9 @@ export interface TimelineBarState {
   radarOn: boolean;
   /** The weather map shown, for the label when the radar is off ("Temperature · +2 h"). */
   mapLabel: string | null;
+  /** A single radar is shown ("KMOB"), and whether it's velocity. */
+  site: string | null;
+  velocity: boolean;
 }
 
 /** "Tue 3:15 PM" in the viewer's time zone. */
@@ -64,7 +67,7 @@ export class TimelineBar {
   private pendingSince = 0;
   /** Autoplay's loop, in frames; null for ordinary playback (to the end, back to where it started). */
   private loopWindow: { from: number; to: number } | null = null;
-  private state: TimelineBarState = { colorMode: 'color', radarOn: true, mapLabel: null };
+  private state: TimelineBarState = { colorMode: 'color', radarOn: true, mapLabel: null, site: null, velocity: false };
   /** The playhead, continuously (hours from now), for layers that blend in time themselves. */
   onPlayhead: ((offsetH: number) => void) | null = null;
 
@@ -181,7 +184,16 @@ export class TimelineBar {
 
   render(s: TimelineBarState): void {
     this.state = s;
-    $('#radar-legend').hidden = !(s.colorMode === 'color' && s.radarOn);
+    // Velocity always shows its scale (toward green, away red); reflectivity in Color mode.
+    $('#radar-legend').hidden = !(s.radarOn && (s.velocity || s.colorMode === 'color'));
+    const [lo, hi] = $('#radar-legend').querySelectorAll('span');
+    lo.textContent = s.velocity ? 'Toward' : 'Light';
+    hi.textContent = s.velocity ? 'Away' : 'Heavy';
+    $('#radar-legend-bar').style.background = `linear-gradient(to right, ${(s.velocity ? VELOCITY_LEGEND : RADAR_LEGEND).join(', ')})`;
+    $('#radar-legend').setAttribute(
+      'aria-label',
+      s.velocity ? 'Velocity scale: green toward the radar, red away, brighter is faster' : 'Radar intensity scale: blue and green light, yellow and orange moderate, red heavy',
+    );
     this.label(Math.round(this.pos), false);
   }
 
@@ -283,7 +295,17 @@ export class TimelineBar {
     const at = offsetTime(this.timeline, offset);
     const radar = this.state.radarOn;
     // Radar off: name what the timeline is moving (the weather map, or the wind).
-    const kind = radar ? (offset === 0 ? 'Live radar' : offset < 0 ? 'Radar' : 'Forecast radar') : (this.state.mapLabel ?? 'Wind');
+    // One radar chosen: its call sign for the past and now (the forecast is still the model's).
+    const site = this.state.site;
+    const kind = radar
+      ? offset > 0
+        ? 'Forecast radar'
+        : site
+          ? `${site} ${this.state.velocity ? 'velocity' : 'reflectivity'}`
+          : offset === 0
+            ? 'Live radar'
+            : 'Radar'
+      : (this.state.mapLabel ?? 'Wind');
     $('#tl-time').textContent = offset === 0 ? 'Now' : clock(at);
     $('#tl-kind').textContent = loading ? (radar ? 'Loading radar' : 'Loading') : offset === 0 ? kind : `${kind} · ${relativeLabel(offset)}`;
     this.range.setAttribute(

@@ -1198,6 +1198,36 @@ button {
   font-weight: 600;
 }
 
+/* One radar chosen: its name, product, and the way back, atop the timeline card. */
+.site-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.site-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.site-name b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.site-close {
+  width: 28px;
+  height: 28px;
+}
+
 /* The colored map's legend, at the bottom of the timeline card. */
 .map-legend {
   display: flex;

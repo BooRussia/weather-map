@@ -111,3 +111,85 @@ export function buildRamp(mode: ColorMode): Uint8Array {
 
 /** Legend gradient for the Color ramp, light → heavy. */
 export const RADAR_LEGEND = RAMPS.color.slice(1).map(([, r, g, b]) => `rgb(${r}, ${g}, ${b})`);
+
+/* ---------- storm-relative velocity (N0S) ---------- */
+
+/**
+ * IEM's N0S tiles: 13 colors, knots, negative toward the radar (decoded from
+ * the product headers). Steps run inbound → outbound; the last is range-folded.
+ */
+const VELOCITY_COLORS: [r: number, g: number, b: number][] = [
+  [2, 252, 2], // ≤ −50 kt toward
+  [1, 228, 1], // −36 … −49
+  [1, 197, 1], // −26 … −35
+  [7, 172, 4], // −20 … −25
+  [6, 143, 3], // −10 … −19
+  [124, 151, 123], // −1 … −9
+  [152, 119, 119], // 0 … 9
+  [162, 0, 0], // 10 … 19
+  [185, 0, 0], // 20 … 25
+  [216, 0, 0], // 26 … 35
+  [239, 0, 0], // 36 … 49
+  [254, 0, 0], // ≥ 50 away
+];
+const FOLDED: [number, number, number] = [144, 0, 160];
+/** Steps are spread across the 0..255 range so smoothing blends neighbors, not the extremes. */
+const VEL_STEP = 20;
+const velSlot = (k: number) => 10 + k * VEL_STEP;
+/** Range-folded (ambiguous) gates get a slot of their own, far from the others. */
+const FOLDED_SLOT = 252;
+
+/** Color → velocity slot, as a 128³ volume like `buildLut`. */
+export function buildVelocityLut(): Uint8Array {
+  const shift = 8 - LUT_BITS;
+  const lut = new Uint8Array(LUT_SIZE ** 3);
+  const put = ([r, g, b]: [number, number, number], slot: number) => {
+    lut[((b >> shift) * LUT_SIZE + (g >> shift)) * LUT_SIZE + (r >> shift)] = slot;
+  };
+  VELOCITY_COLORS.forEach((c, k) => put(c, velSlot(k)));
+  put(FOLDED, FOLDED_SLOT);
+  return lut;
+}
+
+/**
+ * Display colors by slot: toward the radar in greens (brighter = faster),
+ * away in reds, near zero a quiet gray, range-folded purple. Straight alpha.
+ */
+const VELOCITY_DISPLAY: [r: number, g: number, b: number, a: number][] = [
+  [80, 255, 120, 0.95],
+  [40, 225, 90, 0.92],
+  [20, 190, 70, 0.9],
+  [20, 160, 60, 0.88],
+  [30, 125, 55, 0.85],
+  // Near zero is mostly clear-air return (insects, birds): kept quiet.
+  [110, 140, 115, 0.35],
+  [150, 115, 115, 0.35],
+  [150, 25, 30, 0.85],
+  [190, 25, 35, 0.88],
+  [225, 30, 40, 0.9],
+  [250, 60, 70, 0.92],
+  [255, 130, 150, 0.95],
+];
+
+export function buildVelocityRamp(): Uint8Array {
+  const out = new Uint8Array(256 * 4);
+  for (let i = 0; i < 256; i++) {
+    if (i >= FOLDED_SLOT - 1) {
+      out.set([150, 60, 200, Math.round(0.85 * 255)], i * 4);
+      continue;
+    }
+    // Between two steps: blend them (smoothing lands in between).
+    const k = Math.max(0, Math.min(VELOCITY_DISPLAY.length - 1, (i - 10) / VEL_STEP));
+    const k0 = Math.floor(k);
+    const k1 = Math.min(VELOCITY_DISPLAY.length - 1, k0 + 1);
+    const t = k - k0;
+    for (let c = 0; c < 4; c++) {
+      const v = VELOCITY_DISPLAY[k0][c] + (VELOCITY_DISPLAY[k1][c] - VELOCITY_DISPLAY[k0][c]) * t;
+      out[i * 4 + c] = Math.round(c === 3 ? v * 255 : v);
+    }
+  }
+  return out;
+}
+
+/** Legend gradient for velocity, toward → away. */
+export const VELOCITY_LEGEND = VELOCITY_DISPLAY.map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);

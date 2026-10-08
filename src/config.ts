@@ -62,6 +62,12 @@ export const HRRR_MAX_MINUTES = 18 * 60;
 /** NEXRAD composite (IEM), every 5 minutes. `{stamp}` = UTC YYYYMMDDHHMM; the latest is also "now". */
 export const PAST_RADAR_TILE_URL =
   'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-{stamp}/{z}/{x}/{y}.png';
+/**
+ * One NEXRAD site's own scans (IEM RIDGE, Level III): `{site}` = 3-letter id, `{product}` = N0B (super-res
+ * reflectivity) or N0S (storm-relative velocity), `{stamp}` = a listed scan's UTC YYYYMMDDHHMM. The /c/ path
+ * caches for days, which is right for stamped scans (never for the always-latest "-0").
+ */
+export const SITE_RADAR_TILE_URL = 'https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::{site}-{product}-{stamp}/{z}/{x}/{y}.png';
 /** HRRR simulated reflectivity (IEM): `{minutes}` = 4-digit forecast minute, `{init}` = UTC YYYYMMDDHHMM. */
 export const FUTURE_RADAR_TILE_URL =
   'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFD-F{minutes}-{init}/{z}/{x}/{y}.png';

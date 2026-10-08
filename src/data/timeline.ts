@@ -4,8 +4,10 @@ import {
   IEM_HOSTS,
   LATEST_RADAR_TILE_URL,
   PAST_RADAR_TILE_URL,
+  SITE_RADAR_TILE_URL,
   TIMELINE_PAST_HOURS,
 } from '../config';
+import { scanAt, type SiteFrames } from './radarSites';
 
 const HOUR = 3_600_000;
 /** Frames are 15 minutes apart: the archive and HRRR both publish at that cadence. */
@@ -26,14 +28,21 @@ export interface Timeline {
   live: number | null;
   minOffset: number;
   maxOffset: number;
+  /** A single radar site to show instead of the composite for the past and now (null: the composite). */
+  site: SiteFrames | null;
 }
 
-export function makeTimeline(now: number, init: number | null, live: number | null = null): Timeline {
+export function makeTimeline(now: number, init: number | null, live: number | null = null, site: SiteFrames | null = null): Timeline {
   const base = Math.floor(now / STEP_MS) * STEP_MS;
-  // The last frame must still be inside the HRRR run's 18 hours.
-  const maxOffset = init == null ? 0 : Math.max(0, Math.floor((init + HRRR_MAX_MINUTES * 60_000 - base) / STEP_MS) * STEP_H);
-  return { base, init, live, minOffset: -TIMELINE_PAST_HOURS, maxOffset };
+  // The last frame must still be inside the HRRR run's 18 hours. A site's velocity has no forecast.
+  const maxOffset =
+    init == null || site?.product === 'N0S' ? 0 : Math.max(0, Math.floor((init + HRRR_MAX_MINUTES * 60_000 - base) / STEP_MS) * STEP_H);
+  return { base, init, live, minOffset: -TIMELINE_PAST_HOURS, maxOffset, site };
 }
+
+/** The tile template for one site scan. */
+export const siteTiles = (site: SiteFrames, scan: number) =>
+  SITE_RADAR_TILE_URL.replace('{site}', site.id).replace('{product}', site.product).replace('{stamp}', utcStamp(scan));
 
 export const offsetTime = (t: Timeline, offset: number) => t.base + Math.round(offset * 60) * 60_000;
 
@@ -59,6 +68,11 @@ export interface FrameSource {
 /** Which tiles to show at an offset. */
 export function frameSource(t: Timeline, offset: number): FrameSource {
   const o = snap(offset);
+  // A chosen site: its own newest scan at or before the moment (now: its latest scan).
+  if (t.site && o <= 0) {
+    const scan = scanAt(t.site.scans, o === 0 ? Infinity : offsetTime(t, o));
+    if (scan != null) return { kind: o === 0 ? 'live' : 'past', url: siteTiles(t.site, scan) };
+  }
   // The always-latest tiles, versioned by the composite's time so each new scan is a new URL.
   // (The stamped archive can lag the newest scan by a minute or two and 503 meanwhile.)
   const live: FrameSource = {
