@@ -2585,6 +2585,105 @@ body.trip-open .left-stack {
   padding: 0 8px;
 }
 
+/* Alerts: a count on the button, then a list by type in the sheet. */
+#alerts-btn {
+  position: relative;
+}
+
+.ctrl-badge {
+  position: absolute;
+  top: 5px;
+  right: 3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--c-alert);
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+:root[data-theme='classic'] .ctrl-badge {
+  border-radius: 0;
+}
+
+.alert-swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.alert-title .alert-swatch {
+  margin-right: 8px;
+}
+
+.alert-name {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.alert-row .i-chevron {
+  color: var(--faint);
+}
+
+.alert-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 10px -4px;
+  padding: 6px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--fs-callout);
+  cursor: pointer;
+}
+
+.alert-back .i-chevron {
+  width: 16px;
+  height: 16px;
+  transform: rotate(180deg);
+}
+
+:root[data-theme='classic'] .alert-back {
+  color: var(--fg);
+}
+
+.alert-title {
+  display: flex;
+  align-items: center;
+  margin: 2px 4px 4px;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.alert-area {
+  margin: 0 4px 12px;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.alert-text {
+  margin: 0 4px 10px;
+  font-size: var(--fs-callout);
+  line-height: 1.45;
+}
+
+.alert-show {
+  margin: 10px 0 4px;
+}
+
 /* Map only: the controls go; the map, its layers, and the credits stay. */
 body.map-only .top,
 body.map-only .left-stack,

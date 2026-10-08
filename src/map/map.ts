@@ -15,7 +15,8 @@ const FALLBACK_STYLE: StyleSpecification = {
   layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#000000' } }],
 };
 
-async function loadStyle(): Promise<StyleSpecification> {
+/** Start fetching the basemap style early (it is on the critical path to the first frame). */
+export async function loadStyle(): Promise<StyleSpecification> {
   try {
     const style = await fetchJson<StyleSpecification>(BASEMAP_STYLE_URL, { timeoutMs: 8000 });
     return renameLabels(desaturateStyle(style as StyleSpecification & { layers: { paint?: Record<string, unknown> }[] }));
@@ -24,13 +25,17 @@ async function loadStyle(): Promise<StyleSpecification> {
   }
 }
 
-export async function createMap(container: HTMLElement, center: LatLon): Promise<MlMap> {
-  const style = await loadStyle();
+export async function createMap(
+  container: HTMLElement,
+  center: LatLon,
+  zoom = INITIAL_ZOOM,
+  style: Promise<StyleSpecification> = loadStyle(),
+): Promise<MlMap> {
   const map = new maplibregl.Map({
     container,
-    style,
+    style: await style,
     center: [center.lon, center.lat],
-    zoom: INITIAL_ZOOM,
+    zoom,
     minZoom: MIN_ZOOM,
     maxZoom: MAX_ZOOM,
     attributionControl: false,

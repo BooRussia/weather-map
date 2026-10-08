@@ -60,6 +60,8 @@ export class LayersMenu {
   private readonly btn = $('#layers-btn');
   /** Hurricanes' options list is open (kept while the menu re-renders). */
   private tropicsOpen = false;
+  /** Storm outlook's options are open. */
+  private outlookOpen = false;
 
   constructor(
     private readonly store: Store,
@@ -236,6 +238,76 @@ export class LayersMenu {
     ];
   }
 
+  /**
+   * Storm outlook: the switch, and a disclosure for which outlook (SPC severe
+   * storms or WPC flash flooding) and which day.
+   */
+  private outlookRows(): HTMLElement[] {
+    const s = this.store.get();
+    const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch', 'aria-label': 'Storm outlook' });
+    input.checked = s.layers.outlook;
+    input.addEventListener('change', () => {
+      this.store.set({ layers: { ...this.store.get().layers, outlook: input.checked } });
+      this.onLayer('outlook', input.checked);
+    });
+    const more = h(
+      'button',
+      { type: 'button', id: 'outlook-more', class: 'row-more', 'aria-expanded': String(this.outlookOpen), 'aria-controls': 'outlook-options', 'aria-label': 'Which outlook' },
+      svg(chevronIcon),
+    );
+    more.addEventListener('click', () => {
+      this.outlookOpen = !this.outlookOpen;
+      this.render();
+      $('#outlook-more').focus();
+    });
+    const kindLabel = s.outlookKind === 'severe' ? 'Severe storms' : 'Flash flooding';
+    const dayLabel = ['Today', 'Tomorrow', 'Day 3'][s.outlookDay - 1];
+    const head = h(
+      'div',
+      { class: 'row' },
+      h('span', { class: 'row-mark is-bolt' }, svg(boltMark)),
+      h('span', { class: 'row-label' }, 'Storm outlook', h('span', { class: 'row-sub' }, `${kindLabel} · ${dayLabel}`)),
+      more,
+      input,
+    );
+    if (!this.outlookOpen) return [head];
+    const kind = segmented<'severe' | 'flood'>(
+      'Outlook',
+      [
+        { value: 'severe', label: 'Severe' },
+        { value: 'flood', label: 'Flooding' },
+      ],
+      s.outlookKind,
+      (v) => {
+        this.store.set({ outlookKind: v });
+        this.render();
+      },
+    );
+    const day = segmented<'1' | '2' | '3'>(
+      'Day',
+      [
+        { value: '1', label: 'Today' },
+        { value: '2', label: 'Tomorrow' },
+        { value: '3', label: 'Day 3' },
+      ],
+      String(s.outlookDay) as '1' | '2' | '3',
+      (v) => {
+        this.store.set({ outlookDay: Number(v) as 1 | 2 | 3 });
+        this.render();
+      },
+    );
+    day.classList.add('seg-compact');
+    return [
+      head,
+      h(
+        'div',
+        { id: 'outlook-options', class: 'sub-options' },
+        h('div', { class: 'row row-stack' }, h('span', { class: 'row-label' }, 'Outlook', h('span', { class: 'row-sub' }, 'From NOAA’s Storm Prediction and Weather Prediction Centers')), kind),
+        h('div', { class: 'row row-stack' }, h('span', { class: 'row-label' }, 'Day'), day),
+      ),
+    ];
+  }
+
   private render(): void {
     const s = this.store.get();
     const settings = h(
@@ -270,6 +342,7 @@ export class LayersMenu {
         this.layer('thunder', 'Lightning', boltMark, 'is-bolt', 'Approximate'),
         this.layer('clouds', 'Clouds', cloudMark, '', 'Live satellite'),
         ...this.tropicsRows(),
+        ...this.outlookRows(),
         switchRow({
           label: 'Alert areas',
           mark: alertMark,

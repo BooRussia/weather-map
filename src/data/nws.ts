@@ -183,10 +183,9 @@ export interface Alert {
   ends: Date | null;
 }
 
-interface AlertsResponse {
-  features: {
-    id: string;
-    properties: {
+interface AlertFeature {
+  id: string;
+  properties: {
       event: string;
       headline: string | null;
       severity: Severity;
@@ -198,8 +197,31 @@ interface AlertsResponse {
       effective: string | null;
       expires: string | null;
       ends: string | null;
-    };
-  }[];
+  };
+}
+
+interface AlertsResponse {
+  features: AlertFeature[];
+}
+
+const toAlert = ({ id, properties: p }: AlertFeature): Alert => ({
+  id,
+  event: p.event,
+  headline: p.headline ?? p.event,
+  severity: p.severity ?? 'Unknown',
+  urgency: p.urgency ?? 'Unknown',
+  areaDesc: p.areaDesc ?? '',
+  description: p.description ?? '',
+  instruction: p.instruction ?? '',
+  sender: p.senderName ?? 'NWS',
+  effective: p.effective ? new Date(p.effective) : null,
+  ends: p.ends ? new Date(p.ends) : p.expires ? new Date(p.expires) : null,
+});
+
+/** One alert by its api.weather.gov link (the alert list's detail view). */
+export async function getAlert(url: string, signal?: AbortSignal): Promise<Alert> {
+  if (!url.startsWith(`${NWS_BASE}/alerts/`)) throw new Error('not an NWS alert link');
+  return toAlert(await get<AlertFeature>(url, signal));
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { Extreme: 4, Severe: 3, Moderate: 2, Minor: 1, Unknown: 0 };
@@ -218,18 +240,6 @@ export function rankAlerts(alerts: Alert[]): Alert[] {
 export async function getActiveAlerts(lat: number, lon: number, signal?: AbortSignal): Promise<Alert[]> {
   const r = await get<AlertsResponse>(`${NWS_BASE}/alerts/active?point=${coord(lat)},${coord(lon)}`, signal);
   const now = Date.now();
-  const alerts = r.features.map(({ id, properties: p }) => ({
-    id,
-    event: p.event,
-    headline: p.headline ?? p.event,
-    severity: p.severity ?? 'Unknown',
-    urgency: p.urgency ?? 'Unknown',
-    areaDesc: p.areaDesc ?? '',
-    description: p.description ?? '',
-    instruction: p.instruction ?? '',
-    sender: p.senderName ?? 'NWS',
-    effective: p.effective ? new Date(p.effective) : null,
-    ends: p.ends ? new Date(p.ends) : p.expires ? new Date(p.expires) : null,
-  }));
+  const alerts = r.features.map(toAlert);
   return rankAlerts(alerts.filter((a) => !a.ends || a.ends.getTime() > now));
 }

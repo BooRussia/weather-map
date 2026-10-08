@@ -14,10 +14,20 @@ const WWA_QUERY =
 export const MARINE = ['SC', 'GL', 'SR', 'HF', 'SE', 'UP', 'MH', 'MF', 'MS', 'MA', 'SI', 'SW', 'RB', 'BW', 'LO', 'RP', 'SU'];
 
 export interface AlertAreaProps {
-  event: string;
+  /** "Tornado Warning", "Flood Watch". */
+  prod_type: string;
   /** VTEC significance: W = warning, A = watch. */
   sig: 'W' | 'A';
   phenom: string;
+  /** The alert on api.weather.gov (full text). */
+  url: string;
+  /** ISO times; "ends" may be blank (until further notice). */
+  expiration: string;
+  ends: string;
+  /** Issuing office, e.g. KTBW. */
+  wfo: string;
+  /** One alert covers several zones; this ties them together. */
+  cap_id: string;
 }
 
 /** Warnings and watches touching `b`, simplified for zoom. Advisories and marine products are left out. */
@@ -35,7 +45,7 @@ export async function getAlertAreas(
     geometryType: 'esriGeometryEnvelope',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: 'event,phenom,sig',
+    outFields: 'prod_type,phenom,sig,url,expiration,ends,wfo,cap_id',
     returnGeometry: 'true',
     outSR: '4326',
     geometryPrecision: '3',

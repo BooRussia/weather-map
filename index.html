@@ -11,6 +11,17 @@
     <meta name="apple-mobile-web-app-title" content="Weather Map" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Warm the connections the first frame needs (all are CORS requests, hence crossorigin). -->
+    <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin />
+    <link rel="preconnect" href="https://tiles.basemaps.cartocdn.com" crossorigin />
+    <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin />
+    <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin />
+    <link rel="preconnect" href="https://api.weather.gov" crossorigin />
+    <link rel="preconnect" href="https://geo.weather.gc.ca" crossorigin />
+    <link rel="dns-prefetch" href="https://mesonet2.agron.iastate.edu" />
+    <link rel="dns-prefetch" href="https://mesonet3.agron.iastate.edu" />
+    <link rel="dns-prefetch" href="https://api.open-meteo.com" />
+    <link rel="dns-prefetch" href="https://mapservices.weather.noaa.gov" />
     <title>Weather Map</title>
     <script>
       // Apply the saved theme before first paint so there is no flash.
@@ -65,6 +76,8 @@
       <button id="layers-btn" class="ctrl" type="button" aria-label="Layers" aria-haspopup="dialog" aria-expanded="false"></button>
       <span class="ctrl-sep" aria-hidden="true"></span>
       <button id="locate-btn" class="ctrl" type="button" aria-label="Show my location" aria-pressed="false"></button>
+      <span class="ctrl-sep" aria-hidden="true"></span>
+      <button id="alerts-btn" class="ctrl" type="button" aria-label="Alerts in view" title="Alerts in view"><span id="alerts-badge" class="ctrl-badge" hidden></span></button>
       <span class="ctrl-sep" aria-hidden="true"></span>
       <button id="trip-btn" class="ctrl" type="button" aria-label="Trip weather" aria-expanded="false" aria-controls="trip" title="Trip weather"></button>
       <span class="ctrl-sep" aria-hidden="true"></span>

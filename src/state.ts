@@ -1,6 +1,7 @@
 import type { Basemap, ColorMode, LatLon } from './config';
 import type { ModelGroup } from './data/tropical';
 import { WEATHER_MAPS, type WeatherMapId } from './maps/catalog';
+import type { OutlookDay, OutlookKind } from './data/outlooks';
 
 export type Theme = 'liquid' | 'classic';
 import type { TempUnit, WindUnit } from './util/units';
@@ -46,7 +47,8 @@ export const DEFAULT_MODEL_GROUPS: ModelGroup[] = ['official', 'consensus', 'hur
 
 export interface AppState {
   /** `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
-  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean; tropics: boolean };
+  /** `outlook`: SPC severe-storm or WPC flash-flood outlook areas (`outlookKind`, `outlookDay`). */
+  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean; tropics: boolean; outlook: boolean };
   tempUnit: TempUnit;
   windUnit: WindUnit;
   sound: boolean;
@@ -70,6 +72,8 @@ export interface AppState {
   modelGroups: ModelGroup[];
   /** The colored weather map under everything (Windy's layers), or none. */
   weatherMap: WeatherMapId;
+  outlookKind: OutlookKind;
+  outlookDay: OutlookDay;
   /** The point the HUD describes. */
   selected: LatLon;
   /** The selected point came from the device location (shows the GPS arrow). */
@@ -95,6 +99,8 @@ interface Prefs {
   tropics?: Partial<TropicalOptions>;
   modelGroups?: ModelGroup[];
   weatherMap?: WeatherMapId;
+  outlookKind?: OutlookKind;
+  outlookDay?: OutlookDay;
 }
 
 function readPrefs(): Prefs {
@@ -124,6 +130,8 @@ function writePrefs(s: AppState): void {
       tropics: s.tropics,
       modelGroups: s.modelGroups,
       weatherMap: s.weatherMap,
+      outlookKind: s.outlookKind,
+      outlookDay: s.outlookDay,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
@@ -145,7 +153,7 @@ function legacyGroups(): ModelGroup[] | null {
 export function createStore(selected: LatLon, gps: boolean) {
   const prefs = readPrefs();
   let state: AppState = {
-    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true },
+    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
@@ -158,6 +166,8 @@ export function createStore(selected: LatLon, gps: boolean) {
     tropics: { ...DEFAULT_TROPICS, ...prefs.tropics },
     modelGroups: Array.isArray(prefs.modelGroups) ? prefs.modelGroups : legacyGroups() ?? DEFAULT_MODEL_GROUPS,
     weatherMap: WEATHER_MAPS.some((m) => m.id === prefs.weatherMap) ? prefs.weatherMap! : 'none',
+    outlookKind: prefs.outlookKind === 'flood' ? 'flood' : 'severe',
+    outlookDay: prefs.outlookDay === 2 || prefs.outlookDay === 3 ? prefs.outlookDay : 1,
     selected,
     gps,
   };
@@ -180,7 +190,9 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.followMap !== undefined ||
         patch.tropics !== undefined ||
         patch.modelGroups !== undefined ||
-        patch.weatherMap !== undefined
+        patch.weatherMap !== undefined ||
+        patch.outlookKind !== undefined ||
+        patch.outlookDay !== undefined
       ) {
         writePrefs(state);
       }

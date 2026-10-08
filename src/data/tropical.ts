@@ -185,20 +185,31 @@ async function hasFeatures(id: number, signal?: AbortSignal): Promise<boolean> {
 }
 
 /** Everything NHC publishes for a slot: forecast cone, track, points, watches/warnings, past track, wind field, arrival times, surge. */
-export async function getStormGIS(bin: string, signal?: AbortSignal): Promise<StormGIS> {
+/** Optional parts of a storm's map data; parts left out (switched off) cost no request. */
+export interface StormGISParts {
+  past: boolean;
+  warnings: boolean;
+  windField: boolean;
+  arrival: boolean;
+  surge: boolean;
+}
+
+export async function getStormGIS(bin: string, signal?: AbortSignal, want?: Partial<StormGISParts>): Promise<StormGIS> {
   const base = binBase(bin);
   if (base == null) return emptyGIS();
   const empty = emptyGIS();
   const safe = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
+  const on = (k: keyof StormGISParts) => want?.[k] ?? true;
+  const skip = <T>(v: T) => Promise.resolve(v);
   const [points, track, cone, warnings, past, windField, arrival, surge] = await Promise.all([
     safe(layer<ForecastPointProps>(base + SLOT.points, signal), empty.points),
     safe(layer(base + SLOT.track, signal), empty.track),
     safe(layer(base + SLOT.cone, signal), empty.cone),
-    safe(layer<{ tcww?: string }>(base + SLOT.warnings, signal), empty.warnings),
-    safe(layer(base + SLOT.past, signal), empty.past),
-    safe(layer<{ radii: number }>(base + SLOT.windField, signal), empty.windField),
-    safe(layer<{ arrival_time: string }>(base + SLOT.arrivalMostLikely, signal), empty.arrival),
-    safe(hasFeatures(base + SLOT.surgeFootprint, signal), false),
+    on('warnings') ? safe(layer<{ tcww?: string }>(base + SLOT.warnings, signal), empty.warnings) : skip(empty.warnings),
+    on('past') ? safe(layer(base + SLOT.past, signal), empty.past) : skip(empty.past),
+    on('windField') ? safe(layer<{ radii: number }>(base + SLOT.windField, signal), empty.windField) : skip(empty.windField),
+    on('arrival') ? safe(layer<{ arrival_time: string }>(base + SLOT.arrivalMostLikely, signal), empty.arrival) : skip(empty.arrival),
+    on('surge') ? safe(hasFeatures(base + SLOT.surgeFootprint, signal), false) : skip(false),
   ]);
   points.features.sort((a, b) => (a.properties?.tau ?? 0) - (b.properties?.tau ?? 0));
   return { cone, track, points, past, warnings, windField, arrival, surge };

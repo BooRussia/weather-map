@@ -1,6 +1,8 @@
+import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
 import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
 import type { Bounds } from '../field/grid';
-import { getAlertAreas } from '../data/warnings';
+import { alertColorExpression } from '../data/alertColors';
+import { getAlertAreas, type AlertAreaProps } from '../data/warnings';
 
 const SOURCE = 'nws-alert-areas';
 const FILL = 'nws-alert-areas-fill';
@@ -8,9 +10,48 @@ const LINE = 'nws-alert-areas-line';
 const STALE_MS = 5 * 60_000;
 const SETTLE_MS = 800;
 
+/** One alert (it may cover several zones), for the list. */
+export interface AlertItem {
+  id: string;
+  props: AlertAreaProps;
+  /** Bounding box of all its areas. */
+  box: Bounds;
+}
+
+function extend(box: Bounds, coords: Position | Position[] | Position[][] | Position[][][]): void {
+  if (typeof coords[0] === 'number') {
+    const [lon, lat] = coords as Position;
+    box.west = Math.min(box.west, lon);
+    box.east = Math.max(box.east, lon);
+    box.south = Math.min(box.south, lat);
+    box.north = Math.max(box.north, lat);
+    return;
+  }
+  for (const c of coords as Position[]) extend(box, c);
+}
+
+/** Zones of the same alert grouped into one item, with a box around them all. */
+export function groupAlerts(features: Feature<Geometry, AlertAreaProps>[]): AlertItem[] {
+  const byId = new Map<string, AlertItem>();
+  for (const f of features) {
+    if (!f.geometry || !f.properties) continue;
+    const id = f.properties.cap_id || f.properties.url || `${f.properties.prod_type}|${f.properties.wfo}|${f.properties.expiration}`;
+    let item = byId.get(id);
+    if (!item) {
+      item = { id, props: f.properties, box: { west: Infinity, east: -Infinity, south: Infinity, north: -Infinity } };
+      byId.set(id, item);
+    }
+    if ('coordinates' in f.geometry) extend(item.box, f.geometry.coordinates as Position[]);
+  }
+  return [...byId.values()].filter((a) => Number.isFinite(a.box.west));
+}
+
+const overlaps = (a: Bounds, b: Bounds) => a.west <= b.east && a.east >= b.west && a.south <= b.north && a.north >= b.south;
+
 /**
- * Active NWS alert areas in the accent: warnings outlined with a light fill,
- * watches as a faint fill only (zone shapes would draw every county line).
+ * Active NWS alert areas in their hazard colors (red tornado warning, orange
+ * severe thunderstorm warning…): warnings outlined over a light fill,
+ * watches a faint fill only (zone shapes would draw every county line).
  */
 export class AlertAreas {
   private covered: Bounds | null = null;
@@ -19,14 +60,20 @@ export class AlertAreas {
   private timer = 0;
   private ctrl: AbortController | null = null;
   private visible: boolean;
+  private items: AlertItem[] = [];
+
+  /** New alerts arrived (or the view changed which are in it). */
+  onChange: (() => void) | null = null;
 
   constructor(
     private readonly map: MlMap,
-    private readonly accent: string,
     visible: boolean,
   ) {
     this.visible = visible;
-    map.on('moveend', () => this.schedule());
+    map.on('moveend', () => {
+      this.schedule();
+      this.onChange?.();
+    });
   }
 
   /** Add the (empty) layers. Call after `load`, after the imagery layers. */
@@ -35,6 +82,7 @@ export class AlertAreas {
     map.addSource(SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     const firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
     const vis = this.visible ? 'visible' : 'none';
+    const color = alertColorExpression() as never;
     map.addLayer(
       {
         id: FILL,
@@ -42,8 +90,8 @@ export class AlertAreas {
         source: SOURCE,
         layout: { visibility: vis },
         paint: {
-          'fill-color': this.accent,
-          'fill-opacity': ['case', ['==', ['get', 'sig'], 'W'], 0.14, 0.07],
+          'fill-color': color,
+          'fill-opacity': ['case', ['==', ['get', 'sig'], 'W'], 0.16, 0.08],
         },
       },
       firstSymbol,
@@ -55,17 +103,11 @@ export class AlertAreas {
         source: SOURCE,
         filter: ['==', ['get', 'sig'], 'W'],
         layout: { visibility: vis, 'line-join': 'round' },
-        paint: { 'line-color': this.accent, 'line-width': 1.5 },
+        paint: { 'line-color': color, 'line-width': 1.75 },
       },
       firstSymbol,
     );
     if (this.visible) void this.update(true);
-  }
-
-  /** Theme change: Liquid draws alerts in system orange, Classic in amber. */
-  setColor(color: string): void {
-    if (this.map.getLayer(FILL)) this.map.setPaintProperty(FILL, 'fill-color', color);
-    if (this.map.getLayer(LINE)) this.map.setPaintProperty(LINE, 'line-color', color);
   }
 
   setVisible(on: boolean): void {
@@ -74,6 +116,20 @@ export class AlertAreas {
       if (this.map.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
     }
     if (on) void this.update();
+  }
+
+  /** Alerts touching the current view, warnings first, then by soonest to end. */
+  inView(): AlertItem[] {
+    const b = this.map.getBounds();
+    const view = { west: b.getWest(), east: b.getEast(), south: b.getSouth(), north: b.getNorth() };
+    return this.items
+      .filter((a) => overlaps(a.box, view))
+      .sort((a, b2) => (a.props.sig === b2.props.sig ? 0 : a.props.sig === 'W' ? -1 : 1) || Date.parse(a.props.expiration) - Date.parse(b2.props.expiration));
+  }
+
+  /** Make sure alerts are loaded for the view now (e.g. when the list opens with the layer off). */
+  ensure(): Promise<void> {
+    return this.update(false, true);
   }
 
   /** Called on the 1-minute refresh tick. */
@@ -86,8 +142,8 @@ export class AlertAreas {
     this.timer = window.setTimeout(() => void this.update(), SETTLE_MS);
   }
 
-  private async update(force = false): Promise<void> {
-    if (!this.visible || !this.map.getSource(SOURCE)) return;
+  private async update(force = false, evenIfHidden = false): Promise<void> {
+    if ((!this.visible && !evenIfHidden) || !this.map.getSource(SOURCE)) return;
     const b = this.map.getBounds();
     const view = { west: b.getWest(), east: b.getEast(), south: b.getSouth(), north: b.getNorth() };
     const z = this.map.getZoom();
@@ -113,12 +169,14 @@ export class AlertAreas {
     const ctrl = new AbortController();
     this.ctrl = ctrl;
     try {
-      const fc = await getAlertAreas(area, z, ctrl.signal);
+      const fc: FeatureCollection<Geometry, AlertAreaProps> = await getAlertAreas(area, z, ctrl.signal);
       if (ctrl.signal.aborted) return;
       (this.map.getSource(SOURCE) as GeoJSONSource).setData(fc);
+      this.items = groupAlerts(fc.features);
       this.covered = area;
       this.zoom = z;
       this.fetchedAt = Date.now();
+      this.onChange?.();
     } catch {
       // Alerts on the map are a bonus; the HUD tag still comes from the point lookup.
     }

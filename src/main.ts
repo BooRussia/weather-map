@@ -4,18 +4,20 @@ import '@fontsource/ibm-plex-sans/latin-400.css';
 import '@fontsource/ibm-plex-sans/latin-500.css';
 import './styles.css';
 
-import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_AGE_MS, type LatLon } from './config';
+import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_AGE_MS, INITIAL_ZOOM, type LatLon } from './config';
 import { loadConditions, type Conditions } from './data/conditions';
-import { geoPermission, getPosition } from './data/geolocate';
+import { geoPermission } from './data/geolocate';
 import { GridController } from './data/gridController';
 import { WindController } from './data/windController';
 import { getHrrrInit, getLatestComposite } from './data/iem';
 import { makeTimeline, offsetTime } from './data/timeline';
 import type { Place } from './data/photon';
 import { Animator, type LayerFlags } from './layers/animator';
-import { createMap } from './map/map';
+import { createMap, loadStyle } from './map/map';
+import { formatHashView, parseHashView, readLastFix, readLastView, saveLastFix, saveLastView } from './data/view';
 import { addImagery, refreshClouds, setBasemap, setCloudsVisible, setColorMode } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
+import { OutlookLayer } from './map/outlookLayer';
 import { LocationDot } from './map/location';
 import { RadarLayer } from './map/radarLayer';
 import { FieldLayer } from './map/fieldLayer';
@@ -25,7 +27,7 @@ import { OpenMeteoSource } from './maps/openMeteoSource';
 import { GEOMET_MAPS, GeoMetSource, RoutedSource } from './maps/geometSource';
 import { GibsInfraredSource } from './maps/gibsSource';
 import { renderMapLegend } from './ui/mapLegend';
-import { TripLayer } from './map/tripLayer';
+import type { TripLayer } from './map/tripLayer';
 import { TropicalLayer } from './map/tropicalLayer';
 import type { FeatureCollection } from 'geojson';
 import { getOutlook, getStormGIS, getStorms, getWindProbs, type ModelGroup, type Outlook, type Storm, type StormGIS } from './data/tropical';
@@ -35,8 +37,11 @@ import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule } from './ui/capsule';
-import { hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
+import { alertMark, hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
 import { LayersMenu } from './ui/layersMenu';
+import { alertDetail, alertsList, alertsOfType, type AlertsHooks } from './ui/alertsPanel';
+import { getAlert, type Alert } from './data/nws';
+import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
 import { WeatherPage } from './ui/page';
@@ -44,7 +49,7 @@ import { SearchBox } from './ui/search';
 import { settingsPanel } from './ui/settings';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
-import { TripPanel } from './ui/trip';
+import type { TripPanel } from './ui/trip';
 
 type Layer = keyof AppState['layers'];
 /** Layers with their own handling below (hurricanes have theirs). */
@@ -53,17 +58,27 @@ const LAYERS = ['wind', 'rain', 'thunder', 'clouds'] as const satisfies readonly
 const SETTLE_MS = 350;
 
 async function main(): Promise<void> {
-  // Geolocation: use it right away if already granted; otherwise start at the
-  // default and move when (if) the person allows it.
+  // The basemap style is on the path to the first frame: fetch it while everything else starts.
+  const style = loadStyle();
+  // Where to open, without waiting on a GPS fix: a shared link's view (#map=zoom/lat/lon),
+  // else your last known location if location is allowed (a fresh fix follows),
+  // else where you left the map, else the default.
+  const hashView = parseHashView(location.hash);
   const permission = await geoPermission();
+  const lastFix = permission === 'granted' ? readLastFix() : null;
+  const lastView = readLastView();
   let start: LatLon = DEFAULT_LOCATION;
+  let startZoom = INITIAL_ZOOM;
   let located = false;
-  if (permission === 'granted') {
-    const p = await getPosition(5000);
-    if (p) {
-      start = p;
-      located = true;
-    }
+  if (hashView) {
+    start = hashView;
+    startZoom = hashView.zoom;
+  } else if (lastFix) {
+    start = lastFix;
+    located = true;
+  } else if (lastView && permission !== 'granted') {
+    start = lastView;
+    startZoom = lastView.zoom;
   }
 
   const store = createStore(start, located);
@@ -84,8 +99,16 @@ async function main(): Promise<void> {
   renderCapsule(null, store.get());
   renderCredits(store.get());
 
-  const map = await createMap($('#map'), start);
-  const alertAreas = new AlertAreas(map, token('--c-alert') || '#ff9f0a', store.get().alertAreas);
+  const map = await createMap($('#map'), start, startZoom, style);
+  // The view lives in the address bar (#map=zoom/lat/lon): reloads and shared links open here.
+  map.on('moveend', () => {
+    const c = map.getCenter();
+    const v = { zoom: map.getZoom(), lat: c.lat, lon: wrapLon(c.lng) };
+    history.replaceState(history.state, '', formatHashView(v));
+    saveLastView(v);
+  });
+  const alertAreas = new AlertAreas(map, store.get().alertAreas);
+  const stormOutlook = new OutlookLayer(map);
 
   // Radar: 24 h of history, now, and the HRRR forecast, smoothed (radarLayer.ts).
   let hrrrInit: number | null = null;
@@ -119,7 +142,9 @@ async function main(): Promise<void> {
     addImagery(map, { clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
     field.install();
     radar.install();
+    stormOutlook.install();
     alertAreas.install();
+    stormOutlook.set(s.layers.outlook, s.outlookKind, s.outlookDay);
     showWeatherMap(s);
   });
 
@@ -304,6 +329,7 @@ async function main(): Promise<void> {
   renderLocate();
 
   const dot = new LocationDot(map, (p) => {
+    saveLastFix(p);
     // The readout stays on you as you move; the camera only while it's following.
     if (mode !== 'gps') return;
     if (following) map.easeTo({ center: [p.lon, p.lat], duration: 600 });
@@ -369,7 +395,7 @@ async function main(): Promise<void> {
     // First visit: ask once. If allowed and you haven't moved the map yet, go there.
     void dot.locate(false).then((p) => {
       if (!p) showNote(`Location unavailable. Showing ${DEFAULT_PLACE_LABEL}.`);
-      else if (mode === 'center' && store.get().selected === start) {
+      else if (mode === 'center' && store.get().selected === start && !hashView) {
         following = true;
         setMode('gps');
         map.jumpTo({ center: [p.lon, p.lat] });
@@ -404,7 +430,9 @@ async function main(): Promise<void> {
     caution: token('--c-sun') || '#ffd60a',
     stop: '#ffffff',
   });
-  const tripLayer = new TripLayer(map, tripColors());
+  // The trip planner loads on first use: most visits never open it.
+  let tripLayer: TripLayer | null = null;
+  let trip: TripPanel | null = null;
   // Frame the route in the part of the map the panel doesn't cover.
   const tripPadding = () => {
     const r = $('#trip').getBoundingClientRect();
@@ -412,30 +440,45 @@ async function main(): Promise<void> {
       ? { top: 80, right: 70, left: 30, bottom: Math.max(120, window.innerHeight - r.top + 24) }
       : { top: 80, right: 80, bottom: 150, left: r.right + 30 };
   };
-  const trip = new TripPanel({
-    myLocation: () => dot.position,
-    near: () => store.get().selected,
-    state: () => store.get(),
-    show: (plan) => {
-      tripLayer.set(plan, tripPadding());
-      $('[data-credit="osrm"]').hidden = !plan;
-    },
-    focus: (pt) => {
-      map.flyTo({ center: [pt.lon, pt.lat], zoom: Math.max(map.getZoom(), 8), duration: 900, essential: true });
-      // Radar at the hour you'll be there, when the timeline reaches it.
-      const offset = (pt.at - timeline.base) / 3_600_000;
-      if (offset <= timeline.maxOffset + 0.125) bar.show(Math.max(0, offset));
-      else showNote('Forecast radar doesn’t reach that far ahead yet.');
-    },
-    layout: (open, folded) => {
-      tripOpen = open;
-      renderLocate();
-      document.body.classList.toggle('trip-open', open);
-      document.body.classList.toggle('trip-folded', open && folded);
-      $('#trip-btn').setAttribute('aria-expanded', String(open));
-    },
+  const createTrip = async (): Promise<TripPanel> => {
+    const [{ TripPanel }, { TripLayer }] = await Promise.all([import('./ui/trip'), import('./map/tripLayer')]);
+    const layer = new TripLayer(map, tripColors());
+    tripLayer = layer;
+    trip = new TripPanel({
+      myLocation: () => dot.position,
+      near: () => store.get().selected,
+      state: () => store.get(),
+      show: (plan) => {
+        layer.set(plan, tripPadding());
+        $('[data-credit="osrm"]').hidden = !plan;
+      },
+      focus: (pt) => {
+        map.flyTo({ center: [pt.lon, pt.lat], zoom: Math.max(map.getZoom(), 8), duration: 900, essential: true });
+        // Radar at the hour you'll be there, when the timeline reaches it.
+        const offset = (pt.at - timeline.base) / 3_600_000;
+        if (offset <= timeline.maxOffset + 0.125) bar.show(Math.max(0, offset));
+        else showNote('Forecast radar doesn’t reach that far ahead yet.');
+      },
+      layout: (open, folded) => {
+        tripOpen = open;
+        renderLocate();
+        document.body.classList.toggle('trip-open', open);
+        document.body.classList.toggle('trip-folded', open && folded);
+        $('#trip-btn').setAttribute('aria-expanded', String(open));
+      },
+    });
+    return trip;
+  };
+  let tripLoading: Promise<TripPanel> | null = null;
+  const loadTrip = () => (tripLoading ??= createTrip());
+  $('#trip-btn').addEventListener('click', () => {
+    void loadTrip()
+      .then((t) => t.toggle())
+      .catch(() => {
+        tripLoading = null;
+        showNote('Trip weather couldn’t load. Check your connection.');
+      });
   });
-  $('#trip-btn').addEventListener('click', () => trip.toggle());
 
   /* ---------- hurricanes ---------- */
 
@@ -515,7 +558,11 @@ async function main(): Promise<void> {
       const r = await getStorms();
       storms = r.storms;
       tropicsGenerated = r.generated;
-      stormGIS = new Map(await Promise.all(storms.map(async (s) => [s.id, await getStormGIS(s.bin)] as const)));
+      // The pill can show now; the map layers follow (only the parts that are switched on).
+      renderStormPill();
+      const t = store.get().tropics;
+      const want = { past: t.past, warnings: t.warnings, windField: t.windField, arrival: t.arrival, surge: t.surge };
+      stormGIS = new Map(await Promise.all(storms.map(async (s) => [s.id, await getStormGIS(s.bin, undefined, want)] as const)));
     } catch {
       // Keep what's on the map.
     }
@@ -526,7 +573,8 @@ async function main(): Promise<void> {
     renderStormPill();
     rerenderStorm();
   };
-  map.once('load', () => void refreshTropics());
+  // After the first frame: the radar and basemap get the network first.
+  map.once('load', () => window.setTimeout(() => void refreshTropics(), 800));
 
   // The hurricane tracker button (top right): on shows storms and opens the tracker; off hides them.
   const tropicsBtn = $<HTMLButtonElement>('#tropics-btn');
@@ -558,6 +606,7 @@ async function main(): Promise<void> {
     const s = store.get();
     refreshClouds(map, s.layers.clouds);
     alertAreas.refreshIfStale();
+    stormOutlook.refreshIfStale();
     void refreshLive();
     refreshTimeline();
     if (Date.now() - hrrrCheckedAt > 15 * 60_000) void refreshHrrr();
@@ -569,6 +618,66 @@ async function main(): Promise<void> {
   /* ---------- layers popover + settings ---------- */
 
   const openSettings = () => sheet.open('settings', 'Settings', settingsPanel(store), $('#layers-btn'));
+
+  /* ---------- alerts in view ---------- */
+
+  // The alerts button counts the warnings and watches in view; its sheet lists them by type.
+  const alertsBtn = $<HTMLButtonElement>('#alerts-btn');
+  alertsBtn.prepend(svg(alertMark));
+  const renderAlertsBadge = () => {
+    const n = store.get().alertAreas ? alertAreas.inView().length : 0;
+    const badge = $('#alerts-badge');
+    badge.hidden = n === 0;
+    badge.textContent = n > 99 ? '99+' : String(n);
+    alertsBtn.setAttribute('aria-label', n ? `${n} alerts in view` : 'Alerts in view');
+  };
+  alertAreas.onChange = renderAlertsBadge;
+  let alertShown: AlertItem | null = null;
+  // Full alert records by link: the type list fetches them for area names, the detail view reuses them.
+  const alertCache = new Map<string, Promise<Alert>>();
+  const describeAlert = (item: AlertItem): Promise<Alert> => {
+    let p = alertCache.get(item.props.url);
+    if (!p) {
+      p = getAlert(item.props.url);
+      alertCache.set(item.props.url, p);
+      p.catch(() => alertCache.delete(item.props.url));
+      if (alertCache.size > 120) alertCache.delete(alertCache.keys().next().value!);
+    }
+    return p;
+  };
+  const alertsHooks: AlertsHooks = {
+    frame: (items) => {
+      const box = items.reduce(
+        (b, a) => ({ west: Math.min(b.west, a.box.west), east: Math.max(b.east, a.box.east), south: Math.min(b.south, a.box.south), north: Math.max(b.north, a.box.north) }),
+        { west: Infinity, east: -Infinity, south: Infinity, north: -Infinity },
+      );
+      // Keep it clear of the sheet: the bottom half on phones, the right column on wide screens.
+      const phone = window.innerWidth < 700;
+      const padding = phone ? { top: 90, right: 70, left: 30, bottom: Math.round(window.innerHeight * 0.55) } : { top: 90, right: 460, left: 60, bottom: 160 };
+      map.fitBounds([[box.west, box.south], [box.east, box.north]], { padding, maxZoom: 9, duration: 700 });
+    },
+    openType: (type) => {
+      alertShown = null;
+      sheet.update(`${type}s`, alertsOfType(type, alertAreas.inView(), alertsHooks));
+    },
+    openAlert: (item) => {
+      alertShown = item;
+      sheet.update(item.props.prod_type, alertDetail(item, null, false, alertsHooks));
+      describeAlert(item)
+        .then((a) => alertShown === item && sheet.update(item.props.prod_type, alertDetail(item, a, false, alertsHooks)))
+        .catch(() => alertShown === item && sheet.update(item.props.prod_type, alertDetail(item, null, true, alertsHooks)));
+    },
+    back: () => {
+      alertShown = null;
+      sheet.update('Alerts in view', alertsList(alertAreas.inView(), alertsHooks));
+    },
+    describe: describeAlert,
+  };
+  alertsBtn.addEventListener('click', async () => {
+    await alertAreas.ensure();
+    alertShown = null;
+    sheet.open('alerts', 'Alerts in view', alertsList(alertAreas.inView(), alertsHooks), alertsBtn, () => (alertShown = null));
+  });
   const layersMenu = new LayersMenu(
     store,
     openSettings,
@@ -609,7 +718,13 @@ async function main(): Promise<void> {
       radar.setColorMode(s.colorMode);
     }
     if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode || s.weatherMap !== prev.weatherMap) renderBar();
-    if (s.alertAreas !== prev.alertAreas) alertAreas.setVisible(s.alertAreas);
+    if (s.layers.outlook !== prev.layers.outlook || s.outlookKind !== prev.outlookKind || s.outlookDay !== prev.outlookDay) {
+      stormOutlook.set(s.layers.outlook, s.outlookKind, s.outlookDay);
+    }
+    if (s.alertAreas !== prev.alertAreas) {
+      alertAreas.setVisible(s.alertAreas);
+      renderAlertsBadge();
+    }
     if (s.layers.tropics !== prev.layers.tropics) {
       tropical.setVisible(s.layers.tropics);
       renderStormPill();
@@ -618,6 +733,12 @@ async function main(): Promise<void> {
     }
     if (s.tropics !== prev.tropics) {
       tropical.setOptions(s.tropics);
+      // A part switched on that was never fetched (to save requests): fetch it now.
+      const t = s.tropics;
+      const p = prev.tropics;
+      if ((t.past && !p.past) || (t.warnings && !p.warnings) || (t.windField && !p.windField) || (t.arrival && !p.arrival) || (t.surge && !p.surge)) {
+        void refreshTropics();
+      }
       if (s.tropics.windProb !== windProbsKt) void loadWindProbs();
     }
     if (s.modelGroups !== prev.modelGroups) {
@@ -645,12 +766,11 @@ async function main(): Promise<void> {
       // Canvas and map colors don't read CSS; hand them the new tokens.
       palette.wind = palette.lightning = token('--fg');
       palette.rain = token('--muted');
-      alertAreas.setColor(token('--c-alert'));
-      tripLayer.setColors(tripColors());
+      tripLayer?.setColors(tripColors());
     }
     if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme) {
       renderAll();
-      trip.refresh();
+      trip?.refresh();
       rerenderStorm();
     }
   });
@@ -709,3 +829,8 @@ function renderCredits(s: AppState): void {
 }
 
 void main();
+
+// Faster repeat visits, and a page that opens offline (public/sw.js). Production only: in dev it would cache Vite's modules.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {}));
+}
