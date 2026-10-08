@@ -62,6 +62,7 @@ export class LayersMenu {
   private tropicsOpen = false;
   /** Storm outlook's options are open. */
   private outlookOpen = false;
+  private cellsOpen = false;
 
   constructor(
     private readonly store: Store,
@@ -238,6 +239,54 @@ export class LayersMenu {
     ];
   }
 
+  /** Storm tracks: the switch, and a disclosure with storm reports and what the colors mean. */
+  private cellRows(): HTMLElement[] {
+    const s = this.store.get();
+    const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch', 'aria-label': 'Storm tracks' });
+    input.checked = s.layers.cells;
+    input.addEventListener('change', () => {
+      this.store.set({ layers: { ...this.store.get().layers, cells: input.checked } });
+      this.onLayer('cells', input.checked);
+    });
+    const more = h(
+      'button',
+      { type: 'button', id: 'cells-more', class: 'row-more', 'aria-expanded': String(this.cellsOpen), 'aria-controls': 'cells-options', 'aria-label': 'Storm track options' },
+      svg(chevronIcon),
+    );
+    more.addEventListener('click', () => {
+      this.cellsOpen = !this.cellsOpen;
+      this.render();
+      $('#cells-more').focus();
+    });
+    const head = h(
+      'div',
+      { class: 'row' },
+      h('span', { class: 'row-mark is-precip' }, svg(rainMark)),
+      h('span', { class: 'row-label' }, 'Storm tracks', h('span', { class: 'row-sub' }, 'Strong storms and where they’re headed')),
+      more,
+      input,
+    );
+    if (!this.cellsOpen) return [head];
+    return [
+      head,
+      h(
+        'div',
+        { id: 'cells-options', class: 'sub-options' },
+        h(
+          'div',
+          { class: 'row cell-key' },
+          h('span', { class: 'row-label' }, 'Colors', h('span', { class: 'row-sub' }, 'Red: tornado signature · orange: rotation · green: large hail · white: strong storm')),
+        ),
+        switchRow({
+          label: 'Storm reports',
+          sub: 'Tornado, hail, wind, and flood reports, past 24 h',
+          checked: s.stormReports,
+          onChange: (on) => this.store.set({ stormReports: on }),
+        }),
+      ),
+    ];
+  }
+
   /**
    * Storm outlook: the switch, and a disclosure for which outlook (SPC severe
    * storms or WPC flash flooding) and which day.
@@ -342,6 +391,7 @@ export class LayersMenu {
         this.layer('thunder', 'Lightning', boltMark, 'is-bolt', 'Approximate'),
         this.layer('clouds', 'Clouds', cloudMark, '', 'Live satellite'),
         ...this.tropicsRows(),
+        ...this.cellRows(),
         ...this.outlookRows(),
         switchRow({
           label: 'Alert areas',

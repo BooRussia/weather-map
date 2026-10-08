@@ -79,3 +79,83 @@ describe('storm outlooks', () => {
     expect(fc.features[0].properties).toMatchObject({ name: 'Moderate risk', rank: 5, fill: '#e67f7f' });
   });
 });
+
+describe('storm tracks', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const attr = (over: Record<string, unknown>) => ({
+    nexrad: 'MOB',
+    storm_id: 'J2',
+    tvs: 'NONE',
+    meso: 'NONE',
+    posh: 0,
+    poh: 0,
+    max_size: 0,
+    max_dbz: 55,
+    max_dbz_height: 12,
+    top: 30,
+    drct: 270,
+    sknt: 20,
+    valid: '2026-10-08T22:00:00Z',
+    ...over,
+  });
+
+  it('reads a cell: heading is where it goes, threats rank tornado over rotation over hail', async () => {
+    const { toCell } = await import('../src/data/stormCells');
+    const c = toCell(attr({}) as never, -88, 30);
+    expect(c.heading).toBe(90);
+    expect(c.speedMph).toBeCloseTo(23, 0);
+    expect(c.threat).toBe('storm');
+    expect(toCell(attr({ max_size: 1.25 }) as never, 0, 0).threat).toBe('hail');
+    expect(toCell(attr({ meso: '7', max_size: 2 }) as never, 0, 0).threat).toBe('rotation');
+    expect(toCell(attr({ tvs: 'TVS', meso: '7' }) as never, 0, 0).threat).toBe('tornado');
+  });
+
+  it('treats glitched and brand-new tracks as unknown motion', async () => {
+    const { toCell } = await import('../src/data/stormCells');
+    expect(toCell(attr({ sknt: 99 }) as never, 0, 0).moving).toBe(false);
+    expect(toCell(attr({ sknt: 0, drct: 0 }) as never, 0, 0).moving).toBe(false);
+    expect(toCell(attr({ sknt: 0, drct: 0 }) as never, 0, 0).speedMph).toBe(0);
+  });
+
+  it('projects the path along the heading', async () => {
+    const { project } = await import('../src/data/stormCells');
+    const [lon, lat] = project(-88, 30, 0, 69.05);
+    expect(lon).toBeCloseTo(-88);
+    expect(lat).toBeCloseTo(31);
+    const [lon2] = project(-88, 0, 90, 69.17);
+    expect(lon2).toBeCloseTo(-87);
+  });
+
+  it('drops shallow clutter and keeps one cell where radars overlap', async () => {
+    const { getStormCells } = await import('../src/data/stormCells');
+    const pt = (lon: number, lat: number, p: Record<string, unknown>) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: attr(p) });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              type: 'FeatureCollection',
+              features: [
+                pt(-83.2, 36.2, { nexrad: 'MRX', max_dbz: 73, top: 3 }),
+                pt(-81.3, 28.3, { nexrad: 'MCO', max_dbz: 58 }),
+                pt(-81.3001, 28.3001, { nexrad: 'MLB', max_dbz: 52 }),
+              ],
+            }),
+          ),
+      ),
+    );
+    const cells = await getStormCells();
+    expect(cells.map((c) => c.key)).toEqual(['MCO J2']);
+  });
+
+  it('sorts reports into tornado, hail, wind, and flood', async () => {
+    const { reportKind } = await import('../src/data/stormCells');
+    expect(reportKind('TORNADO')).toBe('tornado');
+    expect(reportKind('FUNNEL CLOUD')).toBe('tornado');
+    expect(reportKind('MARINE HAIL')).toBe('hail');
+    expect(reportKind('TSTM WND DMG')).toBe('wind');
+    expect(reportKind('FLASH FLOOD')).toBe('flood');
+    expect(reportKind('SNOW')).toBe('other');
+  });
+});

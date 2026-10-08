@@ -18,6 +18,8 @@ import { formatHashView, parseHashView, readLastFix, readLastView, saveLastFix, 
 import { addImagery, refreshClouds, setBasemap, setCloudsVisible, setColorMode } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
 import { OutlookLayer } from './map/outlookLayer';
+import { StormLayer, type StormHit } from './map/stormLayer';
+import { cellPanel, cellTitle, reportPanel, reportTitle } from './ui/cellPanel';
 import { LocationDot } from './map/location';
 import { RadarLayer } from './map/radarLayer';
 import { FieldLayer } from './map/fieldLayer';
@@ -109,6 +111,7 @@ async function main(): Promise<void> {
   });
   const alertAreas = new AlertAreas(map, store.get().alertAreas);
   const stormOutlook = new OutlookLayer(map);
+  const stormCells = new StormLayer(map);
 
   // Radar: 24 h of history, now, and the HRRR forecast, smoothed (radarLayer.ts).
   let hrrrInit: number | null = null;
@@ -146,6 +149,9 @@ async function main(): Promise<void> {
     alertAreas.install();
     stormOutlook.set(s.layers.outlook, s.outlookKind, s.outlookDay);
     showWeatherMap(s);
+    // Storm cells over the radar; their data loads just after the first frame.
+    stormCells.install();
+    window.setTimeout(() => stormCells.set(s.layers.cells, s.stormReports), 600);
   });
 
   // Rain streaks need the Rain layer on AND the falling-rain setting on; radar needs only the layer.
@@ -366,6 +372,12 @@ async function main(): Promise<void> {
   // Tap: bring that spot under the cross. (With the weather pinned, a tap changes nothing.)
   map.on('click', (e) => {
     // A storm's own click handler opens it; the map stays put.
+    // A storm cell or report opens its details; the map stays put.
+    const cell = stormCells.hit(e.point);
+    if (cell) {
+      openStormHit(cell);
+      return;
+    }
     if (tropical.hit(e.point)) return;
     if (!followsMap()) return;
     following = false;
@@ -607,6 +619,7 @@ async function main(): Promise<void> {
     refreshClouds(map, s.layers.clouds);
     alertAreas.refreshIfStale();
     stormOutlook.refreshIfStale();
+    void stormCells.refresh();
     void refreshLive();
     refreshTimeline();
     if (Date.now() - hrrrCheckedAt > 15 * 60_000) void refreshHrrr();
@@ -618,6 +631,13 @@ async function main(): Promise<void> {
   /* ---------- layers popover + settings ---------- */
 
   const openSettings = () => sheet.open('settings', 'Settings', settingsPanel(store), $('#layers-btn'));
+
+  /* ---------- storm cells and reports ---------- */
+
+  function openStormHit(hit: StormHit): void {
+    if (hit.kind === 'cell') sheet.open('cell', cellTitle(hit.cell), cellPanel(hit.cell, store.get()), null);
+    else sheet.open('report', reportTitle(hit.report), reportPanel(hit.report, store.get()), null);
+  }
 
   /* ---------- alerts in view ---------- */
 
@@ -718,6 +738,7 @@ async function main(): Promise<void> {
       radar.setColorMode(s.colorMode);
     }
     if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode || s.weatherMap !== prev.weatherMap) renderBar();
+    if (s.layers.cells !== prev.layers.cells || s.stormReports !== prev.stormReports) stormCells.set(s.layers.cells, s.stormReports);
     if (s.layers.outlook !== prev.layers.outlook || s.outlookKind !== prev.outlookKind || s.outlookDay !== prev.outlookDay) {
       stormOutlook.set(s.layers.outlook, s.outlookKind, s.outlookDay);
     }

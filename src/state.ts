@@ -48,7 +48,8 @@ export const DEFAULT_MODEL_GROUPS: ModelGroup[] = ['official', 'consensus', 'hur
 export interface AppState {
   /** `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
   /** `outlook`: SPC severe-storm or WPC flash-flood outlook areas (`outlookKind`, `outlookDay`). */
-  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean; tropics: boolean; outlook: boolean };
+  /** `cells`: strong storm cells and where they're headed (radar storm tracking). */
+  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean; tropics: boolean; outlook: boolean; cells: boolean };
   tempUnit: TempUnit;
   windUnit: WindUnit;
   sound: boolean;
@@ -74,6 +75,8 @@ export interface AppState {
   weatherMap: WeatherMapId;
   outlookKind: OutlookKind;
   outlookDay: OutlookDay;
+  /** The day's storm reports with the storm cells. */
+  stormReports: boolean;
   /** The point the HUD describes. */
   selected: LatLon;
   /** The selected point came from the device location (shows the GPS arrow). */
@@ -101,6 +104,7 @@ interface Prefs {
   weatherMap?: WeatherMapId;
   outlookKind?: OutlookKind;
   outlookDay?: OutlookDay;
+  stormReports?: boolean;
 }
 
 function readPrefs(): Prefs {
@@ -132,6 +136,7 @@ function writePrefs(s: AppState): void {
       weatherMap: s.weatherMap,
       outlookKind: s.outlookKind,
       outlookDay: s.outlookDay,
+      stormReports: s.stormReports,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
@@ -153,7 +158,7 @@ function legacyGroups(): ModelGroup[] | null {
 export function createStore(selected: LatLon, gps: boolean) {
   const prefs = readPrefs();
   let state: AppState = {
-    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false },
+    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false, cells: true },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
@@ -168,6 +173,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     weatherMap: WEATHER_MAPS.some((m) => m.id === prefs.weatherMap) ? prefs.weatherMap! : 'none',
     outlookKind: prefs.outlookKind === 'flood' ? 'flood' : 'severe',
     outlookDay: prefs.outlookDay === 2 || prefs.outlookDay === 3 ? prefs.outlookDay : 1,
+    stormReports: prefs.stormReports ?? false,
     selected,
     gps,
   };
@@ -192,7 +198,8 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.modelGroups !== undefined ||
         patch.weatherMap !== undefined ||
         patch.outlookKind !== undefined ||
-        patch.outlookDay !== undefined
+        patch.outlookDay !== undefined ||
+        patch.stormReports !== undefined
       ) {
         writePrefs(state);
       }
