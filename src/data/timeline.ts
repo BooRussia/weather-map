@@ -3,10 +3,13 @@ import {
   HRRR_MAX_MINUTES,
   IEM_HOSTS,
   LATEST_RADAR_TILE_URL,
+  MRMS_TILE_URL,
+  MRMS_WMS_URL,
   PAST_RADAR_TILE_URL,
   SITE_RADAR_TILE_URL,
   TIMELINE_PAST_HOURS,
 } from '../config';
+import { nearestFrame } from './mrms';
 import { scanAt, type SiteFrames } from './radarSites';
 
 const HOUR = 3_600_000;
@@ -30,19 +33,41 @@ export interface Timeline {
   maxOffset: number;
   /** A single radar site to show instead of the composite for the past and now (null: the composite). */
   site: SiteFrames | null;
+  /** MRMS frame times, oldest first (empty: unknown, so the IEM composite throughout). */
+  mrms: readonly number[];
 }
 
-export function makeTimeline(now: number, init: number | null, live: number | null = null, site: SiteFrames | null = null): Timeline {
+export function makeTimeline(
+  now: number,
+  init: number | null,
+  live: number | null = null,
+  site: SiteFrames | null = null,
+  mrms: readonly number[] = [],
+): Timeline {
   const base = Math.floor(now / STEP_MS) * STEP_MS;
   // The last frame must still be inside the HRRR run's 18 hours. A site's velocity has no forecast.
   const maxOffset =
     init == null || site?.product === 'N0S' ? 0 : Math.max(0, Math.floor((init + HRRR_MAX_MINUTES * 60_000 - base) / STEP_MS) * STEP_H);
-  return { base, init, live, minOffset: -TIMELINE_PAST_HOURS, maxOffset, site };
+  return { base, init, live, minOffset: -TIMELINE_PAST_HOURS, maxOffset, site, mrms };
 }
 
 /** The tile template for one site scan. */
 export const siteTiles = (site: SiteFrames, scan: number) =>
   SITE_RADAR_TILE_URL.replace('{site}', site.id).replace('{product}', site.product).replace('{stamp}', utcStamp(scan));
+
+/** The tile template for one MRMS frame. */
+export const mrmsTiles = (at: number) => MRMS_TILE_URL.replace('{time}', new Date(at).toISOString());
+
+/** An MRMS frame stands in for a 15-minute mark if it's this close (they're 2 minutes apart). */
+const MRMS_TOLERANCE_MS = 3 * 60_000;
+
+/** How a frame's tiles are colored, so they decode right: IEM's NEXRAD palette, MRMS's, or IEM's velocity. */
+export type TilePalette = 'n0q' | 'mrms' | 'velocity';
+
+export function tilePalette(url: string): TilePalette {
+  if (url.startsWith(MRMS_WMS_URL)) return 'mrms';
+  return url.includes('-N0S-') ? 'velocity' : 'n0q';
+}
 
 export const offsetTime = (t: Timeline, offset: number) => t.base + Math.round(offset * 60) * 60_000;
 
@@ -61,8 +86,10 @@ export function utcHourKey(ms: number): string {
 
 export interface FrameSource {
   kind: 'live' | 'past' | 'future';
-  /** Tile URL template ({z}/{x}/{y}); also the frame's identity. */
+  /** Tile URL template ({z}/{x}/{y} or {bbox-epsg-3857}); also the frame's identity. */
   url: string;
+  /** The moment it shows, epoch ms. */
+  at: number;
 }
 
 /** Which tiles to show at an offset. */
@@ -71,22 +98,31 @@ export function frameSource(t: Timeline, offset: number): FrameSource {
   // A chosen site: its own newest scan at or before the moment (now: its latest scan).
   if (t.site && o <= 0) {
     const scan = scanAt(t.site.scans, o === 0 ? Infinity : offsetTime(t, o));
-    if (scan != null) return { kind: o === 0 ? 'live' : 'past', url: siteTiles(t.site, scan) };
+    if (scan != null) return { kind: o === 0 ? 'live' : 'past', url: siteTiles(t.site, scan), at: scan };
   }
+  // The last 2 hours and now from MRMS (cleaner, and minutes fresher); older from the IEM archive.
+  const newest = t.mrms[t.mrms.length - 1];
+  if (o === 0 && newest != null) return { kind: 'live', url: mrmsTiles(newest), at: newest };
   // The always-latest tiles, versioned by the composite's time so each new scan is a new URL.
   // (The stamped archive can lag the newest scan by a minute or two and 503 meanwhile.)
   const live: FrameSource = {
     kind: 'live',
     url: t.live == null ? LATEST_RADAR_TILE_URL : `${LATEST_RADAR_TILE_URL}?v=${utcStamp(t.live)}`,
+    at: t.live ?? t.base,
   };
   if (o === 0) return live;
   const at = offsetTime(t, o);
-  if (o < 0) return { kind: 'past', url: PAST_RADAR_TILE_URL.replace('{stamp}', utcStamp(at)) };
+  if (o < 0) {
+    const frame = nearestFrame(t.mrms, at, MRMS_TOLERANCE_MS);
+    if (frame != null) return { kind: 'past', url: mrmsTiles(frame), at: frame };
+    return { kind: 'past', url: PAST_RADAR_TILE_URL.replace('{stamp}', utcStamp(at)), at };
+  }
   if (t.init == null) return live;
   const minutes = Math.round((at - t.init) / 60_000);
   return {
     kind: 'future',
     url: FUTURE_RADAR_TILE_URL.replace('{minutes}', String(minutes).padStart(4, '0')).replace('{init}', utcStamp(t.init)),
+    at,
   };
 }
 

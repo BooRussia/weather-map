@@ -1,7 +1,9 @@
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MlMap } from 'maplibre-gl';
 import type { ColorMode } from '../config';
-import { frameSource, tileMirrors, type Timeline } from '../data/timeline';
-import { buildLut, buildRamp, buildVelocityLut, buildVelocityRamp, LUT_BITS, LUT_SIZE } from './radarPalette';
+import { frameSource, tileMirrors, tilePalette, type FrameSource, type TilePalette, type Timeline } from '../data/timeline';
+import { compile, GAUSS9_FS, QUAD_VS, target, texture2d, type Program } from './gl';
+import { RadarFlow } from './radarFlow';
+import { buildLut, buildMrmsLut, buildRamp, buildVelocityLut, buildVelocityRamp, LUT_BITS, LUT_SIZE } from './radarPalette';
 
 /** What the tiles on screen are: reflectivity (composite, site N0B, HRRR) or a site's storm-relative velocity. */
 export type RadarProduct = 'reflectivity' | 'velocity';
@@ -46,10 +48,17 @@ const lonToX = (lon: number) => (lon + 180) / 360;
 const latToY = (lat: number) => 0.5 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI);
 const tileKey = (frame: string, z: number, x: number, y: number) => `${frame}|${z}/${x}/${y}`;
 
-const QUAD_VS = `#version 300 es
-in vec2 a_pos;
-out vec2 v_uv;
-void main() { v_uv = a_pos; gl_Position = vec4(a_pos * 2.0 - 1.0, 0.0, 1.0); }`;
+/** Half the Web Mercator world's width, m. */
+const WORLD = 20037508.342789244;
+
+/** A tile's bounds in Web Mercator meters, as WMS wants them (west,south,east,north). */
+export function tileBbox(z: number, x: number, y: number): string {
+  const span = (2 * WORLD) / 2 ** z;
+  return [-WORLD + x * span, WORLD - (y + 1) * span, -WORLD + (x + 1) * span, WORLD - y * span].map((v) => v.toFixed(2)).join(',');
+}
+
+/** Ground size of a CSS pixel at a latitude and zoom (MapLibre's 512 px tiles), km. */
+const pixelKm = (lat: number, zoom: number) => (40075.016686 * Math.cos((lat * Math.PI) / 180)) / (512 * 2 ** zoom);
 
 /**
  * Tile colors → (reflectivity, echo) via the 3-D lookup: r is the palette
@@ -91,34 +100,23 @@ in vec2 v_uv;
 out vec4 o;
 void main() { vec2 vc = texture(u_tex, v_uv).rg; o = vec4(vc, vc); }`;
 
-/** One direction of a 9-tap Gaussian, on all four channels (both frames' strength and echo share). */
-const BLUR_FS = `#version 300 es
-precision highp float;
-uniform sampler2D u_tex;
-uniform vec2 u_step;
-in vec2 v_uv;
-out vec4 o;
-const float W[5] = float[](0.2270270270, 0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162);
-void main() {
-  vec4 acc = texture(u_tex, v_uv) * W[0];
-  for (int i = 1; i < 5; i++) {
-    vec2 d = u_step * float(i);
-    acc += (texture(u_tex, v_uv + d) + texture(u_tex, v_uv - d)) * W[i];
-  }
-  o = acc;
-}`;
-
 /**
  * Color both frames from the ramp and crossfade them. Strength is the mean
  * over echoes nearby (strength sum / echo share), so a small storm keeps its
  * color; the echo share only softens the edge. Where both frames have rain
  * the combined coverage stays constant (B over A), so nothing pulses
  * mid-fade. Output is premultiplied, as MapLibre blends.
+ *
+ * Gliding: with the rain's motion between the frames (radarFlow.ts), frame a
+ * is carried forward and frame b back to the in-between moment, so the two
+ * line up and storms slide along their paths while they fade.
  */
 const COMPOSITE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_field;
 uniform sampler2D u_ramp;
+uniform sampler2D u_flow;
+uniform vec2 u_flowTexel;
 uniform float u_f;
 uniform float u_opacity;
 in vec2 v_uv;
@@ -131,49 +129,15 @@ vec4 frame(vec2 sc) {
   return c;
 }
 void main() {
-  vec4 f = texture(u_field, v_uv);
-  vec4 ca = frame(f.rg);
-  vec4 cb = frame(f.ba);
+  vec4 m = texture(u_flow, v_uv);
+  vec2 d = m.xy / max(m.z, 0.05) * u_flowTexel;
+  vec4 ca = frame(texture(u_field, v_uv - u_f * d).rg);
+  vec4 cb = frame(texture(u_field, v_uv + (1.0 - u_f) * d).ba);
   float A = ca.a * (1.0 - u_f);
   float T = mix(ca.a, cb.a, u_f);
   float B = A > 0.999 ? 0.0 : clamp((T - A) / (1.0 - A), 0.0, 1.0);
   o = vec4(cb.rgb * B + ca.rgb * A * (1.0 - B), B + A * (1.0 - B)) * u_opacity;
 }`;
-
-interface Program {
-  prog: WebGLProgram;
-  u: Record<string, WebGLUniformLocation | null>;
-}
-
-function compile(gl: WebGL2RenderingContext, vs: string, fs: string, uniforms: string[]): Program {
-  const prog = gl.createProgram()!;
-  for (const [type, src] of [
-    [gl.VERTEX_SHADER, vs],
-    [gl.FRAGMENT_SHADER, fs],
-  ] as const) {
-    const s = gl.createShader(type)!;
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(`radar shader: ${gl.getShaderInfoLog(s)}`);
-    gl.attachShader(prog, s);
-  }
-  gl.bindAttribLocation(prog, 0, 'a_pos');
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(`radar program: ${gl.getProgramInfoLog(prog)}`);
-  const u: Program['u'] = {};
-  for (const name of uniforms) u[name] = gl.getUniformLocation(prog, name);
-  return { prog, u };
-}
-
-function texture2d(gl: WebGL2RenderingContext, filter: number): WebGLTexture {
-  const tex = gl.createTexture()!;
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return tex;
-}
 
 interface Gl {
   quad: WebGLVertexArrayObject;
@@ -181,7 +145,8 @@ interface Gl {
   tile: Program;
   blur: Program;
   composite: Program;
-  lut: WebGLTexture;
+  /** Color → value lookups, one per tile palette, built when first needed. */
+  luts: Partial<Record<TilePalette, WebGLTexture>>;
   ramp: WebGLTexture;
   scratch: WebGLTexture;
   fbo: WebGLFramebuffer;
@@ -193,12 +158,14 @@ interface Gl {
 }
 
 /**
- * The radar, drawn by hand so it can be smoothed. Every frame (live, archive,
- * forecast) is an IEM tile set painted with the same palette, so each tile is
- * decoded back to reflectivity, filtered and blurred at screen resolution
- * (smooth shapes instead of square data cells), and recolored with a TV-style
- * ramp that leaves out the faint "clear air" returns. Frames load ahead,
- * crossfade during playback, and report when every tile in view has arrived.
+ * The radar, drawn by hand so it can be smoothed. Every frame (MRMS now and
+ * the last 2 hours, the IEM archive before, the HRRR forecast after) is a
+ * tile set painted with a known palette, so each tile is decoded back to
+ * reflectivity, filtered and blurred at screen resolution (smooth shapes
+ * instead of square data cells), and recolored with a TV-style ramp that
+ * leaves out the faint "clear air" returns. Frames load ahead, glide into
+ * each other during playback (the rain moves along its tracked motion while
+ * they crossfade), and report when every tile in view has arrived.
  */
 export class RadarLayer implements CustomLayerInterface {
   readonly id = 'radar';
@@ -220,10 +187,16 @@ export class RadarLayer implements CustomLayerInterface {
   private last: [number, number, number] = [0, 0, 0];
   private rampDirty = true;
   private product: RadarProduct = 'reflectivity';
-  private lutDirty = false;
   private moveTimer = 0;
   /** Frame → the frame it replaced, drawn wherever its own tiles haven't arrived. */
   private standIns = new Map<string, string>();
+  /** The rain's motion between the two frames on screen (gliding playback). */
+  private readonly flow = new RadarFlow();
+  private flowKey = '';
+  private flowReady = false;
+  private flowOn = false;
+  /** Tiles of the frames on screen decoded so far: the flow is redone when they change the picture. */
+  private shownDecodes = 0;
 
   constructor(
     private readonly map: MlMap,
@@ -251,9 +224,8 @@ export class RadarLayer implements CustomLayerInterface {
   setTimeline(t: Timeline): void {
     const product: RadarProduct = t.site?.product === 'N0S' ? 'velocity' : 'reflectivity';
     if (product !== this.product) {
-      // Velocity and reflectivity decode differently: no stand-ins across the switch.
+      // Velocity and reflectivity are colored differently: no stand-ins across the switch.
       this.product = product;
-      this.lutDirty = true;
       this.rampDirty = true;
       this.timeline = t;
       this.standIns.clear();
@@ -328,6 +300,10 @@ export class RadarLayer implements CustomLayerInterface {
     return frameSource(this.timeline, offset).url;
   }
 
+  private sourceAt(offset: number): FrameSource {
+    return frameSource(this.timeline, offset);
+  }
+
   /* ---------- loading ---------- */
 
   private cover(): Cover {
@@ -377,7 +353,8 @@ export class RadarLayer implements CustomLayerInterface {
     const url = tileMirrors(frame)[(x + y) % 4]
       .replace('{z}', String(z))
       .replace('{x}', String(x))
-      .replace('{y}', String(y));
+      .replace('{y}', String(y))
+      .replace('{bbox-epsg-3857}', tileBbox(z, x, y));
     const entry: TileEntry = { state: 'loading', img: new Image(), tex: null, used: ++this.clock, failedAt: 0 };
     this.tiles.set(key, entry);
     this.inflight++;
@@ -415,10 +392,11 @@ export class RadarLayer implements CustomLayerInterface {
     const r = this.res;
     if (!gl || !r) return;
     for (const t of this.tiles.values()) if (t.tex) gl.deleteTexture(t.tex);
-    for (const tex of [r.lut, r.ramp, r.scratch, ...r.field]) gl.deleteTexture(tex);
+    for (const tex of [...Object.values(r.luts), r.ramp, r.scratch, ...r.field]) gl.deleteTexture(tex);
     gl.deleteFramebuffer(r.fbo);
     gl.deleteVertexArray(r.quad);
     for (const p of [r.decode, r.tile, r.blur, r.composite]) gl.deleteProgram(p.prog);
+    this.flow.dispose(gl);
     this.tiles.clear();
     this.res = null;
   }
@@ -433,23 +411,13 @@ export class RadarLayer implements CustomLayerInterface {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
 
-    // 3-D uploads from arrays require flip and premultiply off.
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    const lut = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_3D, lut);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, LUT_SIZE, LUT_SIZE, LUT_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, buildLut());
-
     return {
       quad,
       decode: compile(gl, QUAD_VS, DECODE_FS, ['u_src', 'u_lut']),
       tile: compile(gl, TILE_VS, TILE_FS, ['u_matrix', 'u_uv', 'u_tex']),
-      blur: compile(gl, QUAD_VS, BLUR_FS, ['u_tex', 'u_step']),
-      composite: compile(gl, QUAD_VS, COMPOSITE_FS, ['u_field', 'u_ramp', 'u_f', 'u_opacity']),
-      lut,
+      blur: compile(gl, QUAD_VS, GAUSS9_FS, ['u_tex', 'u_step']),
+      composite: compile(gl, QUAD_VS, COMPOSITE_FS, ['u_field', 'u_ramp', 'u_flow', 'u_flowTexel', 'u_f', 'u_opacity']),
+      luts: {},
       ramp: texture2d(gl, gl.LINEAR),
       scratch: texture2d(gl, gl.NEAREST),
       fbo: gl.createFramebuffer()!,
@@ -461,12 +429,28 @@ export class RadarLayer implements CustomLayerInterface {
   }
 
   private target(gl: WebGL2RenderingContext, r: Gl, tex: WebGLTexture, w: number, h: number): void {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, r.fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    gl.viewport(0, 0, w, h);
+    target(gl, r.fbo, tex, w, h);
   }
 
-  /** Arrived images → reflectivity textures (R8, filtered). */
+  /** The color → value lookup for a tile palette (a 128³ volume, built on first use). */
+  private lut(gl: WebGL2RenderingContext, r: Gl, palette: TilePalette): WebGLTexture {
+    const have = r.luts[palette];
+    if (have) return have;
+    const tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_3D, tex);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    // 3-D uploads from arrays require flip and premultiply off.
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    const data = palette === 'mrms' ? buildMrmsLut() : palette === 'velocity' ? buildVelocityLut() : buildLut();
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, LUT_SIZE, LUT_SIZE, LUT_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+    r.luts[palette] = tex;
+    return tex;
+  }
+
+  /** Arrived images → reflectivity textures (R8, filtered), each read with its own palette. */
   private decodeArrivals(gl: WebGL2RenderingContext, r: Gl): void {
     let n = 0;
     while (this.toDecode.length && n < DECODES_PER_FRAME) {
@@ -474,6 +458,9 @@ export class RadarLayer implements CustomLayerInterface {
       const t = this.tiles.get(key);
       if (!t || t.state !== 'decode' || !t.img) continue;
       n++;
+      const frame = key.slice(0, key.indexOf('|'));
+      gl.activeTexture(gl.TEXTURE1);
+      const lut = this.lut(gl, r, tilePalette(frame));
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, r.scratch);
       // Exact palette colors: no color management, no premultiplication.
@@ -493,23 +480,17 @@ export class RadarLayer implements CustomLayerInterface {
       gl.bindTexture(gl.TEXTURE_2D, r.scratch);
       gl.uniform1i(r.decode.u.u_src, 0);
       gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_3D, r.lut);
+      gl.bindTexture(gl.TEXTURE_3D, lut);
       gl.uniform1i(r.decode.u.u_lut, 1);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.activeTexture(gl.TEXTURE0);
 
       t.tex = tex;
       t.img = null;
       t.state = 'ready';
+      if (this.shown.includes(frame)) this.shownDecodes++;
     }
     if (this.toDecode.length) this.map.triggerRepaint();
-  }
-
-  /** Forget every decoded tile (after the decoder changed); they reload from the browser cache. */
-  private dropDecoded(gl: WebGL2RenderingContext): void {
-    for (const t of this.tiles.values()) if (t.tex) gl.deleteTexture(t.tex);
-    this.tiles.clear();
-    this.toDecode = [];
-    this.replan(true);
   }
 
   private evict(gl: WebGL2RenderingContext): void {
@@ -600,16 +581,6 @@ export class RadarLayer implements CustomLayerInterface {
     gl.disable(gl.SCISSOR_TEST);
 
     const velocity = this.product === 'velocity';
-    if (this.lutDirty) {
-      // The color → value lookup for the product on screen (tiles decoded before the switch are dropped).
-      gl.bindTexture(gl.TEXTURE_3D, r.lut);
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, LUT_SIZE, LUT_SIZE, LUT_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, velocity ? buildVelocityLut() : buildLut());
-      this.dropDecoded(gl);
-      this.lutDirty = false;
-    }
     if (this.rampDirty) {
       gl.bindTexture(gl.TEXTURE_2D, r.ramp);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -623,6 +594,7 @@ export class RadarLayer implements CustomLayerInterface {
     const s = this.resizeField(gl, r);
     const c = this.cover();
     const [a, b, f] = this.last;
+    const both = f > 0 && b <= this.timeline.maxOffset;
     this.target(gl, r, r.field[0], r.fieldW, r.fieldH);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -631,7 +603,7 @@ export class RadarLayer implements CustomLayerInterface {
     gl.uniform1i(r.tile.u.u_tex, 0);
     gl.colorMask(true, true, false, false);
     this.drawFrame(gl, r, args, this.frameAt(a), c);
-    if (f > 0 && b <= this.timeline.maxOffset) {
+    if (both) {
       gl.colorMask(false, false, true, true);
       this.drawFrame(gl, r, args, this.frameAt(b), c);
     }
@@ -653,6 +625,29 @@ export class RadarLayer implements CustomLayerInterface {
     gl.uniform2f(r.blur.u.u_step, 0, spacing / r.fieldH);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
+    // 3. Gliding: where the rain moves from frame a to frame b, redone when the pair, the view, or
+    // their tiles change. Not for velocity (a couplet's two halves would be dragged apart).
+    this.flowOn = false;
+    if (both && !velocity && r.fieldFloat) {
+      const fa = this.sourceAt(a);
+      const fb = this.sourceAt(b);
+      const center = this.map.getCenter();
+      const zoom = this.map.getZoom();
+      const key = `${fa.url} ${fb.url} ${r.fieldW}x${r.fieldH} ${center.lng.toFixed(5)},${center.lat.toFixed(5)},${zoom.toFixed(4)} ${this.shownDecodes}`;
+      if (key === this.flowKey) {
+        this.flowOn = this.flowReady;
+      } else {
+        this.flowKey = key;
+        this.flowOn = this.flowReady = this.flow.compute(gl, {
+          field: r.field[0],
+          fieldW: r.fieldW,
+          fieldH: r.fieldH,
+          pxKm: pixelKm(center.lat, zoom) / s,
+          minutes: (fb.at - fa.at) / 60_000,
+        });
+      }
+    }
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindVertexArray(null);
   }
@@ -672,6 +667,13 @@ export class RadarLayer implements CustomLayerInterface {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, r.ramp);
     gl.uniform1i(r.composite.u.u_ramp, 1);
+    const flow = this.flowOn ? this.flow.result : null;
+    const [fw, fh] = this.flow.size;
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, flow ?? this.flow.zero(gl));
+    gl.uniform1i(r.composite.u.u_flow, 2);
+    gl.uniform2f(r.composite.u.u_flowTexel, flow ? 1 / fw : 0, flow ? 1 / fh : 0);
+    gl.activeTexture(gl.TEXTURE0);
     gl.uniform1f(r.composite.u.u_f, b <= this.timeline.maxOffset ? f : 0);
     gl.uniform1f(r.composite.u.u_opacity, 1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

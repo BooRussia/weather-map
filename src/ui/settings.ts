@@ -59,7 +59,7 @@ export function settingsPanel(store: Store): HTMLElement {
     h(
       'p',
       { class: 'pop-note' },
-      'Places, observations, forecasts, and alerts: NWS. Radar (live, history, and forecast): NEXRAD and HRRR via Iowa Environmental Mesonet. Wind: Environment and Climate Change Canada (GeoMet, GDPS model). Falling rain, lightning cells, and point forecasts: Open-Meteo (CC BY 4.0). Search: Photon (OpenStreetMap). Clouds: NOAA GOES via nowCOAST. Weather maps: Environment and Climate Change Canada (GeoMet: GDPS, GDWPS, GIOPS models), NASA GIBS (GOES infrared), and Open-Meteo. Satellite imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.',
+      'Places, observations, forecasts, and alerts: NWS. Radar: NOAA MRMS (now and the last 2 hours), NEXRAD history and the HRRR forecast via Iowa Environmental Mesonet. Wind: Environment and Climate Change Canada (GeoMet, GDPS model). Falling rain, lightning cells, and point forecasts: Open-Meteo (CC BY 4.0). Search: Photon (OpenStreetMap). Clouds: NOAA GOES via nowCOAST. Weather maps: Environment and Climate Change Canada (GeoMet: GDPS, GDWPS, GIOPS models), NASA GIBS (GOES infrared), and Open-Meteo. Satellite imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.',
     ),
   );
 }

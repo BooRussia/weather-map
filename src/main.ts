@@ -10,6 +10,7 @@ import { geoPermission } from './data/geolocate';
 import { GridController } from './data/gridController';
 import { WindController } from './data/windController';
 import { getHrrrInit, getLatestComposite } from './data/iem';
+import { getMrmsTimes } from './data/mrms';
 import { makeTimeline, offsetTime } from './data/timeline';
 import type { Place } from './data/photon';
 import { Animator, type LayerFlags } from './layers/animator';
@@ -123,6 +124,8 @@ async function main(): Promise<void> {
   // Radar: 24 h of history, now, and the HRRR forecast, smoothed (radarLayer.ts).
   let hrrrInit: number | null = null;
   let liveAt: number | null = null;
+  /** MRMS frames (NOAA's cleaned-up mosaic): now and the last 2 hours. Empty: the IEM composite throughout. */
+  let mrmsTimes: readonly number[] = [];
   /** One radar chosen (tap a tower): its own scans replace the composite for the past and now. */
   let chosenSite: RadarSite | null = null;
   let siteFrames: SiteFrames | null = null;
@@ -288,13 +291,14 @@ async function main(): Promise<void> {
   });
 
   const refreshTimeline = () => {
-    const next = makeTimeline(Date.now(), hrrrInit, liveAt, siteFrames);
+    const next = makeTimeline(Date.now(), hrrrInit, liveAt, siteFrames, mrmsTimes);
     if (
       next.base === timeline.base &&
       next.maxOffset === timeline.maxOffset &&
       next.init === timeline.init &&
       next.live === timeline.live &&
-      next.site === timeline.site
+      next.site === timeline.site &&
+      next.mrms === timeline.mrms
     ) {
       return;
     }
@@ -313,14 +317,19 @@ async function main(): Promise<void> {
     }
   };
   void refreshHrrr();
-  // "Now" is the newest composite, published every 5 minutes.
+  // "Now" is the newest MRMS frame (every 2 minutes), or IEM's newest composite (every 5) if MRMS is down.
   const refreshLive = async () => {
-    try {
-      liveAt = await getLatestComposite();
-      refreshTimeline();
-    } catch {
-      // Keep the last known composite (or IEM's always-latest tiles).
+    const [live, mrms] = await Promise.allSettled([getLatestComposite(), getMrmsTimes()]);
+    // On failure, keep what we had (or IEM's always-latest tiles).
+    if (live.status === 'fulfilled') liveAt = live.value;
+    if (mrms.status === 'fulfilled') {
+      const t = mrms.value;
+      const same = t.length === mrmsTimes.length && t[0] === mrmsTimes[0] && t[t.length - 1] === mrmsTimes[mrmsTimes.length - 1];
+      if (!same) mrmsTimes = t;
     }
+    // A stalled feed gives way to the composite.
+    if (mrmsTimes.length && Date.now() - mrmsTimes[mrmsTimes.length - 1] > 20 * 60_000) mrmsTimes = [];
+    refreshTimeline();
   };
   void refreshLive();
 
@@ -980,6 +989,7 @@ async function main(): Promise<void> {
 /** Credits for optional imagery appear only while that imagery is on screen. */
 function renderCredits(s: AppState): void {
   $('[data-credit="iem"]').hidden = !s.layers.rain;
+  $('[data-credit="mrms"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="glm"]').hidden = !s.layers.thunder;

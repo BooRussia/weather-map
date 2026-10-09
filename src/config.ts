@@ -81,5 +81,14 @@ export const IEM_HOSTS = ['mesonet', 'mesonet1', 'mesonet2', 'mesonet3'];
 export const LATEST_RADAR_TILE_URL = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
 /** Valid time of the newest composite (IEM). */
 export const COMPOSITE_META_URL = 'https://mesonet.agron.iastate.edu/data/gis/images/4326/USCOMP/n0q_0.json';
+/**
+ * NOAA's MRMS quality-controlled reflectivity mosaic (NCEP GeoServer, CORS open): every radar merged, with
+ * clutter, birds, and beam blockage removed. Frames every 2 minutes, about 2 minutes behind, kept 2 hours.
+ * Served pre-colored (radarPalette.ts decodes it). `{time}` = a listed frame's ISO time.
+ */
+export const MRMS_WMS_URL = 'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows';
+export const MRMS_TILE_URL =
+  `${MRMS_WMS_URL}?service=WMS&version=1.1.1&request=GetMap&layers=conus_bref_qcd&styles=&srs=EPSG:3857` +
+  '&bbox={bbox-epsg-3857}&width=256&height=256&format=image/png&transparent=true&time={time}';
 /** Latest HRRR run time (IEM). */
 export const HRRR_META_URL = 'https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_0000.json';

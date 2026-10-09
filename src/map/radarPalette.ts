@@ -52,6 +52,73 @@ export function buildLut(): Uint8Array {
   return lut;
 }
 
+/* ---------- MRMS ---------- */
+
+/**
+ * NOAA's MRMS tiles come pre-colored with no published table. The colors are
+ * a straight-line ramp between these anchors, one every 5 dBZ, in 0.5 dBZ
+ * steps (10 per segment). Worked out from every color on the server and
+ * checked against IEM's dBZ at the same places and time: medians land on the
+ * anchors from 20 to 40 dBZ. Past 60 only two pixels were ever seen, both on
+ * the line toward white.
+ */
+export const MRMS_ANCHORS: [dbz: number, r: number, g: number, b: number][] = [
+  [-5, 210, 212, 180],
+  [0, 176, 182, 180],
+  [5, 148, 155, 181],
+  [10, 99, 118, 168],
+  [15, 67, 94, 159],
+  [20, 94, 173, 207],
+  [25, 82, 214, 162],
+  [30, 14, 214, 20],
+  [35, 11, 136, 15],
+  [40, 9, 94, 9],
+  [45, 255, 226, 0],
+  [50, 255, 177, 0],
+  [55, 255, 0, 0],
+  [60, 177, 0, 0],
+  [65, 255, 255, 255],
+];
+
+/**
+ * Color → palette entry (the same entries as IEM's, so every ramp reads both)
+ * for MRMS tiles, as a 128³ volume like `buildLut`. The ramp is traced finely
+ * and every cell within a cell or so of it takes the nearest point's entry,
+ * so rounding on the server never drops an echo; cells off the ramp stay 0.
+ */
+export function buildMrmsLut(): Uint8Array {
+  const shift = 8 - LUT_BITS;
+  const lut = new Uint8Array(LUT_SIZE ** 3);
+  const dist = new Map<number, number>();
+  const REACH = 1.5; // cells
+  for (let k = 0; k < MRMS_ANCHORS.length - 1; k++) {
+    const [d0, r0, g0, b0] = MRMS_ANCHORS[k];
+    const [d1, r1, g1, b1] = MRMS_ANCHORS[k + 1];
+    for (let i = 0; i <= 100; i++) {
+      const t = i / 100;
+      // In cell units: cell c holds colors 2c and 2c + 1, so it spans c … c + 0.5, centered on c + 0.25.
+      const r = (r0 + (r1 - r0) * t) / (1 << shift);
+      const g = (g0 + (g1 - g0) * t) / (1 << shift);
+      const b = (b0 + (b1 - b0) * t) / (1 << shift);
+      const entry = entryOf(d0 + (d1 - d0) * t);
+      for (let cb = Math.floor(b - REACH); cb <= Math.floor(b + REACH); cb++) {
+        for (let cg = Math.floor(g - REACH); cg <= Math.floor(g + REACH); cg++) {
+          for (let cr = Math.floor(r - REACH); cr <= Math.floor(r + REACH); cr++) {
+            if (cr < 0 || cg < 0 || cb < 0 || cr >= LUT_SIZE || cg >= LUT_SIZE || cb >= LUT_SIZE) continue;
+            const e = (cr + 0.25 - r) ** 2 + (cg + 0.25 - g) ** 2 + (cb + 0.25 - b) ** 2;
+            const idx = (cb * LUT_SIZE + cg) * LUT_SIZE + cr;
+            if (e <= REACH * REACH && e < (dist.get(idx) ?? Infinity)) {
+              dist.set(idx, e);
+              lut[idx] = entry;
+            }
+          }
+        }
+      }
+    }
+  }
+  return lut;
+}
+
 type Stop = [dbz: number, r: number, g: number, b: number, a: number];
 
 /**

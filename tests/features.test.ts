@@ -228,3 +228,77 @@ describe('single-site radar', () => {
     expect(Math.min(...lats)).toBeCloseTo(29, 1);
   });
 });
+
+describe('MRMS radar', () => {
+  const at = (iso: string) => Date.parse(iso);
+
+  it('reads frame times from the WMS capabilities', async () => {
+    const { parseMrmsTimes, nearestFrame } = await import('../src/data/mrms');
+    const xml = '<Layer><Dimension name="time" default="2026-10-09T11:22:12Z" units="ISO8601" nearestValue="1">2026-10-09T11:20:05.000Z,2026-10-09T11:18:13.000Z,2026-10-09T11:22:12.000Z</Dimension></Layer>';
+    const times = parseMrmsTimes(xml);
+    expect(times.map((t) => new Date(t).toISOString())).toEqual(['2026-10-09T11:18:13.000Z', '2026-10-09T11:20:05.000Z', '2026-10-09T11:22:12.000Z']);
+    expect(parseMrmsTimes('<Layer/>')).toEqual([]);
+    expect(nearestFrame(times, at('2026-10-09T11:19:30Z'), 180_000)).toBe(at('2026-10-09T11:20:05Z'));
+    expect(nearestFrame(times, at('2026-10-09T11:00:00Z'), 180_000)).toBeNull();
+  });
+
+  it('shows MRMS now and for the last 2 hours, the IEM archive before, HRRR after', async () => {
+    const { makeTimeline, frameSource, tilePalette } = await import('../src/data/timeline');
+    const now = at('2026-10-09T11:24:00Z');
+    const mrms: number[] = [];
+    for (let t = at('2026-10-09T09:24:16Z'); t <= at('2026-10-09T11:22:12Z'); t += 2 * 60_000) mrms.push(t);
+    const t = makeTimeline(now, at('2026-10-09T10:00:00Z'), at('2026-10-09T11:20:00Z'), null, mrms);
+    const live = frameSource(t, 0);
+    expect(live.url).toContain('opengeo.ncep.noaa.gov');
+    expect(live.url).toContain(`time=${new Date(mrms[mrms.length - 1]).toISOString()}`);
+    expect(live.url).toContain('bbox={bbox-epsg-3857}');
+    expect(tilePalette(live.url)).toBe('mrms');
+    // 11:00 → the 11:00:16 frame.
+    const past = frameSource(t, -0.25);
+    expect(past.at).toBe(at('2026-10-09T11:00:16Z'));
+    expect(tilePalette(past.url)).toBe('mrms');
+    // Older than MRMS keeps: the IEM archive.
+    const old = frameSource(t, -3);
+    expect(old.url).toContain('ridge::USCOMP-N0Q-202610090815');
+    expect(tilePalette(old.url)).toBe('n0q');
+    expect(frameSource(t, 1).url).toContain('hrrr::REFD');
+    // No MRMS list: the composite, as before.
+    expect(frameSource(makeTimeline(now, null, at('2026-10-09T11:20:00Z')), 0).url).toContain('nexrad-n0q-900913');
+    expect(tilePalette('https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::MOB-N0S-202610091100/{z}/{x}/{y}.png')).toBe('velocity');
+  });
+
+  it('decodes MRMS colors to dBZ, rounding included, and ignores colors off the ramp', async () => {
+    const { buildMrmsLut, MRMS_ANCHORS, entryOf, LUT_BITS, LUT_SIZE } = await import('../src/map/radarPalette');
+    const lut = buildMrmsLut();
+    const look = (r: number, g: number, b: number) => {
+      const s = 8 - LUT_BITS;
+      return lut[((b >> s) * LUT_SIZE + (g >> s)) * LUT_SIZE + (r >> s)];
+    };
+    for (const [dbz, r, g, b] of MRMS_ANCHORS) expect(Math.abs(look(r, g, b) - entryOf(dbz))).toBeLessThanOrEqual(1);
+    // Seen on the server: 13,191,19 is three steps past 30 dBZ; 255,142,0 two past 50.
+    expect(Math.abs(look(13, 191, 19) - entryOf(31.5))).toBeLessThanOrEqual(1);
+    expect(Math.abs(look(255, 142, 0) - entryOf(51))).toBeLessThanOrEqual(1);
+    expect(look(0, 0, 255)).toBe(0);
+    expect(look(255, 0, 255)).toBe(0);
+  });
+
+  it('asks the WMS for each tile by its Mercator bounds', async () => {
+    const { tileBbox } = await import('../src/map/radarLayer');
+    expect(tileBbox(0, 0, 0)).toBe('-20037508.34,-20037508.34,20037508.34,20037508.34');
+    expect(tileBbox(1, 1, 0)).toBe('0.00,0.00,20037508.34,20037508.34');
+  });
+
+  it('plans motion tracking only where storms can be followed', async () => {
+    const { RadarFlow } = await import('../src/map/radarFlow');
+    const field = {} as WebGLTexture;
+    // A regional view: ~2 km pixels, 1200 × 800.
+    const p = RadarFlow.plan({ field, fieldW: 1200, fieldH: 800, pxKm: 2, minutes: 15 })!;
+    expect(p.w * p.h).toBeLessThanOrEqual(16_500);
+    expect(p.texKm).toBeGreaterThanOrEqual(2);
+    expect(p.reachKm).toBeCloseTo(37.5);
+    // Zoomed to a few km across: a storm could cross the view between frames.
+    expect(RadarFlow.plan({ field, fieldW: 400, fieldH: 800, pxKm: 0.1, minutes: 15 })).toBeNull();
+    // The same frame twice: nothing to track.
+    expect(RadarFlow.plan({ field, fieldW: 1200, fieldH: 800, pxKm: 2, minutes: 0 })).toBeNull();
+  });
+});
