@@ -4,13 +4,14 @@ import '@fontsource/ibm-plex-sans/latin-400.css';
 import '@fontsource/ibm-plex-sans/latin-500.css';
 import './styles.css';
 
-import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_AGE_MS, INITIAL_ZOOM, TIMELINE_PAST_HOURS, type LatLon } from './config';
+import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_AGE_MS, INITIAL_ZOOM, SAT_RAIN_PRODUCT, TIMELINE_PAST_HOURS, type LatLon } from './config';
 import { loadConditions, type Conditions } from './data/conditions';
 import { geoPermission } from './data/geolocate';
 import { GridController } from './data/gridController';
 import { WindController } from './data/windController';
 import { getHrrrInit, getLatestComposite } from './data/iem';
 import { getMrmsTimes } from './data/mrms';
+import { getRealEarthTimes } from './data/realearth';
 import { makeTimeline, offsetTime } from './data/timeline';
 import type { Place } from './data/photon';
 import { Animator, type LayerFlags } from './layers/animator';
@@ -125,7 +126,9 @@ async function main(): Promise<void> {
   let hrrrInit: number | null = null;
   let liveAt: number | null = null;
   /** MRMS frames (NOAA's cleaned-up mosaic): now and the last 2 hours. Empty: the IEM composite throughout. */
-  let mrmsTimes: readonly number[] = [];
+  let radarTimes: readonly number[] = [];
+  /** Satellite rain-estimate frames, for rain beyond radar range. */
+  let satTimes: readonly number[] = [];
   /** One radar chosen (tap a tower): its own scans replace the composite for the past and now. */
   let chosenSite: RadarSite | null = null;
   let siteFrames: SiteFrames | null = null;
@@ -167,7 +170,11 @@ async function main(): Promise<void> {
     sitesLayer.install();
     sitesLayer.setVisible(s.layers.rain);
     void getRadarSites()
-      .then((sites) => sitesLayer.setSites(sites))
+      .then((sites) => {
+        sitesLayer.setSites(sites);
+        // The towers' reach: past it, satellite rain fills in.
+        radar.setSites(sites);
+      })
       .catch(() => {});
     lightning.install();
     lightning.setVisible(s.layers.thunder);
@@ -291,14 +298,15 @@ async function main(): Promise<void> {
   });
 
   const refreshTimeline = () => {
-    const next = makeTimeline(Date.now(), hrrrInit, liveAt, siteFrames, mrmsTimes);
+    const next = makeTimeline(Date.now(), hrrrInit, liveAt, siteFrames, radarTimes, satTimes);
     if (
       next.base === timeline.base &&
       next.maxOffset === timeline.maxOffset &&
       next.init === timeline.init &&
       next.live === timeline.live &&
       next.site === timeline.site &&
-      next.mrms === timeline.mrms
+      next.radar === timeline.radar &&
+      next.sat === timeline.sat
     ) {
       return;
     }
@@ -317,18 +325,22 @@ async function main(): Promise<void> {
     }
   };
   void refreshHrrr();
-  // "Now" is the newest MRMS frame (every 2 minutes), or IEM's newest composite (every 5) if MRMS is down.
+  // "Now" is the newest MRMS frame (every 2 minutes); IEM's newest composite stands in if MRMS is down.
+  // An unchanged list keeps its identity, so the timeline isn't rebuilt for nothing.
+  const sameFrames = (a: readonly number[], b: readonly number[]) => a.length === b.length && a[0] === b[0] && a[a.length - 1] === b[b.length - 1];
   const refreshLive = async () => {
-    const [live, mrms] = await Promise.allSettled([getLatestComposite(), getMrmsTimes()]);
-    // On failure, keep what we had (or IEM's always-latest tiles).
+    const [live, radarList, satList] = await Promise.allSettled([
+      getLatestComposite(),
+      getMrmsTimes(),
+      getRealEarthTimes(SAT_RAIN_PRODUCT),
+    ]);
+    // On failure, keep what we had.
     if (live.status === 'fulfilled') liveAt = live.value;
-    if (mrms.status === 'fulfilled') {
-      const t = mrms.value;
-      const same = t.length === mrmsTimes.length && t[0] === mrmsTimes[0] && t[t.length - 1] === mrmsTimes[mrmsTimes.length - 1];
-      if (!same) mrmsTimes = t;
-    }
-    // A stalled feed gives way to the composite.
-    if (mrmsTimes.length && Date.now() - mrmsTimes[mrmsTimes.length - 1] > 20 * 60_000) mrmsTimes = [];
+    if (radarList.status === 'fulfilled' && !sameFrames(radarList.value, radarTimes)) radarTimes = radarList.value;
+    if (satList.status === 'fulfilled' && !sameFrames(satList.value, satTimes)) satTimes = satList.value;
+    // A stalled feed gives way: MRMS to the composite, the satellite to nothing.
+    if (radarTimes.length && Date.now() - radarTimes[radarTimes.length - 1] > 20 * 60_000) radarTimes = [];
+    if (satTimes.length && Date.now() - satTimes[satTimes.length - 1] > 3 * 3_600_000) satTimes = [];
     refreshTimeline();
   };
   void refreshLive();
@@ -990,6 +1002,7 @@ async function main(): Promise<void> {
 function renderCredits(s: AppState): void {
   $('[data-credit="iem"]').hidden = !s.layers.rain;
   $('[data-credit="mrms"]').hidden = !s.layers.rain;
+  $('[data-credit="ghe"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="glm"]').hidden = !s.layers.thunder;

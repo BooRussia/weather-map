@@ -233,7 +233,8 @@ describe('MRMS radar', () => {
   const at = (iso: string) => Date.parse(iso);
 
   it('reads frame times from the WMS capabilities', async () => {
-    const { parseMrmsTimes, nearestFrame } = await import('../src/data/mrms');
+    const { parseMrmsTimes } = await import('../src/data/mrms');
+    const { nearestFrame } = await import('../src/data/frames');
     const xml = '<Layer><Dimension name="time" default="2026-10-09T11:22:12Z" units="ISO8601" nearestValue="1">2026-10-09T11:20:05.000Z,2026-10-09T11:18:13.000Z,2026-10-09T11:22:12.000Z</Dimension></Layer>';
     const times = parseMrmsTimes(xml);
     expect(times.map((t) => new Date(t).toISOString())).toEqual(['2026-10-09T11:18:13.000Z', '2026-10-09T11:20:05.000Z', '2026-10-09T11:22:12.000Z']);
@@ -247,7 +248,10 @@ describe('MRMS radar', () => {
     const now = at('2026-10-09T11:24:00Z');
     const mrms: number[] = [];
     for (let t = at('2026-10-09T09:24:16Z'); t <= at('2026-10-09T11:22:12Z'); t += 2 * 60_000) mrms.push(t);
-    const t = makeTimeline(now, at('2026-10-09T10:00:00Z'), at('2026-10-09T11:20:00Z'), null, mrms);
+    // Satellite rain every 15 minutes, running ~40 minutes behind.
+    const sat: number[] = [];
+    for (let t = at('2026-10-08T12:00:00Z'); t <= at('2026-10-09T10:45:00Z'); t += 15 * 60_000) sat.push(t);
+    const t = makeTimeline(now, at('2026-10-09T10:00:00Z'), at('2026-10-09T11:20:00Z'), null, mrms, sat);
     const live = frameSource(t, 0);
     expect(live.url).toContain('opengeo.ncep.noaa.gov');
     expect(live.url).toContain(`time=${new Date(mrms[mrms.length - 1]).toISOString()}`);
@@ -262,6 +266,12 @@ describe('MRMS radar', () => {
     expect(old.url).toContain('ridge::USCOMP-N0Q-202610090815');
     expect(tilePalette(old.url)).toBe('n0q');
     expect(frameSource(t, 1).url).toContain('hrrr::REFD');
+    // Satellite rain rides along with every observed frame (the newest one it has), never the forecast.
+    expect(live.sat).toContain('products=NESDIS-GHE-HourlyRainfall_20261009_104500');
+    expect(tilePalette(live.sat!)).toBe('sat');
+    expect(old.sat).toContain('_20261009_081500');
+    expect(frameSource(t, 1).sat).toBeNull();
+    expect(frameSource(makeTimeline(now, null, null, null, mrms, []), 0).sat).toBeNull();
     // No MRMS list: the composite, as before.
     expect(frameSource(makeTimeline(now, null, at('2026-10-09T11:20:00Z')), 0).url).toContain('nexrad-n0q-900913');
     expect(tilePalette('https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::MOB-N0S-202610091100/{z}/{x}/{y}.png')).toBe('velocity');
@@ -300,5 +310,47 @@ describe('MRMS radar', () => {
     expect(RadarFlow.plan({ field, fieldW: 400, fieldH: 800, pxKm: 0.1, minutes: 15 })).toBeNull();
     // The same frame twice: nothing to track.
     expect(RadarFlow.plan({ field, fieldW: 1200, fieldH: 800, pxKm: 2, minutes: 0 })).toBeNull();
+  });
+});
+
+describe('satellite rain beyond radar range', () => {
+  it('names RealEarth frames and picks the newest one not too old', async () => {
+    const { realEarthStamp, realEarthTiles, realEarthTime } = await import('../src/data/realearth');
+    const { frameBefore } = await import('../src/data/frames');
+    const t = Date.parse('2026-10-09T10:45:00Z');
+    expect(realEarthStamp(t)).toBe('20261009_104500');
+    expect(realEarthTime('20261009.104500')).toBe(t);
+    expect(realEarthTiles('X', t)).toContain('products=X_20261009_104500&x={x}&y={y}&z={z}');
+    const times = [t - 30 * 60_000, t - 15 * 60_000, t];
+    expect(frameBefore(times, t + 10 * 60_000, 75 * 60_000)).toBe(t);
+    expect(frameBefore(times, t - 20 * 60_000, 75 * 60_000)).toBe(t - 30 * 60_000);
+    expect(frameBefore(times, t + 2 * 3_600_000, 75 * 60_000)).toBeNull();
+  });
+
+  it('reads the satellite rain-rate colors as radar-like reflectivity, and drops the faint blues', async () => {
+    const { buildSatLut, SAT_RAIN_BINS, rainDbz, entryOf, LUT_BITS, LUT_SIZE } = await import('../src/map/radarPalette');
+    const lut = buildSatLut();
+    const sh = 8 - LUT_BITS;
+    const look = (r: number, g: number, b: number) => lut[((b >> sh) * LUT_SIZE + (g >> sh)) * LUT_SIZE + (r >> sh)];
+    for (const [r, g, b, mmh] of SAT_RAIN_BINS) expect(look(r, g, b)).toBe(entryOf(rainDbz(mmh)));
+    expect(rainDbz(10)).toBeCloseTo(39, 0);
+    expect(look(0, 82, 255)).toBe(0);
+  });
+
+  it('knows where the radars reach', async () => {
+    const { RadarCoverage } = await import('../src/map/radarCoverage');
+    const cov = new RadarCoverage();
+    // Before the radar list arrives nothing is "uncovered" (no satellite over a dry radar).
+    expect(cov.open(6, 16, 26)).toBe(false);
+    cov.setSites([{ lon: -85.92, lat: 30.56 }]); // KEVX
+    expect(cov.ready).toBe(true);
+    // z8 tile right over the radar: covered. A tile far out in the Gulf: open.
+    const tile = (lon: number, lat: number, z: number) => {
+      const n = 2 ** z;
+      const y = (0.5 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI)) * n;
+      return [z, Math.floor(((lon + 180) / 360) * n), Math.floor(y)] as const;
+    };
+    expect(cov.open(...tile(-85.92, 30.56, 8))).toBe(false);
+    expect(cov.open(...tile(-87.8, 26.6, 8))).toBe(true);
   });
 });

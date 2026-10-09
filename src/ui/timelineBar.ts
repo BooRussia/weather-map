@@ -192,7 +192,7 @@ export class TimelineBar {
     $('#radar-legend-bar').style.background = `linear-gradient(to right, ${(s.velocity ? VELOCITY_LEGEND : RADAR_LEGEND).join(', ')})`;
     $('#radar-legend').setAttribute(
       'aria-label',
-      s.velocity ? 'Velocity scale: green toward the radar, red away, brighter is faster' : 'Radar intensity scale: blue and green light, yellow and orange moderate, red heavy',
+      s.velocity ? 'Velocity scale: green toward the radar, red away, brighter is faster' : 'Radar intensity scale: green light, yellow and orange moderate, red heavy',
     );
     this.label(Math.round(this.pos), false);
   }

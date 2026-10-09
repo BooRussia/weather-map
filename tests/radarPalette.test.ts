@@ -26,13 +26,17 @@ describe('radar palette', () => {
     const ramp = buildRamp('color');
     const alpha = (dbz: number) => ramp[entryOf(dbz) * 4 + 3];
     expect(alpha(5)).toBe(0);
-    expect(alpha(8.5)).toBe(0);
-    // Light rain fades in from 9 dBZ.
-    expect(alpha(10)).toBeGreaterThan(0);
-    expect(alpha(10)).toBeLessThan(alpha(14));
-    expect(alpha(20)).toBeGreaterThan(100);
-    expect(alpha(45)).toBeGreaterThan(alpha(20));
-    // Light rain is green; heavy rain is red.
+    expect(alpha(11.5)).toBe(0);
+    // Light rain comes in quickly from 12 dBZ, solid (The Weather Channel's look) from light rain up.
+    expect(alpha(13)).toBeGreaterThan(0);
+    expect(alpha(13)).toBeLessThan(alpha(15));
+    expect(alpha(20)).toBeGreaterThan(200);
+    expect(alpha(45)).toBeGreaterThanOrEqual(alpha(20));
+    // Light rain is green; moderate yellow; heavy rain is red.
+    const [ry, gy, by] = [...ramp.subarray(entryOf(39) * 4, entryOf(39) * 4 + 3)];
+    expect(ry).toBeGreaterThan(200);
+    expect(gy).toBeGreaterThan(150);
+    expect(by).toBeLessThan(100);
     const rgb = (dbz: number) => [...ramp.subarray(entryOf(dbz) * 4, entryOf(dbz) * 4 + 3)];
     const [r20, g20] = rgb(20);
     expect(g20).toBeGreaterThan(r20);

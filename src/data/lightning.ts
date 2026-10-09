@@ -1,5 +1,7 @@
+import { REALEARTH_API } from '../config';
 import type { Bounds, StormCell } from '../field/grid';
 import { fetchJson } from '../util/http';
+import { realEarthTime } from './realearth';
 
 /**
  * Live lightning from the GOES Geostationary Lightning Mapper (flash extent
@@ -7,7 +9,7 @@ import { fetchJson } from '../util/http';
  * tiles. The tiles are colored; we read the colors back to where the
  * flashes are and how many, and draw our own glow and bolts there.
  */
-const REALEARTH = 'https://realearth.ssec.wisc.edu/api';
+const REALEARTH = REALEARTH_API;
 /** GOES-East sees the U.S. and the Atlantic; GOES-West the West and the Pacific. */
 const EAST = 'GOESEastGLMFEDRadC';
 const WEST = 'GOESWestGLMFEDRadC';
@@ -31,11 +33,7 @@ const tileY = (lat: number, z: number) => {
 const lonAt = (x: number, z: number) => (x / 2 ** z) * 360 - 180;
 const latAt = (y: number, z: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / 2 ** z))) * 180) / Math.PI;
 
-/** "20261008.222400" → epoch ms. */
-export function realEarthTime(s: string): number {
-  const m = /^(\d{4})(\d{2})(\d{2})\.(\d{2})(\d{2})(\d{2})$/.exec(s);
-  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : NaN;
-}
+export { realEarthTime };
 
 /**
  * Flash density from a tile color: the product runs dark blue (a flash or

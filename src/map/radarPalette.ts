@@ -81,40 +81,81 @@ export const MRMS_ANCHORS: [dbz: number, r: number, g: number, b: number][] = [
 ];
 
 /**
- * Color → palette entry (the same entries as IEM's, so every ramp reads both)
- * for MRMS tiles, as a 128³ volume like `buildLut`. The ramp is traced finely
- * and every cell within a cell or so of it takes the nearest point's entry,
- * so rounding on the server never drops an echo; cells off the ramp stay 0.
+ * Trace a color path into a 128³ color → entry volume: each cell within a
+ * cell and a half of the path takes the nearest point's entry, so rounding
+ * on the server never drops an echo; cells off the path stay 0 (no data).
  */
-export function buildMrmsLut(): Uint8Array {
+function tracePath(lut: Uint8Array, dist: Map<number, number>, from: number[], to: number[], entry0: number, entry1: number): void {
   const shift = 8 - LUT_BITS;
-  const lut = new Uint8Array(LUT_SIZE ** 3);
-  const dist = new Map<number, number>();
-  const REACH = 1.5; // cells
-  for (let k = 0; k < MRMS_ANCHORS.length - 1; k++) {
-    const [d0, r0, g0, b0] = MRMS_ANCHORS[k];
-    const [d1, r1, g1, b1] = MRMS_ANCHORS[k + 1];
-    for (let i = 0; i <= 100; i++) {
-      const t = i / 100;
-      // In cell units: cell c holds colors 2c and 2c + 1, so it spans c … c + 0.5, centered on c + 0.25.
-      const r = (r0 + (r1 - r0) * t) / (1 << shift);
-      const g = (g0 + (g1 - g0) * t) / (1 << shift);
-      const b = (b0 + (b1 - b0) * t) / (1 << shift);
-      const entry = entryOf(d0 + (d1 - d0) * t);
-      for (let cb = Math.floor(b - REACH); cb <= Math.floor(b + REACH); cb++) {
-        for (let cg = Math.floor(g - REACH); cg <= Math.floor(g + REACH); cg++) {
-          for (let cr = Math.floor(r - REACH); cr <= Math.floor(r + REACH); cr++) {
-            if (cr < 0 || cg < 0 || cb < 0 || cr >= LUT_SIZE || cg >= LUT_SIZE || cb >= LUT_SIZE) continue;
-            const e = (cr + 0.25 - r) ** 2 + (cg + 0.25 - g) ** 2 + (cb + 0.25 - b) ** 2;
-            const idx = (cb * LUT_SIZE + cg) * LUT_SIZE + cr;
-            if (e <= REACH * REACH && e < (dist.get(idx) ?? Infinity)) {
-              dist.set(idx, e);
-              lut[idx] = entry;
-            }
+  const REACH = 1.5;
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(to[0] - from[0]), Math.abs(to[1] - from[1]), Math.abs(to[2] - from[2])) / 2));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    // Cell c holds colors 2c and 2c + 1: in these units it spans c … c + 0.5, centered on c + 0.25.
+    const r = (from[0] + (to[0] - from[0]) * t) / (1 << shift);
+    const g = (from[1] + (to[1] - from[1]) * t) / (1 << shift);
+    const b = (from[2] + (to[2] - from[2]) * t) / (1 << shift);
+    const entry = Math.round(entry0 + (entry1 - entry0) * t);
+    for (let cb = Math.floor(b - REACH); cb <= Math.floor(b + REACH); cb++) {
+      for (let cg = Math.floor(g - REACH); cg <= Math.floor(g + REACH); cg++) {
+        for (let cr = Math.floor(r - REACH); cr <= Math.floor(r + REACH); cr++) {
+          if (cr < 0 || cg < 0 || cb < 0 || cr >= LUT_SIZE || cg >= LUT_SIZE || cb >= LUT_SIZE) continue;
+          const e = (cr + 0.25 - r) ** 2 + (cg + 0.25 - g) ** 2 + (cb + 0.25 - b) ** 2;
+          const idx = (cb * LUT_SIZE + cg) * LUT_SIZE + cr;
+          if (e <= REACH * REACH && e < (dist.get(idx) ?? Infinity)) {
+            dist.set(idx, e);
+            lut[idx] = Math.max(1, entry);
           }
         }
       }
     }
+  }
+}
+
+/** Color → palette entry (IEM's entries, so every ramp reads both) for MRMS tiles. */
+export function buildMrmsLut(): Uint8Array {
+  const lut = new Uint8Array(LUT_SIZE ** 3);
+  const dist = new Map<number, number>();
+  for (let k = 0; k + 1 < MRMS_ANCHORS.length; k++) {
+    const [d0, ...c0] = MRMS_ANCHORS[k];
+    const [d1, ...c1] = MRMS_ANCHORS[k + 1];
+    tracePath(lut, dist, c0, c1, entryOf(d0), entryOf(d1));
+  }
+  return lut;
+}
+
+/* ---------- satellite rain (Hydro-Estimator, via RealEarth) ---------- */
+
+/**
+ * The Hydro-Estimator's rain-rate bins as RealEarth colors them (read from
+ * its legend), each with a typical rate in the bin, mm/h. The faint blues
+ * under 0.5 mm/h are left out: from infrared alone they spread under every
+ * cirrus deck.
+ */
+export const SAT_RAIN_BINS: [r: number, g: number, b: number, mmh: number][] = [
+  [150, 255, 150, 1.2],
+  [50, 200, 50, 3.5],
+  [0, 130, 0, 6.5],
+  [255, 255, 0, 10],
+  [170, 170, 0, 14],
+  [255, 127, 0, 18],
+  [200, 70, 70, 23],
+  [255, 160, 160, 31],
+  [255, 0, 0, 38],
+  [157, 0, 157, 47],
+  [0, 0, 0, 60],
+];
+
+/** Rain rate → the reflectivity radar would show for it (Marshall–Palmer, Z = 200 R^1.6). */
+export const rainDbz = (mmh: number) => 10 * Math.log10(200 * mmh ** 1.6);
+
+/** Color → entry for the satellite tiles: each bin's color, at its rain rate's reflectivity. */
+export function buildSatLut(): Uint8Array {
+  const lut = new Uint8Array(LUT_SIZE ** 3);
+  const dist = new Map<number, number>();
+  for (const [r, g, b, mmh] of SAT_RAIN_BINS) {
+    const e = entryOf(rainDbz(mmh));
+    tracePath(lut, dist, [r, g, b], [r, g, b], e, e);
   }
   return lut;
 }
@@ -122,26 +163,27 @@ export function buildMrmsLut(): Uint8Array {
 type Stop = [dbz: number, r: number, g: number, b: number, a: number];
 
 /**
- * Display ramps, by reflectivity. Color reads like TV-weather radar: nothing
- * below light rain (the archive's pale "clear air" returns), translucent
- * greens, then yellow, orange, red, magenta. Mono is the DESIGN.md default:
- * white at rising opacity.
+ * Display ramps, by reflectivity. Color follows The Weather Channel's look,
+ * the reference the owner picked (2026-10-09): nothing below light rain (the
+ * faint "clear air" returns), then solid light green deepening to dark green,
+ * a clean step to yellow, orange, red, dark red, magenta. Mono is the
+ * DESIGN.md default: white at rising opacity.
  */
 const RAMPS: Record<ColorMode, Stop[]> = {
   color: [
-    [9, 120, 210, 120, 0],
-    [14, 118, 206, 112, 0.45],
-    [22, 66, 182, 74, 0.6],
-    [28, 28, 152, 52, 0.72],
-    [34, 14, 118, 42, 0.8],
-    [37.5, 22, 108, 40, 0.83],
-    [39.5, 238, 214, 52, 0.86],
-    [44, 250, 168, 28, 0.88],
-    [48, 242, 100, 22, 0.9],
-    [52, 222, 34, 30, 0.92],
-    [57, 164, 12, 30, 0.93],
-    [62, 202, 40, 168, 0.95],
-    [68, 246, 178, 255, 0.95],
+    [12, 125, 205, 115, 0],
+    [15, 118, 200, 108, 0.8],
+    [21, 72, 176, 76, 0.9],
+    [27, 38, 142, 56, 0.94],
+    [32, 22, 108, 40, 0.96],
+    [36.5, 24, 100, 38, 0.97],
+    [38, 246, 222, 58, 1],
+    [42, 248, 168, 38, 1],
+    [46, 238, 98, 28, 1],
+    [50, 222, 36, 32, 1],
+    [55, 162, 14, 30, 1],
+    [60, 206, 40, 168, 1],
+    [66, 248, 182, 255, 1],
   ],
   mono: [
     [9, 200, 200, 205, 0],

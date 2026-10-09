@@ -21,20 +21,3 @@ export async function getMrmsTimes(signal?: AbortSignal): Promise<number[]> {
   if (!times.length) throw new Error('no MRMS frames');
   return times;
 }
-
-/** The frame nearest `at`, if one is within `tolerance` ms. `times` sorted. */
-export function nearestFrame(times: readonly number[], at: number, tolerance: number): number | null {
-  let lo = 0;
-  let hi = times.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (times[mid] < at) lo = mid + 1;
-    else hi = mid;
-  }
-  let best: number | null = null;
-  for (const i of [lo - 1, lo]) {
-    const t = times[i];
-    if (t != null && Math.abs(t - at) <= tolerance && (best == null || Math.abs(t - at) < Math.abs(best - at))) best = t;
-  }
-  return best;
-}

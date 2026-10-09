@@ -1,20 +1,23 @@
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MlMap } from 'maplibre-gl';
 import type { ColorMode } from '../config';
-import { frameSource, tileMirrors, tilePalette, type FrameSource, type TilePalette, type Timeline } from '../data/timeline';
+import { frameSource, STEP_H, tileMirrors, tilePalette, type FrameSource, type TilePalette, type Timeline } from '../data/timeline';
 import { compile, GAUSS9_FS, QUAD_VS, target, texture2d, type Program } from './gl';
 import { RadarFlow } from './radarFlow';
-import { buildLut, buildMrmsLut, buildRamp, buildVelocityLut, buildVelocityRamp, LUT_BITS, LUT_SIZE } from './radarPalette';
+import { COVERAGE_SIZE, RadarCoverage } from './radarCoverage';
+import { buildLut, buildMrmsLut, buildRamp, buildSatLut, buildVelocityLut, buildVelocityRamp, LUT_BITS, LUT_SIZE } from './radarPalette';
 
 /** What the tiles on screen are: reflectivity (composite, site N0B, HRRR) or a site's storm-relative velocity. */
 export type RadarProduct = 'reflectivity' | 'velocity';
 
-/** Tile zooms requested. IEM's composite is ~0.5 km, about z8. */
+/** Tile zooms requested: MRMS is ~1 km (z7), one radar's own scans finer, the satellite estimate ~4 km. */
 const MIN_Z = 3;
-const MAX_Z = 8;
+const MAX_Z = 7;
+const SITE_MAX_Z = 8;
+const SAT_MAX_Z = 6;
 /** MapLibre's in-tile coordinate range. */
 const EXTENT = 8192;
 /** Decoded tiles kept on the GPU (128 KB each: strength and echo). */
-const MAX_TILES = 240;
+const MAX_TILES = 280;
 const MAX_INFLIGHT = 20;
 /** Failed tiles (e.g. a 503) are retried after this long, ms. */
 const RETRY_MS = 30_000;
@@ -22,9 +25,24 @@ const RETRY_MS = 30_000;
 const DECODES_PER_FRAME = 6;
 /** Cap on the smoothing buffer's size, pixels. */
 const MAX_FIELD_PX = 1_200_000;
-/** Smoothing radius (Gaussian sigma), CSS pixels, and its share of a tile pixel when zoomed past the data. */
-const BLUR_PX = 3;
-const BLUR_PER_TEXEL = 0.9;
+/**
+ * Smoothing radius (Gaussian sigma), CSS pixels, and its share of a tile pixel when zoomed past the data.
+ * Light, with tiles a zoom finer than the map: smooth edges that keep a storm's fine structure.
+ */
+const BLUR_PX = 1.6;
+const BLUR_PER_TEXEL = 0.75;
+/**
+ * The first hours of the forecast start from the radar now, carried along its tracked motion, then hand
+ * off to the model (from NOWCAST_HANDOFF_H to NOWCAST_H), so playback doesn't jump from what the radar
+ * sees to what the model drew when it crosses "now".
+ */
+const NOWCAST_HANDOFF_H = 0.75;
+const NOWCAST_H = 1.75;
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 
 type TileState = 'loading' | 'decode' | 'ready' | 'failed';
 
@@ -119,24 +137,70 @@ uniform sampler2D u_flow;
 uniform vec2 u_flowTexel;
 uniform float u_f;
 uniform float u_opacity;
+uniform sampler2D u_now;
+uniform sampler2D u_nowFlow;
+uniform vec2 u_nowFlowTexel;
+uniform float u_nowK;
+uniform float u_nowW;
 in vec2 v_uv;
 out vec4 o;
 vec4 ramp(float v) { return texture(u_ramp, vec2((v * 255.0 + 0.5) / 256.0, 0.5)); }
 vec4 frame(vec2 sc) {
   float share = sc.y;
   vec4 c = ramp(sc.x / max(share, 1e-4));
-  c.a *= smoothstep(0.06, 0.38, share);
+  c.a *= smoothstep(0.2, 0.45, share);
   return c;
 }
 void main() {
   vec4 m = texture(u_flow, v_uv);
   vec2 d = m.xy / max(m.z, 0.05) * u_flowTexel;
-  vec4 ca = frame(texture(u_field, v_uv - u_f * d).rg);
-  vec4 cb = frame(texture(u_field, v_uv + (1.0 - u_f) * d).ba);
+  vec2 sa = texture(u_field, v_uv - u_f * d).rg;
+  vec2 sb = texture(u_field, v_uv + (1.0 - u_f) * d).ba;
+  // The first hours ahead: the radar now, moved along its motion, handing off to the model (u_nowW = the
+  // model's share). Mixed as (strength, echo) before coloring, so both stay solid while they trade places.
+  if (u_nowW < 0.999) {
+    vec4 mn = texture(u_nowFlow, v_uv);
+    vec2 dn = mn.xy / max(mn.z, 0.05) * u_nowFlowTexel;
+    vec2 sn = texture(u_now, v_uv - u_nowK * dn).rg;
+    sa = mix(sn, sa, u_nowW);
+    sb = mix(sn, sb, u_nowW);
+  }
+  vec4 ca = frame(sa);
+  vec4 cb = frame(sb);
   float A = ca.a * (1.0 - u_f);
   float T = mix(ca.a, cb.a, u_f);
   float B = A > 0.999 ? 0.0 : clamp((T - A) / (1.0 - A), 0.0, 1.0);
-  o = vec4(cb.rgb * B + ca.rgb * A * (1.0 - B), B + A * (1.0 - B)) * u_opacity;
+  vec4 res = vec4(cb.rgb * B + ca.rgb * A * (1.0 - B), B + A * (1.0 - B));
+  o = res * u_opacity;
+}`;
+
+/** Keep one frame of the field (its ba pair) as rg: the radar now, for the nowcast. */
+const COPY_BA_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_src;
+in vec2 v_uv;
+out vec4 o;
+void main() { o = vec4(texture(u_src, v_uv).ba, 0.0, 1.0); }`;
+
+/**
+ * Satellite rain into the radar field, frame by frame, only where no radar
+ * reaches (coverage r = 0) and never over an echo the radar has, so the
+ * radar always wins where it can see.
+ */
+const MERGE_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_radar;
+uniform sampler2D u_sat;
+uniform sampler2D u_cov;
+in vec2 v_uv;
+out vec4 o;
+void main() {
+  vec4 r = texture(u_radar, v_uv);
+  vec4 s = texture(u_sat, v_uv);
+  float open = 1.0 - texture(u_cov, v_uv).r;
+  float wa = open * (1.0 - smoothstep(0.05, 0.5, r.g));
+  float wb = open * (1.0 - smoothstep(0.05, 0.5, r.a));
+  o = r + vec4(s.rg * wa, s.ba * wb);
 }`;
 
 interface Gl {
@@ -145,6 +209,10 @@ interface Gl {
   tile: Program;
   blur: Program;
   composite: Program;
+  merge: Program;
+  copyBa: Program;
+  /** The radar now, smoothed (strength sum, echo share), for the nowcast. */
+  now: WebGLTexture;
   /** Color → value lookups, one per tile palette, built when first needed. */
   luts: Partial<Record<TilePalette, WebGLTexture>>;
   ramp: WebGLTexture;
@@ -155,17 +223,29 @@ interface Gl {
   fieldFloat: boolean;
   fieldW: number;
   fieldH: number;
+  /** Which field holds the finished picture this frame. */
+  out: 0 | 1;
+  /** Satellite rain and the radars' coverage, at half the field's size (both are coarse). */
+  sat: WebGLTexture;
+  satTmp: WebGLTexture;
+  cov: WebGLTexture;
+  satW: number;
+  satH: number;
+  /** The coverage grid on the GPU, and the grid version it holds. */
+  covGrid: WebGLTexture;
+  covVersion: number;
 }
 
 /**
  * The radar, drawn by hand so it can be smoothed. Every frame (MRMS now and
- * the last 2 hours, the IEM archive before, the HRRR forecast after) is a
- * tile set painted with a known palette, so each tile is decoded back to
- * reflectivity, filtered and blurred at screen resolution (smooth shapes
- * instead of square data cells), and recolored with a TV-style ramp that
- * leaves out the faint "clear air" returns. Frames load ahead, glide into
- * each other during playback (the rain moves along its tracked motion while
- * they crossfade), and report when every tile in view has arrived.
+ * the last 2 hours, the IEM archive before, the HRRR forecast after) is a tile set painted with
+ * a known palette, so each tile is decoded back to reflectivity, filtered
+ * and blurred at screen resolution (smooth shapes instead of square data
+ * cells), and recolored with a TV-style ramp that leaves out the faint
+ * "clear air" returns. Past radar range (a hurricane far offshore) the
+ * satellite rain estimate fills in. Frames load ahead, glide into each other
+ * during playback (the rain moves along its tracked motion while they
+ * crossfade), and report when every tile in view has arrived.
  */
 export class RadarLayer implements CustomLayerInterface {
   readonly id = 'radar';
@@ -182,8 +262,10 @@ export class RadarLayer implements CustomLayerInterface {
   private want: string[] = [];
   private wantSet = new Set<string>();
   private planKey = '';
-  private shown: string[] = [];
-  private ahead: string[] = [];
+  private shown: FrameSource[] = [];
+  private ahead: FrameSource[] = [];
+  /** Where the radars reach; the satellite fills the rest. */
+  private readonly coverage = new RadarCoverage();
   private last: [number, number, number] = [0, 0, 0];
   private rampDirty = true;
   private product: RadarProduct = 'reflectivity';
@@ -197,6 +279,13 @@ export class RadarLayer implements CustomLayerInterface {
   private flowOn = false;
   /** Tiles of the frames on screen decoded so far: the flow is redone when they change the picture. */
   private shownDecodes = 0;
+  /** The nowcast: the radar's motion over its last two frames, and how far along it to carry "now". */
+  private readonly nowFlow = new RadarFlow();
+  private nowKey = '';
+  private nowFlowReady = false;
+  private nowPairH = STEP_H;
+  private nowcast: { k: number; w: number } | null = null;
+  private aheadOffsets: number[] = [];
 
   constructor(
     private readonly map: MlMap,
@@ -236,13 +325,26 @@ export class RadarLayer implements CustomLayerInterface {
     // A new scan (or HRRR run) renames the frames on screen. Until the new
     // tiles arrive, the old ones stand in, so the radar never blinks out.
     const [a, b] = this.last;
-    const before = [this.frameAt(a), this.frameAt(b)];
+    const names = () =>
+      [a, b].flatMap((o) => {
+        const src = this.sourceAt(o);
+        return [src.url, src.sat];
+      });
+    const before = names();
     this.timeline = t;
-    const after = [this.frameAt(a), this.frameAt(b)];
-    if (this.standIns.size > 8) this.standIns.clear();
+    const after = names();
+    if (this.standIns.size > 12) this.standIns.clear();
     after.forEach((f, i) => {
-      if (f !== before[i]) this.standIns.set(f, this.standIns.get(before[i]) ?? before[i]);
+      const was = before[i];
+      if (f && was && f !== was) this.standIns.set(f, this.standIns.get(was) ?? was);
     });
+  }
+
+  /** The radar towers (their reach decides where satellite rain fills in). */
+  setSites(sites: readonly { lon: number; lat: number }[]): void {
+    this.coverage.setSites(sites);
+    this.replan(true);
+    this.map.triggerRepaint();
   }
 
   setColorMode(mode: ColorMode): void {
@@ -263,10 +365,36 @@ export class RadarLayer implements CustomLayerInterface {
   ready(offset: number): boolean {
     // Radar off: nothing to wait for (the timeline still drives wind and the weather map).
     if (!this.radarOn) return true;
-    const frame = this.frameAt(offset);
-    const c = this.cover();
+    if (this.inNowcast(offset) && !this.nowSources().every((f) => this.sourceArrived(f))) return false;
+    return this.sourceArrived(this.sourceAt(offset));
+  }
+
+  private sourceArrived(src: FrameSource): boolean {
+    if (!this.arrived(src.url, this.cover(), false)) return false;
+    return !src.sat || !this.satOn() || this.arrived(src.sat, this.cover(SAT_MAX_Z), true);
+  }
+
+  /** A moment (hours from now) inside the nowcast's reach. */
+  private inNowcast(t: number): boolean {
+    return t > 1e-6 && t < NOWCAST_H && this.product === 'reflectivity' && !this.timeline.site && this.timeline.maxOffset > 0;
+  }
+
+  /** The two newest observed frames, which the nowcast starts from. */
+  private nowSources(): FrameSource[] {
+    return [this.sourceAt(-STEP_H), this.sourceAt(0)];
+  }
+
+  /** The playhead, hours from now (continuous while fading). */
+  private playhead(): number {
+    const [a, b, f] = this.last;
+    return f > 0 && b <= this.timeline.maxOffset ? a + f * (b - a) : a;
+  }
+
+  /** Every tile of `frame` in cover `c` has arrived or failed (satellite: only tiles past radar range). */
+  private arrived(frame: string, c: Cover, sat: boolean): boolean {
     for (let x = c.x0; x <= c.x1; x++) {
       for (let y = c.y0; y <= c.y1; y++) {
+        if (sat && !this.coverage.open(c.z, x, y)) continue;
         const t = this.tiles.get(tileKey(frame, c.z, x, y));
         if (!t || (t.state !== 'ready' && t.state !== 'failed')) return false;
       }
@@ -274,30 +402,32 @@ export class RadarLayer implements CustomLayerInterface {
     return true;
   }
 
+  /** Satellite fill applies: the radar list is known and the radar shows reflectivity. */
+  private satOn(): boolean {
+    return this.coverage.ready && this.product === 'reflectivity';
+  }
+
   /** Start loading the next `count` frames from `offset`. */
   prefetch(offset: number, direction: 1 | -1, count: number): void {
-    const ahead: string[] = [];
+    const ahead: FrameSource[] = [];
     for (let k = 0; k < count; k++) {
       const o = offset + k * 0.25 * direction;
       if (o < this.timeline.minOffset || o > this.timeline.maxOffset) break;
-      ahead.push(this.frameAt(o));
+      ahead.push(this.sourceAt(o));
     }
     this.ahead = ahead;
+    this.aheadOffsets = ahead.map((_, k) => offset + k * 0.25 * direction);
     this.replan(false);
   }
 
   /** Show frame `a` fading into frame `b` (f = 0…1). */
   blend(a: number, b: number, f: number): void {
     this.last = [a, b, f];
-    const shown = [this.frameAt(a)];
-    if (f > 0 && b <= this.timeline.maxOffset) shown.push(this.frameAt(b));
+    const shown = [this.sourceAt(a)];
+    if (f > 0 && b <= this.timeline.maxOffset) shown.push(this.sourceAt(b));
     this.shown = shown;
     this.replan(false);
     this.map.triggerRepaint();
-  }
-
-  private frameAt(offset: number): string {
-    return frameSource(this.timeline, offset).url;
   }
 
   private sourceAt(offset: number): FrameSource {
@@ -306,8 +436,9 @@ export class RadarLayer implements CustomLayerInterface {
 
   /* ---------- loading ---------- */
 
-  private cover(): Cover {
-    const z = Math.max(MIN_Z, Math.min(MAX_Z, Math.round(this.map.getZoom())));
+  /** The tiles in view, a zoom finer than the map once it's past the midpoint (crisper storms). */
+  private cover(cap = this.timeline.site ? SITE_MAX_Z : MAX_Z): Cover {
+    const z = Math.max(MIN_Z, Math.min(cap, Math.floor(this.map.getZoom() + 0.9)));
     const el = this.map.getContainer();
     const nw = this.map.unproject([0, 0]);
     const se = this.map.unproject([el.clientWidth, el.clientHeight]);
@@ -319,18 +450,33 @@ export class RadarLayer implements CustomLayerInterface {
   /** Rebuild the load list: frames on screen first, then the ones ahead, tiles nearest the center first. */
   private replan(force: boolean): void {
     if (!this.radarOn) return;
-    const frames = [...new Set([...this.shown, ...this.ahead])];
+    const sources = [...this.shown, ...this.ahead];
+    // The nowcast needs the newest two observed frames while its frames are on screen or coming.
+    if (this.inNowcast(this.playhead()) || this.aheadOffsets.some((o) => this.inNowcast(o))) sources.push(...this.nowSources());
+    const sat = this.satOn();
     const c = this.cover();
-    const key = `${frames.join(' ')}#${c.z}/${c.x0}/${c.x1}/${c.y0}/${c.y1}`;
+    const cs = this.cover(SAT_MAX_Z);
+    const box = (k: Cover) => `${k.z}/${k.x0}/${k.x1}/${k.y0}/${k.y1}`;
+    const key = `${sources.map((f) => `${f.url}+${sat ? f.sat : ''}`).join(' ')}#${box(c)}#${box(cs)}#${this.coverage.version}`;
     if (!force && key === this.planKey) return;
     this.planKey = key;
-    const cx = (c.x0 + c.x1) / 2;
-    const cy = (c.y0 + c.y1) / 2;
-    const cells: [number, number][] = [];
-    for (let x = c.x0; x <= c.x1; x++) for (let y = c.y0; y <= c.y1; y++) cells.push([x, y]);
-    cells.sort((p, q) => Math.hypot(p[0] - cx, p[1] - cy) - Math.hypot(q[0] - cx, q[1] - cy));
-    this.want = frames.flatMap((f) => cells.map(([x, y]) => tileKey(f, c.z, x, y)));
-    this.wantSet = new Set(this.want);
+    const cells = (k: Cover) => {
+      const cx = (k.x0 + k.x1) / 2;
+      const cy = (k.y0 + k.y1) / 2;
+      const out: [number, number][] = [];
+      for (let x = k.x0; x <= k.x1; x++) for (let y = k.y0; y <= k.y1; y++) out.push([x, y]);
+      return out.sort((p, q) => Math.hypot(p[0] - cx, p[1] - cy) - Math.hypot(q[0] - cx, q[1] - cy));
+    };
+    const radarCells = cells(c);
+    // Satellite tiles only where some of the tile is past radar range.
+    const satCells = sat ? cells(cs).filter(([x, y]) => this.coverage.open(cs.z, x, y)) : [];
+    const want = new Set<string>();
+    for (const f of sources) {
+      for (const [x, y] of radarCells) want.add(tileKey(f.url, c.z, x, y));
+      if (f.sat) for (const [x, y] of satCells) want.add(tileKey(f.sat, cs.z, x, y));
+    }
+    this.want = [...want];
+    this.wantSet = want;
     this.pump();
   }
 
@@ -392,11 +538,12 @@ export class RadarLayer implements CustomLayerInterface {
     const r = this.res;
     if (!gl || !r) return;
     for (const t of this.tiles.values()) if (t.tex) gl.deleteTexture(t.tex);
-    for (const tex of [...Object.values(r.luts), r.ramp, r.scratch, ...r.field]) gl.deleteTexture(tex);
+    for (const tex of [...Object.values(r.luts), r.ramp, r.scratch, ...r.field, r.sat, r.satTmp, r.cov, r.covGrid, r.now]) gl.deleteTexture(tex);
     gl.deleteFramebuffer(r.fbo);
     gl.deleteVertexArray(r.quad);
-    for (const p of [r.decode, r.tile, r.blur, r.composite]) gl.deleteProgram(p.prog);
+    for (const p of [r.decode, r.tile, r.blur, r.composite, r.merge, r.copyBa]) gl.deleteProgram(p.prog);
     this.flow.dispose(gl);
+    this.nowFlow.dispose(gl);
     this.tiles.clear();
     this.res = null;
   }
@@ -416,7 +563,22 @@ export class RadarLayer implements CustomLayerInterface {
       decode: compile(gl, QUAD_VS, DECODE_FS, ['u_src', 'u_lut']),
       tile: compile(gl, TILE_VS, TILE_FS, ['u_matrix', 'u_uv', 'u_tex']),
       blur: compile(gl, QUAD_VS, GAUSS9_FS, ['u_tex', 'u_step']),
-      composite: compile(gl, QUAD_VS, COMPOSITE_FS, ['u_field', 'u_ramp', 'u_flow', 'u_flowTexel', 'u_f', 'u_opacity']),
+      composite: compile(gl, QUAD_VS, COMPOSITE_FS, [
+        'u_field',
+        'u_ramp',
+        'u_flow',
+        'u_flowTexel',
+        'u_f',
+        'u_opacity',
+        'u_now',
+        'u_nowFlow',
+        'u_nowFlowTexel',
+        'u_nowK',
+        'u_nowW',
+      ]),
+      merge: compile(gl, QUAD_VS, MERGE_FS, ['u_radar', 'u_sat', 'u_cov']),
+      copyBa: compile(gl, QUAD_VS, COPY_BA_FS, ['u_src']),
+      now: texture2d(gl, gl.LINEAR),
       luts: {},
       ramp: texture2d(gl, gl.LINEAR),
       scratch: texture2d(gl, gl.NEAREST),
@@ -425,6 +587,14 @@ export class RadarLayer implements CustomLayerInterface {
       fieldFloat: !!gl.getExtension('EXT_color_buffer_float'),
       fieldW: 0,
       fieldH: 0,
+      out: 0,
+      sat: texture2d(gl, gl.LINEAR),
+      satTmp: texture2d(gl, gl.LINEAR),
+      cov: texture2d(gl, gl.LINEAR),
+      satW: 0,
+      satH: 0,
+      covGrid: texture2d(gl, gl.LINEAR),
+      covVersion: -1,
     };
   }
 
@@ -444,7 +614,7 @@ export class RadarLayer implements CustomLayerInterface {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    const data = palette === 'mrms' ? buildMrmsLut() : palette === 'velocity' ? buildVelocityLut() : buildLut();
+    const data = { mrms: buildMrmsLut, sat: buildSatLut, velocity: buildVelocityLut, n0q: buildLut }[palette]();
     gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, LUT_SIZE, LUT_SIZE, LUT_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, data);
     r.luts[palette] = tex;
     return tex;
@@ -488,7 +658,8 @@ export class RadarLayer implements CustomLayerInterface {
       t.tex = tex;
       t.img = null;
       t.state = 'ready';
-      if (this.shown.includes(frame)) this.shownDecodes++;
+      const watched = this.inNowcast(this.playhead()) ? [...this.shown, ...this.nowSources()] : this.shown;
+      if (watched.some((f) => f.url === frame || f.sat === frame)) this.shownDecodes++;
     }
     if (this.toDecode.length) this.map.triggerRepaint();
   }
@@ -520,8 +691,102 @@ export class RadarLayer implements CustomLayerInterface {
       }
       r.fieldW = fw;
       r.fieldH = fh;
+      r.satW = Math.max(1, Math.round(fw / 2));
+      r.satH = Math.max(1, Math.round(fh / 2));
+      for (const tex of [r.sat, r.satTmp]) {
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        if (r.fieldFloat) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, r.satW, r.satH, 0, gl.RGBA, gl.HALF_FLOAT, null);
+        else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, r.satW, r.satH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
+      gl.bindTexture(gl.TEXTURE_2D, r.cov);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, r.satW, r.satH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindTexture(gl.TEXTURE_2D, r.now);
+      if (r.fieldFloat) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, fw, fh, 0, gl.RG, gl.HALF_FLOAT, null);
+      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, fw, fh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      this.nowKey = '';
     }
     return s;
+  }
+
+  /** A separable Gaussian over `tex` (w × h) through `tmp`, sigma in that texture's pixels. */
+  private blurInPlace(gl: WebGL2RenderingContext, r: Gl, tex: WebGLTexture, tmp: WebGLTexture, w: number, h: number, sigma: number): void {
+    const spacing = sigma / 1.75;
+    gl.useProgram(r.blur.prog);
+    gl.uniform1i(r.blur.u.u_tex, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    this.target(gl, r, tmp, w, h);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform2f(r.blur.u.u_step, spacing / w, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    this.target(gl, r, tex, w, h);
+    gl.bindTexture(gl.TEXTURE_2D, tmp);
+    gl.uniform2f(r.blur.u.u_step, 0, spacing / h);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  /**
+   * Satellite rain for the frames on screen, smoothed at its own (coarse) scale, then merged into the
+   * radar field past the radars' reach: field[0] (radar) + satellite → field[1]. False if there's none.
+   */
+  private drawSatellite(
+    gl: WebGL2RenderingContext,
+    r: Gl,
+    args: CustomRenderMethodInput,
+    satA: string | null,
+    satB: string | null,
+    s: number,
+  ): boolean {
+    if ((!satA && !satB) || !this.satOn()) return false;
+    const cs = this.cover(SAT_MAX_Z);
+    this.target(gl, r, r.sat, r.satW, r.satH);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(r.tile.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(r.tile.u.u_tex, 0);
+    if (satA) {
+      gl.colorMask(true, true, false, false);
+      this.drawFrame(gl, r, args, satA, cs);
+    }
+    if (satB) {
+      gl.colorMask(false, false, true, true);
+      this.drawFrame(gl, r, args, satB, cs);
+    }
+    gl.colorMask(true, true, true, true);
+    const satTexelCss = 2 * 2 ** (this.map.getZoom() - cs.z);
+    this.blurInPlace(gl, r, r.sat, r.satTmp, r.satW, r.satH, Math.max(2 * BLUR_PX, BLUR_PER_TEXEL * satTexelCss) * s * 0.5);
+
+    // The radars' reach, drawn like one world-sized tile.
+    if (r.covVersion !== this.coverage.version) {
+      gl.bindTexture(gl.TEXTURE_2D, r.covGrid);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, COVERAGE_SIZE, COVERAGE_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, this.coverage.grid);
+      r.covVersion = this.coverage.version;
+    }
+    this.target(gl, r, r.cov, r.satW, r.satH);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(r.tile.prog);
+    const m = args.getProjectionData({ tileID: { canonical: { z: 0, x: 0, y: 0 }, wrap: 0 }, applyGlobeMatrix: false });
+    gl.uniformMatrix4fv(r.tile.u.u_matrix, false, m.mainMatrix as Float32Array);
+    gl.uniform4f(r.tile.u.u_uv, 0, 0, 1, 1);
+    gl.bindTexture(gl.TEXTURE_2D, r.covGrid);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    this.target(gl, r, r.field[1], r.fieldW, r.fieldH);
+    gl.useProgram(r.merge.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, r.field[0]);
+    gl.uniform1i(r.merge.u.u_radar, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, r.sat);
+    gl.uniform1i(r.merge.u.u_sat, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, r.cov);
+    gl.uniform1i(r.merge.u.u_cov, 2);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.activeTexture(gl.TEXTURE0);
+    return true;
   }
 
   /** Draw one frame's tiles into the field (into the bound color channel). */
@@ -590,56 +855,54 @@ export class RadarLayer implements CustomLayerInterface {
     this.decodeArrivals(gl, r);
     this.evict(gl);
 
-    // 1. Both frames into the field as (strength sum, echo share): frame a → rg, frame b → ba.
     const s = this.resizeField(gl, r);
-    const c = this.cover();
     const [a, b, f] = this.last;
     const both = f > 0 && b <= this.timeline.maxOffset;
-    this.target(gl, r, r.field[0], r.fieldW, r.fieldH);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(r.tile.prog);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.uniform1i(r.tile.u.u_tex, 0);
-    gl.colorMask(true, true, false, false);
-    this.drawFrame(gl, r, args, this.frameAt(a), c);
-    if (both) {
-      gl.colorMask(false, false, true, true);
-      this.drawFrame(gl, r, args, this.frameAt(b), c);
-    }
-    gl.colorMask(true, true, true, true);
+    const fa = this.sourceAt(a);
+    const fb = both ? this.sourceAt(b) : null;
+    const center = this.map.getCenter();
+    const zoom = this.map.getZoom();
+    const view = `${r.fieldW}x${r.fieldH} ${center.lng.toFixed(5)},${center.lat.toFixed(5)},${zoom.toFixed(4)}`;
 
-    // 2. Blur, horizontal then vertical. Wider when zoomed past the data's resolution.
-    // Velocity is smoothed lightly: blurring would average a rotation couplet's inbound and outbound away.
-    const texelCss = 2 * 2 ** (this.map.getZoom() - c.z);
-    const sigma = velocity ? Math.max(1, 0.45 * texelCss) * s : Math.max(BLUR_PX, BLUR_PER_TEXEL * texelCss) * s;
-    const spacing = sigma / 1.75;
-    gl.useProgram(r.blur.prog);
-    gl.uniform1i(r.blur.u.u_tex, 0);
-    this.target(gl, r, r.field[1], r.fieldW, r.fieldH);
-    gl.bindTexture(gl.TEXTURE_2D, r.field[0]);
-    gl.uniform2f(r.blur.u.u_step, spacing / r.fieldW, 0);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    this.target(gl, r, r.field[0], r.fieldW, r.fieldH);
-    gl.bindTexture(gl.TEXTURE_2D, r.field[1]);
-    gl.uniform2f(r.blur.u.u_step, 0, spacing / r.fieldH);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    // 0. Nowcast: the newest two observed frames, their motion, and "now" kept for carrying along it.
+    this.nowcast = null;
+    const t = this.playhead();
+    if (this.inNowcast(t)) {
+      const [n0, n1] = this.nowSources();
+      const key = `${n0.url} ${n0.sat} ${n1.url} ${n1.sat} ${view} ${this.shownDecodes}`;
+      if (key !== this.nowKey) {
+        this.nowKey = key;
+        const nowOut = r.field[this.buildField(gl, r, args, n0, n1, s)];
+        this.nowPairH = Math.max(1, n1.at - n0.at) / 3_600_000;
+        this.nowFlowReady =
+          r.fieldFloat &&
+          this.nowFlow.compute(gl, { field: nowOut, fieldW: r.fieldW, fieldH: r.fieldH, pxKm: pixelKm(center.lat, zoom) / s, minutes: (n1.at - n0.at) / 60_000 });
+        this.target(gl, r, r.now, r.fieldW, r.fieldH);
+        gl.useProgram(r.copyBa.prog);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, nowOut);
+        gl.uniform1i(r.copyBa.u.u_src, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+      // Without a usable motion it still starts from now, standing still, and fades into the model.
+      this.nowcast = { k: this.nowFlowReady ? t / this.nowPairH : 0, w: smoothstep(NOWCAST_HANDOFF_H, NOWCAST_H, t) };
+    }
+
+    // 1–2. The frames on screen.
+    r.out = this.buildField(gl, r, args, fa, fb, s);
+    const out = r.field[r.out];
 
     // 3. Gliding: where the rain moves from frame a to frame b, redone when the pair, the view, or
     // their tiles change. Not for velocity (a couplet's two halves would be dragged apart).
     this.flowOn = false;
-    if (both && !velocity && r.fieldFloat) {
-      const fa = this.sourceAt(a);
-      const fb = this.sourceAt(b);
-      const center = this.map.getCenter();
-      const zoom = this.map.getZoom();
-      const key = `${fa.url} ${fb.url} ${r.fieldW}x${r.fieldH} ${center.lng.toFixed(5)},${center.lat.toFixed(5)},${zoom.toFixed(4)} ${this.shownDecodes}`;
+    if (fb && !velocity && r.fieldFloat) {
+      const key = `${fa.url} ${fb.url} ${view} ${this.shownDecodes}`;
       if (key === this.flowKey) {
         this.flowOn = this.flowReady;
       } else {
         this.flowKey = key;
         this.flowOn = this.flowReady = this.flow.compute(gl, {
-          field: r.field[0],
+          field: out,
           fieldW: r.fieldW,
           fieldH: r.fieldH,
           pxKm: pixelKm(center.lat, zoom) / s,
@@ -652,6 +915,37 @@ export class RadarLayer implements CustomLayerInterface {
     gl.bindVertexArray(null);
   }
 
+  /**
+   * Build a pair of frames into the field as (strength sum, echo share), frame a → rg, frame b → ba:
+   * radar tiles, satellite rain past radar range, then the blur. Returns which field holds the result.
+   */
+  private buildField(gl: WebGL2RenderingContext, r: Gl, args: CustomRenderMethodInput, fa: FrameSource, fb: FrameSource | null, s: number): 0 | 1 {
+    const c = this.cover();
+    this.target(gl, r, r.field[0], r.fieldW, r.fieldH);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(r.tile.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(r.tile.u.u_tex, 0);
+    gl.colorMask(true, true, false, false);
+    this.drawFrame(gl, r, args, fa.url, c);
+    if (fb) {
+      gl.colorMask(false, false, true, true);
+      this.drawFrame(gl, r, args, fb.url, c);
+    }
+    gl.colorMask(true, true, true, true);
+
+    // Past radar range, the satellite estimate (field[0] + satellite → field[1]).
+    const out = this.drawSatellite(gl, r, args, fa.sat, fb?.sat ?? null, s) ? 1 : 0;
+
+    // Blur, horizontal then vertical. Wider when zoomed past the data's resolution.
+    // Velocity is smoothed lightly: blurring would average a rotation couplet's inbound and outbound away.
+    const texelCss = 2 * 2 ** (this.map.getZoom() - c.z);
+    const sigma = this.product === 'velocity' ? Math.max(1, 0.45 * texelCss) * s : Math.max(BLUR_PX, BLUR_PER_TEXEL * texelCss) * s;
+    this.blurInPlace(gl, r, r.field[out], r.field[1 - out], r.fieldW, r.fieldH, sigma);
+    return out;
+  }
+
   render(gl: WebGL2RenderingContext): void {
     const r = this.res;
     if (!this.radarOn || !r || !r.fieldW) return;
@@ -662,7 +956,7 @@ export class RadarLayer implements CustomLayerInterface {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(r.composite.prog);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, r.field[0]);
+    gl.bindTexture(gl.TEXTURE_2D, r.field[r.out]);
     gl.uniform1i(r.composite.u.u_field, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, r.ramp);
@@ -673,6 +967,18 @@ export class RadarLayer implements CustomLayerInterface {
     gl.bindTexture(gl.TEXTURE_2D, flow ?? this.flow.zero(gl));
     gl.uniform1i(r.composite.u.u_flow, 2);
     gl.uniform2f(r.composite.u.u_flowTexel, flow ? 1 / fw : 0, flow ? 1 / fh : 0);
+    const now = this.nowcast;
+    const nowFlow = now && this.nowFlowReady ? this.nowFlow.result : null;
+    const [nw, nh] = this.nowFlow.size;
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, r.now);
+    gl.uniform1i(r.composite.u.u_now, 3);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, nowFlow ?? this.flow.zero(gl));
+    gl.uniform1i(r.composite.u.u_nowFlow, 4);
+    gl.uniform2f(r.composite.u.u_nowFlowTexel, nowFlow ? 1 / nw : 0, nowFlow ? 1 / nh : 0);
+    gl.uniform1f(r.composite.u.u_nowK, now?.k ?? 0);
+    gl.uniform1f(r.composite.u.u_nowW, now ? now.w : 1);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1f(r.composite.u.u_f, b <= this.timeline.maxOffset ? f : 0);
     gl.uniform1f(r.composite.u.u_opacity, 1);
