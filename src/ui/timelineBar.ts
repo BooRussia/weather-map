@@ -1,6 +1,6 @@
 import type { ColorMode } from '../config';
 import { offsetTime, relativeLabel, STEP_H, type Timeline } from '../data/timeline';
-import { RADAR_LEGEND, VELOCITY_LEGEND } from '../map/radarPalette';
+import { PTYPE_LEGEND, RADAR_LEGEND, VELOCITY_LEGEND, type PrecipType } from '../map/radarPalette';
 import { $, h, svg } from './dom';
 import { pauseIcon, playIcon } from './icons';
 
@@ -36,6 +36,8 @@ export interface TimelineBarState {
   /** A single radar is shown ("KMOB"), and whether it's velocity. */
   site: string | null;
   velocity: boolean;
+  /** Rain, snow, mix, and ice colored apart (Color mode): the legend shows all four. */
+  precipType: boolean;
 }
 
 /** "Tue 3:15 PM" in the viewer's time zone. */
@@ -67,7 +69,7 @@ export class TimelineBar {
   private pendingSince = 0;
   /** Autoplay's loop, in frames; null for ordinary playback (to the end, back to where it started). */
   private loopWindow: { from: number; to: number } | null = null;
-  private state: TimelineBarState = { colorMode: 'color', radarOn: true, mapLabel: null, site: null, velocity: false };
+  private state: TimelineBarState = { colorMode: 'color', radarOn: true, mapLabel: null, site: null, velocity: false, precipType: true };
   /** The playhead, continuously (hours from now), for layers that blend in time themselves. */
   onPlayhead: ((offsetH: number) => void) | null = null;
 
@@ -76,8 +78,6 @@ export class TimelineBar {
     private readonly frames: Frames,
     private readonly onTime: (offset: number) => void,
   ) {
-    // The radar's own Color ramp (DESIGN.md imagery exception), shown only in Color mode.
-    $('#radar-legend-bar').style.background = `linear-gradient(to right, ${RADAR_LEGEND.join(', ')})`;
     $('#tl-play').addEventListener('click', () => this.toggle());
     this.range.step = 'any';
     this.range.addEventListener('input', () => {
@@ -185,15 +185,36 @@ export class TimelineBar {
   render(s: TimelineBarState): void {
     this.state = s;
     // Velocity always shows its scale (toward green, away red); reflectivity in Color mode.
-    $('#radar-legend').hidden = !(s.radarOn && (s.velocity || s.colorMode === 'color'));
-    const [lo, hi] = $('#radar-legend').querySelectorAll('span');
-    lo.textContent = s.velocity ? 'Toward' : 'Light';
-    hi.textContent = s.velocity ? 'Away' : 'Heavy';
-    $('#radar-legend-bar').style.background = `linear-gradient(to right, ${(s.velocity ? VELOCITY_LEGEND : RADAR_LEGEND).join(', ')})`;
-    $('#radar-legend').setAttribute(
-      'aria-label',
-      s.velocity ? 'Velocity scale: green toward the radar, red away, brighter is faster' : 'Radar intensity scale: green light, yellow and orange moderate, red heavy',
-    );
+    const legend = $('#radar-legend');
+    legend.hidden = !(s.radarOn && (s.velocity || s.colorMode === 'color'));
+    const bar = (colors: string[]) => {
+      const i = h('i');
+      i.style.background = `linear-gradient(to right, ${colors.join(', ')})`;
+      return i;
+    };
+    const typed = s.precipType && !s.velocity && s.colorMode === 'color';
+    legend.classList.toggle('is-types', typed);
+    if (typed) {
+      // The Weather Channel's way: each type its own little scale.
+      const types: [PrecipType, string][] = [
+        ['rain', 'Rain'],
+        ['snow', 'Snow'],
+        ['mix', 'Mix'],
+        ['ice', 'Ice'],
+      ];
+      legend.replaceChildren(...types.map(([t, label]) => h('span', { class: 'legend-type' }, h('span', {}, label), bar(PTYPE_LEGEND[t]))));
+      legend.setAttribute('aria-label', 'Radar scales: rain green to red, snow light to dark blue, mix pink, ice purple; darker is heavier');
+    } else {
+      legend.replaceChildren(
+        h('span', {}, s.velocity ? 'Toward' : 'Light'),
+        bar(s.velocity ? VELOCITY_LEGEND : RADAR_LEGEND),
+        h('span', {}, s.velocity ? 'Away' : 'Heavy'),
+      );
+      legend.setAttribute(
+        'aria-label',
+        s.velocity ? 'Velocity scale: green toward the radar, red away, brighter is faster' : 'Radar intensity scale: green light, yellow and orange moderate, red heavy',
+      );
+    }
     this.label(Math.round(this.pos), false);
   }
 

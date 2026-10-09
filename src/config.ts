@@ -77,6 +77,12 @@ export const FUTURE_RADAR_TILE_URL =
  * playback load four times as many at once.
  */
 export const IEM_HOSTS = ['mesonet', 'mesonet1', 'mesonet2', 'mesonet3'];
+/**
+ * HRRR reflectivity colored by precipitation type (IEM): rain, snow, freezing rain, sleet, 22 shades each,
+ * from the model's temperature profile. Read only for the type; archived runs reach back to 2017.
+ */
+export const PTYPE_TILE_URL =
+  'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFP-F{minutes}-{init}/{z}/{x}/{y}.png';
 /** Always the newest composite (IEM): "now" until the latest stamp is known. */
 export const LATEST_RADAR_TILE_URL = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
 /** Valid time of the newest composite (IEM). */

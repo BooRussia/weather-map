@@ -235,6 +235,7 @@ export class LayersMenu {
         opt('surge', 'Storm surge', 'When NHC issues a flooding map'),
         opt('outlook', 'Possible storms', 'NHC’s 7-day outlook'),
         opt('sst', 'Sea temperature', '80 °F (26.5 °C) and warmer fuels storms'),
+        opt('clouds', 'Satellite clouds', 'Beta · live GOES imagery, clouds cut out'),
       ),
     ];
   }
@@ -419,6 +420,12 @@ export class LayersMenu {
             this.store.set({ colorMode: v }),
           ),
         ),
+        switchRow({
+          label: 'Snow, mix & ice',
+          sub: 'Radar colored by what’s falling',
+          checked: s.precipType,
+          onChange: (on) => this.store.set({ precipType: on }),
+        }),
         switchRow({ label: 'Falling rain', checked: s.rainStreaks, onChange: (on) => this.store.set({ rainStreaks: on }) }),
       ),
       h('div', { class: 'group' }, settings),

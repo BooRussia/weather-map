@@ -6,6 +6,7 @@ import {
   MRMS_TILE_URL,
   MRMS_WMS_URL,
   PAST_RADAR_TILE_URL,
+  PTYPE_TILE_URL,
   SAT_RAIN_PRODUCT,
   SITE_RADAR_TILE_URL,
   TIMELINE_PAST_HOURS,
@@ -73,10 +74,11 @@ const SAT_MAX_AGE_MS = 75 * 60_000;
  * How a frame's tiles are colored, so they decode right: IEM's NEXRAD palette, NCEP's MRMS palette,
  * the satellite rain-rate bins, or IEM's velocity.
  */
-export type TilePalette = 'n0q' | 'mrms' | 'sat' | 'velocity';
+export type TilePalette = 'n0q' | 'mrms' | 'sat' | 'velocity' | 'ptype';
 
 export function tilePalette(url: string): TilePalette {
   if (url.startsWith(MRMS_WMS_URL)) return 'mrms';
+  if (url.includes('hrrr::REFP-')) return 'ptype';
   if (url.includes(`products=${SAT_RAIN_PRODUCT}_`)) return 'sat';
   return url.includes('-N0S-') ? 'velocity' : 'n0q';
 }
@@ -104,6 +106,20 @@ export interface FrameSource {
   at: number;
   /** Satellite rain for the same moment, drawn only where no radar reaches (null: none). */
   sat: string | null;
+  /** What's falling then (HRRR's precipitation type, rain / snow / freezing rain / sleet); null: unknown. */
+  ptype: string | null;
+}
+
+/**
+ * The HRRR precipitation-type tiles for a moment: the run started that hour (archived), or for anything
+ * newer than the latest run, that run's forecast for the moment. 15-minute steps, 18 hours out.
+ */
+export function ptypeTiles(t: Timeline, at: number): string | null {
+  if (t.init == null) return null;
+  const init = Math.min(Math.floor(at / HOUR) * HOUR, t.init);
+  const minutes = Math.round((at - init) / (15 * 60_000)) * 15;
+  if (minutes < 0 || minutes > HRRR_MAX_MINUTES) return null;
+  return PTYPE_TILE_URL.replace('{minutes}', String(minutes).padStart(4, '0')).replace('{init}', utcStamp(init));
 }
 
 /** Which tiles to show at an offset. */
@@ -112,7 +128,10 @@ export function frameSource(t: Timeline, offset: number): FrameSource {
   // A chosen site: its own newest scan at or before the moment (now: its latest scan).
   if (t.site && o <= 0) {
     const scan = scanAt(t.site.scans, o === 0 ? Infinity : offsetTime(t, o));
-    if (scan != null) return { kind: o === 0 ? 'live' : 'past', url: siteTiles(t.site, scan), at: scan, sat: null };
+    if (scan != null) {
+      const ptype = t.site.product === 'N0S' ? null : ptypeTiles(t, scan);
+      return { kind: o === 0 ? 'live' : 'past', url: siteTiles(t.site, scan), at: scan, sat: null, ptype };
+    }
   }
   // Now and the last 2 hours from MRMS; older from the IEM archive (both base reflectivity, the lowest beam).
   // Past radar range, satellite rain fills in.
@@ -121,7 +140,7 @@ export function frameSource(t: Timeline, offset: number): FrameSource {
     return s == null ? null : satTiles(s);
   };
   const newest = t.radar[t.radar.length - 1];
-  if (o === 0 && newest != null) return { kind: 'live', url: mrmsTiles(newest), at: newest, sat: sat(newest) };
+  if (o === 0 && newest != null) return { kind: 'live', url: mrmsTiles(newest), at: newest, sat: sat(newest), ptype: ptypeTiles(t, newest) };
   // Without MRMS: IEM's always-latest tiles, versioned by the composite's time so each new scan is a new URL.
   // (The stamped archive can lag the newest scan by a minute or two and 503 meanwhile.)
   const liveAt = t.live ?? t.base;
@@ -130,13 +149,14 @@ export function frameSource(t: Timeline, offset: number): FrameSource {
     url: t.live == null ? LATEST_RADAR_TILE_URL : `${LATEST_RADAR_TILE_URL}?v=${utcStamp(t.live)}`,
     at: liveAt,
     sat: sat(liveAt),
+    ptype: ptypeTiles(t, liveAt),
   };
   if (o === 0) return live;
   const at = offsetTime(t, o);
   if (o < 0) {
     const frame = nearestFrame(t.radar, at, MRMS_TOLERANCE_MS);
-    if (frame != null) return { kind: 'past', url: mrmsTiles(frame), at: frame, sat: sat(at) };
-    return { kind: 'past', url: PAST_RADAR_TILE_URL.replace('{stamp}', utcStamp(at)), at, sat: sat(at) };
+    if (frame != null) return { kind: 'past', url: mrmsTiles(frame), at: frame, sat: sat(at), ptype: ptypeTiles(t, at) };
+    return { kind: 'past', url: PAST_RADAR_TILE_URL.replace('{stamp}', utcStamp(at)), at, sat: sat(at), ptype: ptypeTiles(t, at) };
   }
   if (t.init == null) return live;
   const minutes = Math.round((at - t.init) / 60_000);
@@ -146,6 +166,7 @@ export function frameSource(t: Timeline, offset: number): FrameSource {
     url: FUTURE_RADAR_TILE_URL.replace('{minutes}', String(minutes).padStart(4, '0')).replace('{init}', utcStamp(t.init)),
     at,
     sat: null,
+    ptype: ptypeTiles(t, at),
   };
 }
 

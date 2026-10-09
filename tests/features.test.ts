@@ -354,3 +354,63 @@ describe('satellite rain beyond radar range', () => {
     expect(cov.open(...tile(-87.8, 26.6, 8))).toBe(true);
   });
 });
+
+describe('precipitation type', () => {
+  it('reads what is falling from the HRRR tiles: rain, snow, ice, mix', async () => {
+    const { buildPtypeLut, PTYPE_CODES, LUT_BITS, LUT_SIZE, buildTypeRamps } = await import('../src/map/radarPalette');
+    const lut = buildPtypeLut();
+    const sh = 8 - LUT_BITS;
+    const look = (r: number, g: number, b: number) => lut[((b >> sh) * LUT_SIZE + (g >> sh)) * LUT_SIZE + (r >> sh)];
+    expect(look(0, 108, 44)).toBe(PTYPE_CODES.rain); // dark green
+    expect(look(0, 51, 119)).toBe(PTYPE_CODES.snow); // navy
+    expect(look(209, 30, 31)).toBe(PTYPE_CODES.ice); // freezing rain red
+    expect(look(126, 121, 184)).toBe(PTYPE_CODES.mix); // sleet purple
+    expect(look(10, 10, 10)).toBe(0);
+    // Four ramps, one row each: snow is blue where rain is green.
+    const rows = buildTypeRamps('color');
+    const at = (row: number, dbz: number) => [...rows.subarray((row * 256 + Math.round((dbz + 32) * 2)) * 4, (row * 256 + Math.round((dbz + 32) * 2)) * 4 + 4)];
+    const [rr, rg] = at(0, 25);
+    const [sr, , sb] = at(1, 25);
+    expect(rg).toBeGreaterThan(rr);
+    expect(sb).toBeGreaterThan(sr);
+    // Snow shows from fainter echoes than rain.
+    expect(at(1, 12)[3]).toBeGreaterThan(0);
+    expect(at(0, 11)[3]).toBe(0);
+  });
+
+  it('picks the archived run for the past and the latest run ahead', async () => {
+    const { makeTimeline, frameSource, ptypeTiles, tilePalette } = await import('../src/data/timeline');
+    const now = Date.parse('2026-10-09T16:10:00Z');
+    const t = makeTimeline(now, Date.parse('2026-10-09T14:00:00Z'), null, null, [], []);
+    expect(ptypeTiles(t, Date.parse('2026-10-09T09:30:00Z'))).toContain('hrrr::REFP-F0030-202610090900/');
+    expect(ptypeTiles(t, Date.parse('2026-10-09T15:45:00Z'))).toContain('hrrr::REFP-F0105-202610091400/');
+    expect(frameSource(t, 2).ptype).toContain('hrrr::REFP-F0240-202610091400/');
+    expect(tilePalette(frameSource(t, 2).ptype!)).toBe('ptype');
+    expect(ptypeTiles(makeTimeline(now, null), now)).toBeNull();
+  });
+});
+
+describe('satellite clouds (beta)', () => {
+  it('keeps clouds and drops the sea and land, by day and by night', async () => {
+    const { cloudPixel } = await import('../src/map/cloudCutout');
+    // Open sea and land: clear.
+    expect(cloudPixel(38, 57, 1)[1]).toBe(0);
+    expect(cloudPixel(58, 55, 1)[1]).toBe(0);
+    // A thick cloud top: nearly opaque, bright.
+    const [lum, alpha] = cloudPixel(200, 228, 1);
+    expect(alpha).toBeGreaterThan(220);
+    expect(lum).toBeGreaterThan(230);
+    // Night: the visible band is dark, the infrared still finds the cold cloud.
+    expect(cloudPixel(0, 228, 0)[1]).toBeGreaterThan(220);
+    expect(cloudPixel(0, 57, 0)[1]).toBe(0);
+  });
+
+  it('knows day from night', async () => {
+    const { sunElevation } = await import('../src/map/cloudCutout');
+    // Equinox noon on the equator at 0°: sun overhead. Midnight: below the horizon.
+    expect(sunElevation(0, 0, Date.parse('2026-03-20T12:07:00Z'))).toBeGreaterThan(85);
+    expect(sunElevation(0, 0, Date.parse('2026-03-20T00:07:00Z'))).toBeLessThan(-80);
+    // Gulf of Mexico, 12:30 PM CDT in October: well up.
+    expect(sunElevation(27, -87, Date.parse('2026-10-09T17:30:00Z'))).toBeGreaterThan(50);
+  });
+});

@@ -1095,6 +1095,24 @@ button {
   border-radius: var(--r-btn);
 }
 
+/* With precipitation type: a small scale per type, two by two. */
+.radar-legend.is-types {
+  flex: 0 1 172px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+}
+
+.legend-type {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-type > span {
+  min-width: 26px;
+}
+
 /* Native range, restyled. Observed hours bright, forecast hours dim. */
 .tl-range {
   --now: 50%;

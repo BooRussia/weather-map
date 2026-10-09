@@ -196,7 +196,10 @@ const RAMPS: Record<ColorMode, Stop[]> = {
 
 /** A ramp sampled at every palette entry: 256 RGBA texels, straight alpha. */
 export function buildRamp(mode: ColorMode): Uint8Array {
-  const stops = RAMPS[mode];
+  return rampFrom(RAMPS[mode]);
+}
+
+function rampFrom(stops: Stop[]): Uint8Array {
   const out = new Uint8Array(256 * 4);
   for (let i = 0; i < 256; i++) {
     const d = dbzOf(i);
@@ -220,6 +223,85 @@ export function buildRamp(mode: ColorMode): Uint8Array {
 
 /** Legend gradient for the Color ramp, light → heavy. */
 export const RADAR_LEGEND = RAMPS.color.slice(1).map(([, r, g, b]) => `rgb(${r}, ${g}, ${b})`);
+
+/* ---------- precipitation type ---------- */
+
+/** What's falling, as the radar colors it. Codes as the type lookup stores them. */
+export type PrecipType = 'rain' | 'snow' | 'ice' | 'mix';
+export const PTYPE_CODES: Record<PrecipType, number> = { rain: 1, snow: 2, ice: 3, mix: 4 };
+
+/**
+ * IEM's HRRR precip-type palette (REFP): 22 shades each of rain, snow,
+ * freezing rain, and sleet, read from the PLTE of its raster. Tiles use
+ * these colors exactly. Freezing rain is drawn as ice, sleet as mix.
+ */
+const PTYPE_PALETTE =
+  '7vjq5fXg1u/Qx+nAtOGtoNmbis6Ic8R2WrdpQKpdMZpQIopEEXs4AGwsAFcjAEQb/+ga/9cQ/8UF/7cA/6sA/6AAtNrmmczdgcDVZrPMTqbEM5m7G42zAICqAHOi' +
+  'AGaZAFqRAE2IAD9/ADN3ACZuABpmjQA7uAtO2Btq5TWS32awzYvC/+7m/uba/t7P/dC8/MKq/LSZ/KWI/JV2/Idn+3hY+2lK91k/8kc07Dgr3isl0R4fxBYcthMZ' +
+  'qBAWlAsTfAUQZwAN+Pb68/H37uz05uXx3t3t1dXpysrjvr/dtLTXqafPnprIk5DDiIW+fnm4dmmvblinZkmfXjqYVSqQThyKRg2DPwB9';
+const PTYPE_ORDER: PrecipType[] = ['rain', 'snow', 'ice', 'mix'];
+
+/** Color → precip-type code (1 rain, 2 snow, 3 ice, 4 mix) for IEM's REFP tiles, as a 128³ volume. */
+export function buildPtypeLut(): Uint8Array {
+  const lut = new Uint8Array(LUT_SIZE ** 3);
+  const dist = new Map<number, number>();
+  const bin = atob(PTYPE_PALETTE);
+  for (let i = 0; i < 88; i++) {
+    const c = [bin.charCodeAt(i * 3), bin.charCodeAt(i * 3 + 1), bin.charCodeAt(i * 3 + 2)];
+    const code = PTYPE_CODES[PTYPE_ORDER[Math.floor(i / 22)]];
+    tracePath(lut, dist, c, c, code, code);
+  }
+  return lut;
+}
+
+/**
+ * Snow, ice, and mix ramps, after The Weather Channel's: snow light aqua to
+ * navy, mix pink to magenta, ice lavender to purple. They start lower than
+ * rain's: snow is faint on radar even when it's coming down well.
+ */
+const TYPE_RAMPS: Record<Exclude<PrecipType, 'rain'>, Stop[]> = {
+  snow: [
+    [8, 175, 235, 245, 0],
+    [11, 165, 228, 242, 0.78],
+    [18, 110, 200, 230, 0.86],
+    [25, 55, 160, 210, 0.91],
+    [32, 25, 110, 185, 0.95],
+    [40, 20, 60, 150, 1],
+    [50, 30, 30, 110, 1],
+  ],
+  mix: [
+    [8, 250, 190, 215, 0],
+    [11, 246, 175, 205, 0.78],
+    [20, 238, 120, 175, 0.88],
+    [30, 215, 60, 140, 0.94],
+    [40, 175, 20, 105, 1],
+    [50, 130, 10, 80, 1],
+  ],
+  ice: [
+    [8, 215, 190, 245, 0],
+    [11, 205, 178, 240, 0.78],
+    [20, 170, 130, 225, 0.88],
+    [30, 130, 80, 200, 0.94],
+    [40, 95, 40, 165, 1],
+    [50, 70, 20, 130, 1],
+  ],
+};
+
+/** All four ramps as one 256 × 4 texture, rows rain, snow, ice, mix (Mono: one gray ramp for all). */
+export function buildTypeRamps(mode: ColorMode): Uint8Array {
+  const out = new Uint8Array(256 * 4 * 4);
+  out.set(buildRamp(mode), 0);
+  PTYPE_ORDER.slice(1).forEach((t, row) => out.set(mode === 'mono' ? buildRamp(mode) : rampFrom(TYPE_RAMPS[t as Exclude<PrecipType, 'rain'>]), (row + 1) * 256 * 4));
+  return out;
+}
+
+/** Legend gradients per type, light → heavy. */
+export const PTYPE_LEGEND: Record<PrecipType, string[]> = {
+  rain: RADAR_LEGEND,
+  snow: TYPE_RAMPS.snow.slice(1).map(([, r, g, b]) => `rgb(${r}, ${g}, ${b})`),
+  mix: TYPE_RAMPS.mix.slice(1).map(([, r, g, b]) => `rgb(${r}, ${g}, ${b})`),
+  ice: TYPE_RAMPS.ice.slice(1).map(([, r, g, b]) => `rgb(${r}, ${g}, ${b})`),
+};
 
 /* ---------- storm-relative velocity (N0S) ---------- */
 

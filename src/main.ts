@@ -17,6 +17,7 @@ import type { Place } from './data/photon';
 import { Animator, type LayerFlags } from './layers/animator';
 import { createMap, loadStyle } from './map/map';
 import { formatHashView, parseHashView, readLastFix, readLastView, saveLastFix, saveLastView } from './data/view';
+import { CloudCutout } from './map/cloudCutout';
 import { addImagery, refreshClouds, setBasemap, setCloudsVisible, setColorMode } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
 import { OutlookLayer } from './map/outlookLayer';
@@ -120,6 +121,9 @@ async function main(): Promise<void> {
   });
   const alertAreas = new AlertAreas(map, store.get().alertAreas);
   const stormOutlook = new OutlookLayer(map);
+  const cloudCutout = new CloudCutout(map);
+  /** The beta satellite clouds: a hurricane-tracker option, shown while the tracker is on. */
+  const cutoutOn = (s: AppState) => s.layers.tropics && s.tropics.clouds;
   const stormCells = new StormLayer(map);
   const lightning = new LightningLayer(map);
 
@@ -136,6 +140,7 @@ async function main(): Promise<void> {
   let siteScansAt = 0;
   let timeline = makeTimeline(Date.now(), hrrrInit, liveAt);
   const radar = new RadarLayer(map, timeline, store.get().colorMode, store.get().layers.rain);
+  radar.setPrecipType(store.get().precipType);
 
   // Weather maps (Windy's layers): one colored variable under borders, radar, and labels.
   const field = new FieldLayer(map);
@@ -161,6 +166,8 @@ async function main(): Promise<void> {
     const s = store.get();
     // Bottom to top: imagery, weather map, borders, radar, alert areas, labels.
     addImagery(map, { clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
+    // Beta satellite clouds sit on the imagery, under the weather map, radar, and labels.
+    cloudCutout.install(map.getStyle().layers.find((l) => l.type === 'symbol')?.id, cutoutOn(s));
     field.install();
     radar.install();
     stormOutlook.install();
@@ -289,6 +296,7 @@ async function main(): Promise<void> {
       mapLabel: m && plainLabel(m),
       site: chosenSite && siteCall(chosenSite),
       velocity: siteFrames?.product === 'N0S',
+      precipType: s.precipType,
     });
   };
   renderBar();
@@ -826,6 +834,7 @@ async function main(): Promise<void> {
     grids.refreshIfOlderThan(GRID_MAX_AGE_MS);
     const s = store.get();
     refreshClouds(map, s.layers.clouds);
+    if (cutoutOn(s)) cloudCutout.refresh();
     alertAreas.refreshIfStale();
     stormOutlook.refreshIfStale();
     void stormCells.refresh();
@@ -951,7 +960,8 @@ async function main(): Promise<void> {
       setColorMode(map, s.colorMode);
       radar.setColorMode(s.colorMode);
     }
-    if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode || s.weatherMap !== prev.weatherMap) renderBar();
+    if (s.precipType !== prev.precipType) radar.setPrecipType(s.precipType);
+    if (s.layers.rain !== prev.layers.rain || s.colorMode !== prev.colorMode || s.weatherMap !== prev.weatherMap || s.precipType !== prev.precipType) renderBar();
     if (s.layers.cells !== prev.layers.cells || s.stormReports !== prev.stormReports) stormCells.set(s.layers.cells, s.stormReports);
     if (s.layers.thunder !== prev.layers.thunder) {
       lightning.setVisible(s.layers.thunder);
@@ -974,6 +984,10 @@ async function main(): Promise<void> {
       renderStormPill();
       renderTropicsBtn();
       if (s.layers.tropics && Date.now() - tropicsAt > 60_000) void refreshTropics();
+    }
+    if (cutoutOn(s) !== cutoutOn(prev)) {
+      cloudCutout.setVisible(cutoutOn(s));
+      renderCredits(s);
     }
     if (s.tropics !== prev.tropics) {
       tropical.setOptions(s.tropics);
@@ -1069,7 +1083,7 @@ function renderCredits(s: AppState): void {
   $('[data-credit="mrms"]').hidden = !s.layers.rain;
   $('[data-credit="ghe"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
-  $('[data-credit="goes"]').hidden = !s.layers.clouds;
+  $('[data-credit="goes"]').hidden = !(s.layers.clouds || (s.layers.tropics && s.tropics.clouds));
   $('[data-credit="glm"]').hidden = !s.layers.thunder;
   $('[data-credit="gibs"]').hidden = !((s.layers.tropics && s.tropics.sst) || s.weatherMap === 'infrared');
   $('[data-credit="eccc"]').hidden = !(GEOMET_MAPS.has(s.weatherMap) || s.layers.wind);

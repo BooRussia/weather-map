@@ -27,6 +27,8 @@ export interface TropicalOptions {
   outlook: boolean;
   /** Sea surface temperature. */
   sst: boolean;
+  /** Beta: clouds cut out of live GOES imagery. */
+  clouds: boolean;
 }
 
 export const DEFAULT_TROPICS: TropicalOptions = {
@@ -41,6 +43,7 @@ export const DEFAULT_TROPICS: TropicalOptions = {
   surge: true,
   outlook: true,
   sst: false,
+  clouds: false,
 };
 
 export const DEFAULT_MODEL_GROUPS: ModelGroup[] = ['official', 'consensus', 'hurricane', 'global', 'ensembleMean', 'member'];
@@ -59,6 +62,8 @@ export interface AppState {
   colorMode: ColorMode;
   /** Falling rain streaks on top of the radar. The Rain button still hides both. */
   rainStreaks: boolean;
+  /** Radar colored by what's falling: rain, snow, mix (sleet), ice (freezing rain). */
+  precipType: boolean;
   /** NWS warning/watch areas drawn on the map in the accent. */
   alertAreas: boolean;
   /** Liquid (Apple-like, default) or Classic (the original black-and-amber). */
@@ -96,6 +101,7 @@ interface Prefs {
   basemap?: Basemap;
   colorMode?: ColorMode;
   rainStreaks?: boolean;
+  precipType?: boolean;
   alertAreas?: boolean;
   theme?: Theme;
   followMap?: boolean;
@@ -128,6 +134,7 @@ function writePrefs(s: AppState): void {
       basemap: s.basemap,
       colorMode: s.colorMode,
       rainStreaks: s.rainStreaks,
+      precipType: s.precipType,
       alertAreas: s.alertAreas,
       theme: s.theme,
       followMap: s.followMap,
@@ -165,6 +172,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     basemap: prefs.basemap === 'dark' ? 'dark' : 'satellite',
     colorMode: prefs.colorMode === 'mono' ? 'mono' : 'color',
     rainStreaks: prefs.rainStreaks ?? false,
+    precipType: prefs.precipType ?? true,
     alertAreas: prefs.alertAreas ?? true,
     theme: prefs.theme === 'classic' ? 'classic' : 'liquid',
     followMap: prefs.followMap ?? true,
@@ -191,6 +199,7 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.colorMode ||
         patch.sound !== undefined ||
         patch.rainStreaks !== undefined ||
+        patch.precipType !== undefined ||
         patch.alertAreas !== undefined ||
         patch.theme !== undefined ||
         patch.followMap !== undefined ||
