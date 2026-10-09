@@ -1,5 +1,5 @@
 import type { FeatureCollection, LineString, Point } from 'geojson';
-import type { GeoJSONSource, Map as MlMap, PaddingOptions } from 'maplibre-gl';
+import type { GeoJSONSource, Map as MlMap, PaddingOptions, PointLike } from 'maplibre-gl';
 import type { TripPlan } from '../data/trip';
 
 export interface TripColors {
@@ -13,6 +13,8 @@ export interface TripColors {
 
 const ROUTE = 'trip-route';
 const STOPS = 'trip-stops';
+/** A soft ring around the stop whose card is open. */
+const HALO = 'trip-stop-halo';
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /** The planned drive on the map: the route, and its forecast stops colored by what's there. */
@@ -54,6 +56,16 @@ export class TripLayer {
     );
     m.addLayer(
       {
+        id: HALO,
+        type: 'circle',
+        source: STOPS,
+        filter: ['==', ['get', 'i'], -1],
+        paint: { 'circle-radius': 13, 'circle-color': '#ffffff', 'circle-opacity': 0.22, 'circle-blur': 0.25 },
+      },
+      firstSymbol,
+    );
+    m.addLayer(
+      {
         id: STOPS,
         type: 'circle',
         source: STOPS,
@@ -86,6 +98,23 @@ export class TripLayer {
     this.map.setPaintProperty(STOPS, 'circle-stroke-color', this.strokeColor());
   }
 
+  /** The stop whose dot is under a screen point (a finger's width of slack), or null. */
+  hit(point: { x: number; y: number }, slack = 10): number | null {
+    if (!this.installed) return null;
+    const box: [PointLike, PointLike] = [
+      [point.x - slack, point.y - slack],
+      [point.x + slack, point.y + slack],
+    ];
+    const f = this.map.queryRenderedFeatures(box, { layers: [STOPS] })[0];
+    const i = f?.properties?.i;
+    return typeof i === 'number' ? i : null;
+  }
+
+  /** Ring the stop whose card is open (null: none). */
+  highlight(i: number | null): void {
+    if (this.installed) this.map.setFilter(HALO, ['==', ['get', 'i'], i ?? -1]);
+  }
+
   /** Draw a plan (and frame it inside `padding`), or clear it. */
   set(plan: TripPlan | null, padding?: PaddingOptions): void {
     if (!this.map.isStyleLoaded() && !this.installed) {
@@ -101,7 +130,7 @@ export class TripLayer {
       type: 'FeatureCollection',
       features: (plan?.stops ?? []).map((s, i) => ({
         type: 'Feature',
-        properties: { level: s.level ?? 'none', end: i === 0 || i === last, night: !!s.night },
+        properties: { i, level: s.level ?? 'none', end: i === 0 || i === last, night: !!s.night },
         geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
       })),
     };

@@ -2839,6 +2839,170 @@ body.map-only .sheet {
   }
 }
 
+/* ---------- trip stop card: hover a stop's dot (tap on phones) ---------- */
+
+/* Grows out of the dot, rows settle in one after another, glides from dot to dot. */
+.stop-tip {
+  position: fixed;
+  z-index: 9;
+  left: 0;
+  top: 0;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 22px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(var(--tx, 0), var(--ty, 0)) scale(0.9);
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    visibility 0s var(--dur);
+}
+
+.stop-tip.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(var(--tx, 0), var(--ty, 0)) scale(1);
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    visibility 0s;
+}
+
+.stop-tip.is-placing {
+  transition: none;
+}
+
+.stop-tip.is-open .tip-body > * {
+  animation: tip-row var(--dur) var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+@keyframes tip-row {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.tip-body > * {
+  margin: 0;
+}
+
+.tip-kicker {
+  font-size: var(--fs-cap);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tip-place {
+  font-size: var(--fs-callout);
+  font-weight: 600;
+}
+
+.tip-when {
+  font-size: var(--fs-foot);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tip-wx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tip-wx + .tip-wx {
+  margin-top: 4px;
+}
+
+.tip-wx .glyph {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.tip-wx-label {
+  min-width: 58px;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.tip-temp {
+  font-size: var(--fs-callout);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.tip-cond {
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.tip-flags {
+  margin-top: 6px;
+  font-size: var(--fs-foot);
+}
+
+.tip-flags.level-severe {
+  color: var(--c-alert);
+}
+
+.tip-flags.level-caution {
+  color: var(--c-sun);
+}
+
+.tip-alerts,
+.tip-note {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.tip-alerts {
+  display: grid;
+  gap: 6px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.tip-alerts li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-foot);
+}
+
+.tip-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.tip-alert-name {
+  font-weight: 500;
+}
+
+.tip-alert-when {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tip-note {
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

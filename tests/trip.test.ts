@@ -249,3 +249,55 @@ describe('trip text', () => {
     ).toBe('A chance of storms, a low flash-flood risk, and some rain.');
   });
 });
+
+describe('alerts at each stop', () => {
+  const box = (w: number, s: number, e: number, n: number) => ({
+    type: 'Polygon' as const,
+    coordinates: [
+      [
+        [w, s],
+        [e, s],
+        [e, n],
+        [w, n],
+        [w, s],
+      ],
+    ],
+  });
+  const feature = (props: Record<string, string | null>, g = box(-86, 30, -85, 31)) => ({ type: 'Feature' as const, geometry: g, properties: props });
+
+  it('reads alert times, blank as missing, tropical alerts open-ended', async () => {
+    const { alertTimes } = await import('../src/data/tripHazards');
+    const t = alertTimes({ phenom: 'TR', onset: '2026-10-09T08:28:00-04:00', ends: ' ', expiration: '2026-10-09T16:30:00-04:00' });
+    expect(t.on).toBe(Date.parse('2026-10-09T12:28:00Z'));
+    expect(t.off).toBeNull();
+    const f = alertTimes({ phenom: 'FA', onset: ' ', ends: ' ', expiration: '2026-10-09T16:30:00-04:00' });
+    expect(f.on).toBeNull();
+    expect(f.off).toBe(Date.parse('2026-10-09T20:30:00Z'));
+  });
+
+  it('lists the alerts over a stop while you are there, warnings first, one line per kind', async () => {
+    const { alertsAtStops } = await import('../src/data/tripHazards');
+    const at = Date.parse('2026-10-09T15:00:00Z');
+    const fc = {
+      type: 'FeatureCollection' as const,
+      features: [
+        feature({ prod_type: 'Flood Watch', phenom: 'FA', sig: 'A', onset: '2026-10-09T12:00:00Z', ends: '2026-10-10T06:00:00Z', expiration: null, url: 'a' }),
+        feature({ prod_type: 'Tornado Warning', phenom: 'TO', sig: 'W', onset: '2026-10-09T14:30:00Z', ends: '2026-10-09T15:15:00Z', expiration: null, url: 'b' }),
+        // Over, by the time you get there.
+        feature({ prod_type: 'Wind Advisory', phenom: 'WI', sig: 'Y', onset: '2026-10-09T08:00:00Z', ends: '2026-10-09T12:00:00Z', expiration: null, url: 'c' }),
+        // Somewhere else.
+        feature({ prod_type: 'Heat Advisory', phenom: 'HT', sig: 'Y', onset: null, ends: '2026-10-10T00:00:00Z', expiration: null, url: 'd' }, box(-90, 35, -89, 36)),
+        // The same statement from two offices.
+        feature({ prod_type: 'Tropical Cyclone Local Statement', phenom: 'TR', sig: 'S', onset: null, ends: ' ', expiration: null, url: 'e' }),
+        feature({ prod_type: 'Tropical Cyclone Local Statement', phenom: 'TR', sig: 'S', onset: null, ends: ' ', expiration: null, url: 'f' }),
+      ],
+    };
+    const [here, away] = alertsAtStops(fc as never, [
+      { lat: 30.5, lon: -85.5, from: at, to: at },
+      { lat: 40, lon: -100, from: at, to: at },
+    ]);
+    expect(here.map((a) => a.title)).toEqual(['Tornado Warning', 'Flood Watch', 'Tropical Cyclone Local Statement']);
+    expect(here[0].off).toBe(Date.parse('2026-10-09T15:15:00Z'));
+    expect(away).toEqual([]);
+  });
+});

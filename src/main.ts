@@ -38,6 +38,7 @@ import { GEOMET_MAPS, GeoMetSource, RoutedSource } from './maps/geometSource';
 import { GibsInfraredSource } from './maps/gibsSource';
 import { renderMapLegend } from './ui/mapLegend';
 import type { TripLayer } from './map/tripLayer';
+import type { StopTip } from './ui/stopTip';
 import { TropicalLayer } from './map/tropicalLayer';
 import type { FeatureCollection } from 'geojson';
 import { getOutlook, getStormGIS, getStorms, getWindProbs, type ModelGroup, type Outlook, type Storm, type StormGIS } from './data/tropical';
@@ -509,6 +510,16 @@ async function main(): Promise<void> {
 
   // Tap: bring that spot under the cross. (With the weather pinned, a tap changes nothing.)
   map.on('click', (e) => {
+    // A trip stop's dot opens its card; with a card open from a tap, a tap elsewhere just closes it.
+    const stop = tripLayer?.hit(e.point, 14) ?? null;
+    if (stop != null) {
+      openStopTip(stop, true);
+      return;
+    }
+    if (stopTip?.pinned) {
+      closeStopTip();
+      return;
+    }
     // A storm's own click handler opens it; the map stays put.
     // A radar tower shows that radar's own scans.
     const tower = sitesLayer.hit(e.point);
@@ -597,14 +608,16 @@ async function main(): Promise<void> {
       : { top: 80, right: 80, bottom: 150, left: r.right + 30 };
   };
   const createTrip = async (): Promise<TripPanel> => {
-    const [{ TripPanel }, { TripLayer }] = await Promise.all([import('./ui/trip'), import('./map/tripLayer')]);
+    const [{ TripPanel }, { TripLayer }, { StopTip }] = await Promise.all([import('./ui/trip'), import('./map/tripLayer'), import('./ui/stopTip')]);
     const layer = new TripLayer(map, tripColors());
     tripLayer = layer;
+    stopTip = new StopTip(() => [document.querySelector('.controls')]);
     trip = new TripPanel({
       myLocation: () => dot.position,
       near: () => store.get().selected,
       state: () => store.get(),
       show: (plan) => {
+        closeStopTip();
         layer.set(plan, tripPadding());
         $('[data-credit="osrm"]').hidden = !plan;
       },
@@ -625,6 +638,58 @@ async function main(): Promise<void> {
     });
     return trip;
   };
+  // A stop's dot: hover it (tap on phones) for when you'll be there, the weather then, and any alerts.
+  let stopTip: StopTip | null = null;
+  let tipLeave = 0;
+  let hoverStop: number | null = null;
+  const stopScreenPoint = (i: number) => {
+    const pt = trip?.stopPoint(i);
+    if (!pt) return null;
+    const p = map.project([pt.lon, pt.lat]);
+    const r = map.getContainer().getBoundingClientRect();
+    return { x: r.left + p.x, y: r.top + p.y };
+  };
+  const openStopTip = (i: number, pinned: boolean) => {
+    if (!stopTip) return;
+    window.clearTimeout(tipLeave);
+    if (stopTip.shown === i && stopTip.pinned === pinned) return;
+    const card = trip?.stopCard(i);
+    const at = stopScreenPoint(i);
+    if (!card || !at) return;
+    stopTip.show(i, card, at.x, at.y, pinned);
+    tripLayer?.highlight(i);
+  };
+  const closeStopTip = () => {
+    window.clearTimeout(tipLeave);
+    stopTip?.hide();
+    tripLayer?.highlight(null);
+  };
+  if (matchMedia('(hover: hover)').matches) {
+    map.on('mousemove', (e) => {
+      if (!stopTip || !tripLayer) return;
+      const i = tripLayer.hit(e.point, 8);
+      if (i !== hoverStop) {
+        hoverStop = i;
+        map.getCanvas().style.cursor = i != null ? 'pointer' : '';
+      }
+      if (i != null) openStopTip(i, false);
+      else if (stopTip.shown != null && !stopTip.pinned) {
+        // A beat's grace, so sliding to the next dot glides the card instead of closing it.
+        window.clearTimeout(tipLeave);
+        tipLeave = window.setTimeout(closeStopTip, 140);
+      }
+    });
+    map.getCanvas().addEventListener('mouseleave', () => {
+      if (stopTip?.shown != null && !stopTip.pinned) closeStopTip();
+    });
+  }
+  // The card stays with its dot as the map moves.
+  map.on('move', () => {
+    const i = stopTip?.shown;
+    if (i == null) return;
+    const at = stopScreenPoint(i);
+    if (at) stopTip!.follow(at.x, at.y);
+  });
   let tripLoading: Promise<TripPanel> | null = null;
   const loadTrip = () => (tripLoading ??= createTrip());
   $('#trip-btn').addEventListener('click', () => {

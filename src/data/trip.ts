@@ -11,6 +11,7 @@ import {
   type Hazard,
   type HazardSource,
   type Level,
+  type StopAlert,
   type StopFlag,
 } from './tripHazards';
 
@@ -40,6 +41,8 @@ export interface TripStop extends RoutePoint {
   day: number;
   /** On the last stop of every day but the final one: you stay here overnight. */
   night: Night | null;
+  /** NWS watches, warnings, and advisories over this spot while you're there (null: couldn't be checked). */
+  alerts: StopAlert[] | null;
 }
 
 export interface TripPlan {
@@ -102,7 +105,11 @@ export async function planTrip(
       return null;
     }),
     getTimeZones(base, signal).catch(() => null),
-    getRouteHazards(fine, signal),
+    getRouteHazards(
+      fine,
+      signal,
+      base.map((p) => ({ lat: p.lat, lon: p.lon, from: p.at, to: p.leave ?? p.at })),
+    ),
   ]);
   failed.push(...noaa.failed);
 
@@ -115,7 +122,7 @@ export async function planTrip(
       night = { n: p.day + 1, leave, leaveForecast, leaveFlags: leaveForecast ? stopFlags(leaveForecast) : [] };
     }
     const level = [...flags, ...(night?.leaveFlags ?? [])].reduce<Level | null>((l, f) => worse(l, f.level), null);
-    return { ...p, forecast, flags, level, zone: zones?.[i] ?? null, night };
+    return { ...p, forecast, flags, level, zone: zones?.[i] ?? null, night, alerts: noaa.stopAlerts?.[i] ?? null };
   });
 
   // Weather in order of time: a night's morning flags come after its evening ones.

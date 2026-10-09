@@ -141,6 +141,7 @@ const wpcTime = (s: string) => Date.parse(`${s.replace(' ', 'T')}Z`);
 
 interface WwaProps {
   prod_type: string;
+  phenom: string;
   sig: string;
   onset: string | null;
   ends: string | null;
@@ -149,6 +150,58 @@ interface WwaProps {
 }
 
 const ALERT_LEVEL: Record<string, Level> = { W: 'severe', A: 'caution', Y: 'caution', S: 'info' };
+
+/** Tropical alerts run until further notice: their expiration is just the next advisory. */
+const TROPICAL = new Set(['TR', 'HU', 'SS', 'TY']);
+
+/** When an alert takes effect and ends, epoch ms (null: not given). The service sends blanks as " ". */
+export function alertTimes(p: Pick<WwaProps, 'phenom' | 'onset' | 'ends' | 'expiration'>): { on: number | null; off: number | null } {
+  const at = (v: string | null | undefined) => Date.parse(v?.trim() || '') || null;
+  return { on: at(p.onset), off: at(p.ends) ?? (TROPICAL.has(p.phenom) ? null : at(p.expiration)) };
+}
+
+/** A watch, warning, or advisory over one stop while you're there. */
+export interface StopAlert {
+  /** "Tornado Watch". */
+  title: string;
+  /** VTEC phenomenon and significance ("TO", "A"), for its NWS color. */
+  phenom: string;
+  sig: string;
+  level: Level;
+  /** When it takes effect and ends, epoch ms (null: not given). */
+  on: number | null;
+  off: number | null;
+}
+
+/** Where a stop is and the stretch of time you're there (arrival, or arrival to the next morning for a night). */
+export interface StopWindow {
+  lat: number;
+  lon: number;
+  from: number;
+  to: number;
+}
+
+const SIG_RANK: Record<string, number> = { W: 3, A: 2, Y: 1, S: 0 };
+
+/** For each stop, the alerts whose area covers it while you're there: warnings first, then watches, advisories. */
+export function alertsAtStops(fc: FeatureCollection<Geometry, WwaProps>, stops: StopWindow[]): StopAlert[][] {
+  return stops.map((st) => {
+    // One line per kind ("Tropical Cyclone Local Statement" can come from two offices), the longest-lasting.
+    const seen = new Map<string, StopAlert>();
+    for (const f of fc.features) {
+      const p = f.properties;
+      if (!f.geometry || !p) continue;
+      const { on, off } = alertTimes(p);
+      if (!overlaps(st.from, st.to, on ?? -Infinity, off ?? Infinity)) continue;
+      const prev = seen.get(p.prod_type);
+      if (prev && (prev.off == null || (off != null && off <= prev.off))) continue;
+      const [x0, y0, x1, y1] = bbox(f.geometry);
+      if (st.lon < x0 || st.lon > x1 || st.lat < y0 || st.lat > y1 || !inPolygon(st.lon, st.lat, f.geometry)) continue;
+      seen.set(p.prod_type, { title: p.prod_type, phenom: p.phenom, sig: p.sig, level: ALERT_LEVEL[p.sig] ?? 'info', on, off });
+    }
+    return [...seen.values()].sort((a, b) => (SIG_RANK[b.sig] ?? 0) - (SIG_RANK[a.sig] ?? 0) || (a.on ?? 0) - (b.on ?? 0));
+  });
+}
 
 function alertHazards(fc: FeatureCollection<Geometry, WwaProps>, samples: RoutePoint[]): Hazard[] {
   // One alert can arrive as many zone polygons: merge them by alert.
@@ -181,8 +234,8 @@ function alertHazards(fc: FeatureCollection<Geometry, WwaProps>, samples: RouteP
         active: true,
         url: p.url ?? undefined,
       },
-      on: Date.parse(p.onset ?? '') || 0,
-      off: Date.parse(p.ends ?? p.expiration ?? '') || Infinity,
+      on: alertTimes(p).on ?? 0,
+      off: alertTimes(p).off ?? Infinity,
     });
   }
   return [...byAlert.values()].map(({ h, on, off }) => {
@@ -238,15 +291,23 @@ function outlookHazard<P>(
   return best;
 }
 
-/** NOAA hazards along the route. Sources that fail are listed in `failed`; the rest still count. */
+/**
+ * NOAA hazards along the route, and the alerts over each of `stops` while you're there. Sources that
+ * fail are listed in `failed`; the rest still count.
+ */
 export async function getRouteHazards(
   samples: RoutePoint[],
   signal?: AbortSignal,
-): Promise<{ hazards: Hazard[]; failed: HazardSource[] }> {
+  stops: StopWindow[] = [],
+): Promise<{ hazards: Hazard[]; failed: HazardSource[]; stopAlerts: StopAlert[][] | null }> {
   const failed = new Set<HazardSource>();
   const notMarine = `phenom NOT IN (${MARINE.map((m) => `'${m}'`).join(',')})`;
-  const alerts = query<WwaProps>(WWA, lineQuery(samples, 'prod_type,sig,onset,ends,expiration,url', notMarine), signal)
-    .then((fc) => alertHazards(fc, samples))
+  let stopAlerts: StopAlert[][] | null = null;
+  const alerts = query<WwaProps>(WWA, lineQuery(samples, 'prod_type,phenom,sig,onset,ends,expiration,url', notMarine), signal)
+    .then((fc) => {
+      stopAlerts = alertsAtStops(fc, stops);
+      return alertHazards(fc, samples);
+    })
     .catch(() => (failed.add('NWS'), []));
 
   const spc = SPC_LAYERS.map((layer) =>
@@ -291,7 +352,7 @@ export async function getRouteHazards(
   );
 
   const [a, ...outlooks] = await Promise.all([alerts, ...spc, ...wpc]);
-  return { hazards: [...a, ...outlooks.filter((h): h is Hazard => !!h)], failed: [...failed] };
+  return { hazards: [...a, ...outlooks.filter((h): h is Hazard => !!h)], failed: [...failed], stopAlerts };
 }
 
 /* ---------- the forecast at each stop ---------- */

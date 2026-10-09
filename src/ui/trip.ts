@@ -1,4 +1,6 @@
 import type { LatLon } from '../config';
+import { alertColor } from '../data/alertColors';
+import { weatherCodeText, type StopForecast } from '../data/openmeteo';
 import { glyphFor } from '../data/outlook';
 import { reverseName, searchPlaces, type Place } from '../data/photon';
 import { RouteError, type RoutePoint } from '../data/route';
@@ -6,7 +8,7 @@ import { zoneOffsetS } from '../data/schedule';
 import { deviceZone, planTrip, stopSpacing, type TripPlan, type TripStop } from '../data/trip';
 import { worse, type Hazard, type HazardKind, type HazardSource, type Level } from '../data/tripHazards';
 import type { AppState } from '../state';
-import { formatTemp } from '../util/units';
+import { formatTemp, formatWind } from '../util/units';
 import { $, h, svg } from './dom';
 import {
   boltMark,
@@ -704,6 +706,95 @@ export class TripPanel {
     );
     btn.addEventListener('click', () => this.focus(st));
     return h('li', {}, btn);
+  }
+
+  /** Where stop `i` is (null: no plan, or no such stop). */
+  stopPoint(i: number): LatLon | null {
+    const st = this.plan?.stops[i];
+    return st ? { lat: st.lat, lon: st.lon } : null;
+  }
+
+  /**
+   * The card for a stop's dot on the map: where it is, when you'll be there, the forecast for that
+   * hour, and any watches or warnings over it then (each in its NWS color).
+   */
+  stopCard(i: number): HTMLElement | null {
+    const p = this.plan;
+    const st = p?.stops[i];
+    if (!p || !st) return null;
+    const s = this.hooks.state();
+    const night = st.night;
+    const zone = st.zone;
+    const ahead = st.at - Date.now();
+    const when = [
+      i === 0 ? `Leave ${t(st.at, zone)}` : `Arrive ${t(st.at, zone)}`,
+      night ? `Leave ${t(night.leave, zone)}` : null,
+      ahead > 60_000 ? `in ${durationText(ahead / 1000)}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    const wx = (f: StopForecast | null, label: string | null) =>
+      f
+        ? h(
+            'div',
+            { class: 'tip-wx' },
+            label ? h('span', { class: 'tip-wx-label' }, label) : null,
+            svg(GLYPHS[glyphFor(f.weatherCode, f.isDay)]),
+            h('span', { class: 'tip-temp' }, Number.isFinite(f.tempF) ? formatTemp(f.tempF, s.tempUnit) : '--'),
+            h(
+              'span',
+              { class: 'tip-cond' },
+              [
+                weatherCodeText(f.weatherCode),
+                f.precipProbability >= 20 ? `${Math.round(f.precipProbability)}% rain` : null,
+                f.gustMph >= 25 ? `gusts ${formatWind(f.gustMph, s.windUnit)}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            ),
+          )
+        : h('p', { class: 'tip-note' }, 'Forecast unavailable');
+
+    // Flags worth a second line (plain rain already reads in the condition).
+    const flags = [...new Map([...st.flags, ...(night?.leaveFlags ?? [])].filter((f) => f.level !== 'info').map((f) => [f.title, f])).values()];
+    const worst = flags.reduce<Level | null>((l, f) => worse(l, f.level), null);
+
+    const alerts = st.alerts;
+    const alertList =
+      alerts == null
+        ? h('p', { class: 'tip-note' }, 'Alerts couldn’t be checked')
+        : alerts.length
+          ? h(
+              'ul',
+              { class: 'tip-alerts' },
+              ...alerts.map((a) =>
+                h(
+                  'li',
+                  {},
+                  h('span', { class: 'tip-swatch', style: `background:${alertColor(a.phenom, a.sig)}` }),
+                  h('span', { class: 'tip-alert-name' }, a.title),
+                  h(
+                    'span',
+                    { class: 'tip-alert-when' },
+                    a.on && a.on > st.at ? `from ${t(a.on, zone)}` : a.off ? `until ${t(a.off, zone)}` : 'in effect',
+                  ),
+                ),
+              ),
+            )
+          : h('p', { class: 'tip-note' }, night ? 'No watches or warnings overnight' : 'No watches or warnings then');
+
+    return h(
+      'div',
+      { class: 'tip-body' },
+      night ? h('p', { class: 'tip-kicker' }, `Night ${night.n}`) : null,
+      h('p', { class: 'tip-place' }, this.nameOf(i)),
+      h('p', { class: 'tip-when' }, when),
+      wx(st.forecast, night ? 'Tonight' : null),
+      night ? wx(night.leaveForecast, 'Morning') : null,
+      flags.length ? h('p', { class: `tip-flags level-${worst}` }, flags.map((f) => f.title).join(' · ')) : null,
+      alertList,
+    );
   }
 
   private hazardDetail(hz: Hazard, zone: string | null): string {
