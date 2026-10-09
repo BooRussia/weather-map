@@ -27,8 +27,6 @@ export interface TropicalOptions {
   outlook: boolean;
   /** Sea surface temperature. */
   sst: boolean;
-  /** Beta: clouds cut out of live GOES imagery. */
-  clouds: boolean;
 }
 
 export const DEFAULT_TROPICS: TropicalOptions = {
@@ -43,13 +41,12 @@ export const DEFAULT_TROPICS: TropicalOptions = {
   surge: true,
   outlook: true,
   sst: false,
-  clouds: false,
 };
 
 export const DEFAULT_MODEL_GROUPS: ModelGroup[] = ['official', 'consensus', 'hurricane', 'global', 'ensembleMean', 'member'];
 
 export interface AppState {
-  /** `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
+  /** `clouds`: satellite clouds, cut out of live GOES imagery. `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
   /** `outlook`: SPC severe-storm or WPC flash-flood outlook areas (`outlookKind`, `outlookDay`). */
   /** `cells`: strong storm cells and where they're headed (radar storm tracking). */
   layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean; tropics: boolean; outlook: boolean; cells: boolean };

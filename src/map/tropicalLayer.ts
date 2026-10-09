@@ -76,8 +76,8 @@ const S = {
 const SST = 'trop-sst';
 const SURGE = 'trop-surge-';
 
-/** Which layers each option switches. Storm markers stay whenever the layer is on. (Satellite clouds are their own layer: cloudCutout.ts.) */
-const PARTS: Record<Exclude<keyof TropicalOptions, 'windProb' | 'surge' | 'clouds'>, string[]> = {
+/** Which layers each option switches. Storm markers stay whenever the layer is on. */
+const PARTS: Record<Exclude<keyof TropicalOptions, 'windProb' | 'surge'>, string[]> = {
   sst: [SST],
   outlook: [`${S.outlook}-fill`, `${S.outlook}-line`, S.outlookPts],
   cone: [`${S.cone}-fill`, `${S.cone}-line`],

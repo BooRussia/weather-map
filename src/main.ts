@@ -18,7 +18,7 @@ import { Animator, type LayerFlags } from './layers/animator';
 import { createMap, loadStyle } from './map/map';
 import { formatHashView, parseHashView, readLastFix, readLastView, saveLastFix, saveLastView } from './data/view';
 import { CloudCutout } from './map/cloudCutout';
-import { addImagery, refreshClouds, setBasemap, setCloudsVisible, setColorMode } from './map/imagery';
+import { addImagery, setBasemap, setColorMode } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
 import { OutlookLayer } from './map/outlookLayer';
 import { StormLayer, type StormHit } from './map/stormLayer';
@@ -122,8 +122,6 @@ async function main(): Promise<void> {
   const alertAreas = new AlertAreas(map, store.get().alertAreas);
   const stormOutlook = new OutlookLayer(map);
   const cloudCutout = new CloudCutout(map);
-  /** The beta satellite clouds: a hurricane-tracker option, shown while the tracker is on. */
-  const cutoutOn = (s: AppState) => s.layers.tropics && s.tropics.clouds;
   const stormCells = new StormLayer(map);
   const lightning = new LightningLayer(map);
 
@@ -165,9 +163,9 @@ async function main(): Promise<void> {
   map.once('load', () => {
     const s = store.get();
     // Bottom to top: imagery, weather map, borders, radar, alert areas, labels.
-    addImagery(map, { clouds: s.layers.clouds, basemap: s.basemap, colorMode: s.colorMode });
-    // Beta satellite clouds sit on the imagery, under the weather map, radar, and labels.
-    cloudCutout.install(map.getStyle().layers.find((l) => l.type === 'symbol')?.id, cutoutOn(s));
+    addImagery(map, { basemap: s.basemap, colorMode: s.colorMode });
+    // Satellite clouds sit on the imagery, under the weather map, radar, and labels.
+    cloudCutout.install(map.getStyle().layers.find((l) => l.type === 'symbol')?.id, s.layers.clouds);
     field.install();
     radar.install();
     stormOutlook.install();
@@ -833,8 +831,7 @@ async function main(): Promise<void> {
     if (Date.now() - lastLoaded >= CONDITIONS_REFRESH_MS) loadSelected(false);
     grids.refreshIfOlderThan(GRID_MAX_AGE_MS);
     const s = store.get();
-    refreshClouds(map, s.layers.clouds);
-    if (cutoutOn(s)) cloudCutout.refresh();
+    if (s.layers.clouds) cloudCutout.refresh();
     alertAreas.refreshIfStale();
     stormOutlook.refreshIfStale();
     void stormCells.refresh();
@@ -949,13 +946,12 @@ async function main(): Promise<void> {
         radar.setRadarOn(on);
         sitesLayer.setVisible(on);
       }
-      else if (layer === 'clouds') setCloudsVisible(map, on);
+      else if (layer === 'clouds') cloudCutout.setVisible(on);
       else animator.layerChanged(layer, on);
     }
     if (streaksOn(s) !== streaksOn(prev)) animator.layerChanged('rain', streaksOn(s));
     if (s.layers.wind !== prev.layers.wind) wind.setActive(s.layers.wind);
     if (streaksOn(s) !== streaksOn(prev) || s.layers.thunder !== prev.layers.thunder || s.layers.wind !== prev.layers.wind) syncGrids();
-    if (s.layers.clouds !== prev.layers.clouds) refreshClouds(map, s.layers.clouds);
     if (s.colorMode !== prev.colorMode) {
       setColorMode(map, s.colorMode);
       radar.setColorMode(s.colorMode);
@@ -984,10 +980,6 @@ async function main(): Promise<void> {
       renderStormPill();
       renderTropicsBtn();
       if (s.layers.tropics && Date.now() - tropicsAt > 60_000) void refreshTropics();
-    }
-    if (cutoutOn(s) !== cutoutOn(prev)) {
-      cloudCutout.setVisible(cutoutOn(s));
-      renderCredits(s);
     }
     if (s.tropics !== prev.tropics) {
       tropical.setOptions(s.tropics);
@@ -1083,7 +1075,7 @@ function renderCredits(s: AppState): void {
   $('[data-credit="mrms"]').hidden = !s.layers.rain;
   $('[data-credit="ghe"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
-  $('[data-credit="goes"]').hidden = !(s.layers.clouds || (s.layers.tropics && s.tropics.clouds));
+  $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="glm"]').hidden = !s.layers.thunder;
   $('[data-credit="gibs"]').hidden = !((s.layers.tropics && s.tropics.sst) || s.weatherMap === 'infrared');
   $('[data-credit="eccc"]').hidden = !(GEOMET_MAPS.has(s.weatherMap) || s.layers.wind);

@@ -130,7 +130,9 @@ export function buildMrmsLut(): Uint8Array {
  * The Hydro-Estimator's rain-rate bins as RealEarth colors them (read from
  * its legend), each with a typical rate in the bin, mm/h. The faint blues
  * under 0.5 mm/h are left out: from infrared alone they spread under every
- * cirrus deck.
+ * cirrus deck. So is black, the legend's top bin (53+ mm/h): RealEarth also
+ * paints missing data black (whole tiles of it, and stripes of missing scan
+ * lines), which read as a slab of the heaviest rain.
  */
 export const SAT_RAIN_BINS: [r: number, g: number, b: number, mmh: number][] = [
   [150, 255, 150, 1.2],
@@ -143,7 +145,6 @@ export const SAT_RAIN_BINS: [r: number, g: number, b: number, mmh: number][] = [
   [255, 160, 160, 31],
   [255, 0, 0, 38],
   [157, 0, 157, 47],
-  [0, 0, 0, 60],
 ];
 
 /** Rain rate → the reflectivity radar would show for it (Marshall–Palmer, Z = 200 R^1.6). */

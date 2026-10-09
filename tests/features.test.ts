@@ -335,6 +335,8 @@ describe('satellite rain beyond radar range', () => {
     for (const [r, g, b, mmh] of SAT_RAIN_BINS) expect(look(r, g, b)).toBe(entryOf(rainDbz(mmh)));
     expect(rainDbz(10)).toBeCloseTo(39, 0);
     expect(look(0, 82, 255)).toBe(0);
+    // Black is how RealEarth marks missing data (whole tiles of it): never rain.
+    expect(look(0, 0, 0)).toBe(0);
   });
 
   it('knows where the radars reach', async () => {

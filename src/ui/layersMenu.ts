@@ -235,7 +235,6 @@ export class LayersMenu {
         opt('surge', 'Storm surge', 'When NHC issues a flooding map'),
         opt('outlook', 'Possible storms', 'NHC’s 7-day outlook'),
         opt('sst', 'Sea temperature', '80 °F (26.5 °C) and warmer fuels storms'),
-        opt('clouds', 'Satellite clouds', 'Beta · live GOES imagery, clouds cut out'),
       ),
     ];
   }
@@ -383,17 +382,21 @@ export class LayersMenu {
     const body = h(
       'div',
       { class: 'popover-body' },
+      // What's happening now, then the storm hazards; hurricanes last, since its options run long.
       h('p', { class: 'group-label' }, 'On the map'),
       h(
         'div',
         { class: 'group' },
         this.layer('rain', 'Radar', rainMark, 'is-precip'),
-        this.layer('wind', 'Wind', windIcon, ''),
+        this.layer('clouds', 'Satellite clouds', cloudMark, '', 'Live GOES imagery · beta'),
         this.layer('thunder', 'Lightning', boltMark, 'is-bolt', 'Live from GOES satellite'),
-        this.layer('clouds', 'Clouds', cloudMark, '', 'Live satellite'),
-        ...this.tropicsRows(),
+        this.layer('wind', 'Wind', windIcon, ''),
+      ),
+      h('p', { class: 'group-label' }, 'Storms'),
+      h(
+        'div',
+        { class: 'group' },
         ...this.cellRows(),
-        ...this.outlookRows(),
         switchRow({
           label: 'Alert areas',
           mark: alertMark,
@@ -401,6 +404,8 @@ export class LayersMenu {
           checked: s.alertAreas,
           onChange: (on) => this.store.set({ alertAreas: on }),
         }),
+        ...this.outlookRows(),
+        ...this.tropicsRows(),
       ),
       h('p', { class: 'group-label' }, 'Weather map'),
       this.mapTiles(),

@@ -32,12 +32,6 @@ export const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast';
 /** Carto Dark Matter (vector). Credit: © CARTO © OpenStreetMap contributors. */
 export const BASEMAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
-/** Live clouds: NOAA nowCOAST GOES East + West longwave infrared (works day and night, minutes old). */
-export const CLOUDS_TILE_URL =
-  'https://nowcoast.noaa.gov/geoserver/satellite/wms?service=WMS&version=1.3.0&request=GetMap' +
-  '&layers=goes_longwave_imagery&styles=&crs=EPSG:3857&bbox={bbox-epsg-3857}&width=256&height=256' +
-  '&format=image/png&transparent=true';
-
 /** Aerial imagery. Credit: Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community. */
 export const AERIAL_TILE_URL =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -49,8 +43,6 @@ export const GRID_MIN_INTERVAL_MS = 45_000;
 /** Data older than this is refetched on the next settle. */
 export const GRID_MAX_AGE_MS = 15 * 60_000;
 export const CONDITIONS_REFRESH_MS = 10 * 60_000;
-/** Cloud tiles are re-requested once per bucket of this length. */
-export const IMAGERY_REFRESH_MS = 5 * 60_000;
 
 /* ---------- radar timeline ---------- */
 
