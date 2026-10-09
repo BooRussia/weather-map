@@ -407,6 +407,13 @@ describe('satellite clouds (beta)', () => {
     expect(cloudPixel(0, 57, 0)[1]).toBe(0);
   });
 
+  it('reads the global mosaic on its own gray scale', async () => {
+    const { globalCloudPixel } = await import('../src/map/cloudCutout');
+    expect(globalCloudPixel(30)[1]).toBe(0); // open sea
+    expect(globalCloudPixel(227)[1]).toBeGreaterThan(220); // a storm's cold tops
+    expect(globalCloudPixel(84)[1]).toBeGreaterThan(80); // thin cloud, partly
+  });
+
   it('knows day from night', async () => {
     const { sunElevation } = await import('../src/map/cloudCutout');
     // Equinox noon on the equator at 0°: sun overhead. Midnight: below the horizon.
