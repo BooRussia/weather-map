@@ -13,7 +13,7 @@ Switch under Layers → Units, sound & appearance → Theme. The choice is remem
 ### On the map
 - **Search** (top): cities and street addresses, suggestions as you type, nearby results first. Press `/` on a keyboard to jump to it.
 - **You** are the blue dot. The **locate button** (top right, under Layers) snaps the map back to you and fills in blue while it follows you.
-- **Drag, tap, or search** and the readout switches to whatever is under the **center cross**; it reloads when the map settles. Prefer it to stay put? Tap the **pin** in the weather card's corner: the weather stays on that place while you look around (a pin marks it on the map); tap again to follow the map. Units, thunder sound, the look, and where the data comes from sit at the bottom of the Layers drawer.
+- **Drag, tap, or search** and the readout switches to whatever is under the **center cross**; it reloads when the map settles. Prefer it to stay put? Tap the **pin** in the weather card's bottom corner: the weather stays on that place while you look around (a pin marks it on the map); tap again to follow the map. Units, thunder sound, the look, and where the data comes from sit at the bottom of the Layers drawer.
 - **Readout** (glass card): place ("My location" when it's you), temperature, condition, `H:87° L:76°`. Tap it for the weather page.
 - **Alert pill**: appears under the readout while an NWS alert is active there; tap for the full text.
 - **Alerts** (top-right controls): a count of the warnings and watches in view; tap for the list by type (most dangerous first), each alert's zones and full NWS text, and "Show on map". Alert areas on the map use the NWS hazard colors.

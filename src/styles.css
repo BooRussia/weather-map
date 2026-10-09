@@ -538,8 +538,6 @@ button {
   align-items: center;
   gap: 5px;
   max-width: 100%;
-  /* Room for the pin button in the corner. */
-  padding-right: 26px;
 }
 
 /* The pin: weather follows the map (outline) or stays on this place (filled, accent). */
@@ -549,8 +547,8 @@ button {
 
 .cap-pin {
   position: absolute;
-  top: 6px;
   right: 6px;
+  bottom: 6px;
   display: grid;
   place-items: center;
   width: 32px;
@@ -645,6 +643,8 @@ button {
 .cap-hilo {
   color: var(--fg);
   font-variant-numeric: tabular-nums;
+  /* Room for the pin in the corner. */
+  padding-right: 30px;
 }
 
 .alert-pill {
