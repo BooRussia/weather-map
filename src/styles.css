@@ -538,6 +538,73 @@ button {
   align-items: center;
   gap: 5px;
   max-width: 100%;
+  /* Room for the pin button in the corner. */
+  padding-right: 26px;
+}
+
+/* The pin: weather follows the map (outline) or stays on this place (filled, accent). */
+.cap-wrap {
+  position: relative;
+}
+
+.cap-pin {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--muted);
+  transition:
+    color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.cap-pin .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.cap-pin:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cap-pin[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.cap-pin[aria-pressed='true'] .icon path {
+  fill: currentColor;
+}
+
+.cap-pin[aria-pressed='true'] .icon circle {
+  fill: var(--accent-on);
+  stroke: none;
+}
+
+/* The pinned place on the map. */
+.pin-marker {
+  color: var(--accent);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+  pointer-events: none;
+}
+
+.pin-marker .icon {
+  width: 30px;
+  height: 30px;
+}
+
+.pin-marker .icon path {
+  fill: currentColor;
+  stroke: #ffffff;
+  stroke-width: 1.4;
+}
+
+.pin-marker .icon circle {
+  fill: #ffffff;
+  stroke: none;
 }
 
 .cap-gps {
@@ -1062,6 +1129,7 @@ button {
 
 .tl-label {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   line-height: 1.2;
   min-width: 0;
@@ -1077,6 +1145,8 @@ button {
   font-size: var(--fs-cap);
   color: var(--muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .radar-legend {
@@ -1111,6 +1181,22 @@ button {
 
 .legend-type > span {
   min-width: 26px;
+}
+
+/* Phones: the four scales tighter, so the time and kind keep their room. */
+@media (max-width: 420px) {
+  .radar-legend.is-types {
+    flex-basis: 132px;
+    gap: 3px 8px;
+  }
+
+  .legend-type {
+    gap: 4px;
+  }
+
+  .legend-type > span {
+    min-width: 24px;
+  }
 }
 
 /* Native range, restyled. Observed hours bright, forecast hours dim. */
@@ -2631,6 +2717,20 @@ body.trip-open .left-stack {
 .seg-compact button {
   min-width: 48px;
   padding: 0 8px;
+}
+
+/* Settings in the drawer: both units on one row; the data note under its row. */
+.row-units {
+  gap: 8px;
+}
+
+.row-units .seg-compact button {
+  min-width: 40px;
+}
+
+.data-note {
+  margin: 0;
+  padding: 2px 12px 12px;
 }
 
 /* Alerts: a count on the button, then a list by type in the sheet. */

@@ -1,8 +1,19 @@
 import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
-import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, gearIcon, hurricaneMark, layersIcon, rainMark, windIcon } from './icons';
+import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, hurricaneMark, layersIcon, rainMark, windIcon } from './icons';
 import { mapThumb } from './mapThumbs';
+
+/** Where everything on the map comes from (the credits line under the map names them too). */
+const DATA_NOTE =
+  'Places, observations, forecasts, and alerts: NWS. Radar: NOAA MRMS (now and the last 2 hours), NEXRAD history and the HRRR ' +
+  'forecast (with its snow, mix, and ice) via Iowa Environmental Mesonet; rain beyond radar range from NOAA NESDIS’s satellite ' +
+  'Hydro-Estimator via SSEC RealEarth (UW–Madison). Lightning: the GOES lightning mapper via SSEC RealEarth, about a minute ' +
+  'behind (the bolts’ timing is for show). Satellite clouds: NOAA GOES East and West and the NESDIS global mosaic via nowCOAST. ' +
+  'Wind: Environment and Climate Change Canada (GeoMet, GDPS model). Weather maps: Environment and Climate Change Canada ' +
+  '(GeoMet: GDPS, GDWPS, GIOPS models), NASA GIBS (GOES infrared), and Open-Meteo (CC BY 4.0), which also gives falling rain ' +
+  'and point forecasts. Hurricanes: NHC. Search: Photon (OpenStreetMap). Satellite imagery: Esri, Vantor, Earthstar ' +
+  'Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.';
 
 type LayerKey = keyof AppState['layers'];
 
@@ -62,11 +73,12 @@ export class LayersMenu {
   private tropicsOpen = false;
   /** Storm outlook's options are open. */
   private outlookOpen = false;
+  /** The data sources note is open. */
+  private dataOpen = false;
   private cellsOpen = false;
 
   constructor(
     private readonly store: Store,
-    private readonly onSettings: () => void,
     private readonly onLayer: (layer: LayerKey, on: boolean) => void,
     /** Weather maps that have data right now (others are left out of the picker). */
     private readonly mapAvailable: (id: WeatherMapId) => boolean = () => true,
@@ -232,7 +244,7 @@ export class LayersMenu {
         opt('windField', 'Wind field', 'Storm- and hurricane-force winds now'),
         oddsRow,
         opt('arrival', 'Wind arrival', 'When storm winds likely start'),
-        opt('surge', 'Storm surge', 'When NHC issues a flooding map'),
+        opt('surge', 'Storm surge flooding', 'Blue up to 3 ft above ground, yellow 3+, orange 6+, red 9+ (when NHC issues it)'),
         opt('outlook', 'Possible storms', 'NHC’s 7-day outlook'),
         opt('sst', 'Sea temperature', '80 °F (26.5 °C) and warmer fuels storms'),
       ),
@@ -357,20 +369,47 @@ export class LayersMenu {
     ];
   }
 
-  private render(): void {
+  /** What used to be its own Settings page, now one short group: units side by side, sound, look, and the data. */
+  private settingsRows(): HTMLElement[] {
     const s = this.store.get();
-    const settings = h(
+    const temp = segmented('Temperature', [{ value: 'F', label: '°F' }, { value: 'C', label: '°C' }], s.tempUnit, (v) =>
+      this.store.set({ tempUnit: v }),
+    );
+    const wind = segmented('Wind', [{ value: 'mph', label: 'mph' }, { value: 'kmh', label: 'km/h' }], s.windUnit, (v) =>
+      this.store.set({ windUnit: v }),
+    );
+    temp.classList.add('seg-compact');
+    wind.classList.add('seg-compact');
+    const more = h(
       'button',
-      { type: 'button', class: 'row' },
-      h('span', { class: 'row-mark is-blue' }, svg(gearIcon)),
-      h('span', { class: 'row-label' }, 'Units, sound & appearance'),
+      { type: 'button', id: 'data-more', class: 'row-more', 'aria-expanded': String(this.dataOpen), 'aria-controls': 'data-note', 'aria-label': 'Where the data comes from' },
       svg(chevronIcon),
     );
-    settings.addEventListener('click', () => {
-      this.toggle(false);
-      this.onSettings();
+    more.addEventListener('click', () => {
+      this.dataOpen = !this.dataOpen;
+      this.render();
+      $('#data-more').focus();
     });
+    const theme = segmented('Theme', [{ value: 'liquid', label: 'Liquid' }, { value: 'classic', label: 'Classic' }], s.theme, (v) =>
+      this.store.set({ theme: v }),
+    );
+    theme.classList.add('seg-compact');
+    return [
+      h('p', { class: 'group-label' }, 'Settings'),
+      h(
+        'div',
+        { class: 'group' },
+        h('div', { class: 'row row-units' }, h('span', { class: 'row-label' }, 'Units'), temp, wind),
+        switchRow({ label: 'Thunder sound', checked: s.sound, onChange: (on) => this.store.set({ sound: on }) }),
+        segRow('Look', theme),
+        h('div', { class: 'row' }, h('span', { class: 'row-label' }, 'Where the data comes from'), more),
+        this.dataOpen ? h('p', { id: 'data-note', class: 'pop-note data-note' }, DATA_NOTE) : null,
+      ),
+    ];
+  }
 
+  private render(): void {
+    const s = this.store.get();
     // The list scrolls inside the panel, so the glass edge stays put; keep the place across re-renders.
     const scroll = this.el.querySelector('.popover-body')?.scrollTop ?? 0;
     const close = h('button', { type: 'button', class: 'sheet-close', 'aria-label': 'Close map layers' }, svg(closeIcon));
@@ -433,7 +472,7 @@ export class LayersMenu {
         }),
         switchRow({ label: 'Falling rain', checked: s.rainStreaks, onChange: (on) => this.store.set({ rainStreaks: on }) }),
       ),
-      h('div', { class: 'group' }, settings),
+      ...this.settingsRows(),
     );
     this.el.replaceChildren(head, body);
     body.scrollTop = scroll;

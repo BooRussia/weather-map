@@ -1,3 +1,4 @@
+import { Marker } from 'maplibre-gl';
 import '@fontsource-variable/inter/opsz.css';
 import '@fontsource/ibm-plex-sans/latin-300.css';
 import '@fontsource/ibm-plex-sans/latin-400.css';
@@ -47,7 +48,7 @@ import { stormPanel, stormShort, stormTitle } from './ui/storm';
 import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
-import { $, svg } from './ui/dom';
+import { $, h, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule } from './ui/capsule';
 import { alertMark, boltMark, hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
 import { LayersMenu } from './ui/layersMenu';
@@ -57,8 +58,7 @@ import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
 import { WeatherPage } from './ui/page';
-import { SearchBox } from './ui/search';
-import { settingsPanel } from './ui/settings';
+import { PIN, SearchBox } from './ui/search';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
 import type { TripPanel } from './ui/trip';
@@ -476,7 +476,36 @@ async function main(): Promise<void> {
   const setMode = (m: Mode) => {
     mode = m;
     renderLocate();
+    renderPin();
   };
+
+  // The pin on the weather card: one tap keeps the weather on this place while you look around
+  // (the cross gives way to a pin on the map); another tap and it follows the map again.
+  const pinBtn = $<HTMLButtonElement>('#cap-pin');
+  pinBtn.append(svg(PIN));
+  const pinEl = h('span', { class: 'pin-marker' });
+  pinEl.append(svg(PIN));
+  const pinMarker = new Marker({ element: pinEl, anchor: 'bottom' });
+  let pinShown = false;
+  function renderPin(): void {
+    const pinned = !store.get().followMap;
+    pinBtn.setAttribute('aria-pressed', String(pinned));
+    const label = pinned ? 'Weather pinned here. Tap to follow the map again' : 'Pin the weather here';
+    pinBtn.setAttribute('aria-label', label);
+    pinBtn.title = label;
+    // The pin marks a place on the map; your own location already has its blue dot.
+    const show = pinned && mode === 'center' && !tripOpen;
+    const s = store.get().selected;
+    if (show) pinMarker.setLngLat([s.lon, s.lat]);
+    if (show && !pinShown) pinMarker.addTo(map);
+    if (!show && pinShown) pinMarker.remove();
+    pinShown = show;
+  }
+  pinBtn.addEventListener('click', () => {
+    const pinned = store.get().followMap;
+    store.set({ followMap: !pinned });
+    showNote(pinned ? 'Weather pinned here. Move the map freely.' : 'Weather follows the map again.');
+  });
   renderLocate();
 
   const dot = new LocationDot(map, (p) => {
@@ -899,7 +928,6 @@ async function main(): Promise<void> {
 
   /* ---------- layers popover + settings ---------- */
 
-  const openSettings = () => sheet.open('settings', 'Settings', settingsPanel(store), $('#layers-btn'));
 
   /* ---------- storm cells and reports ---------- */
 
@@ -969,7 +997,6 @@ async function main(): Promise<void> {
   });
   const layersMenu = new LayersMenu(
     store,
-    openSettings,
     (layer, on) => {
       // Turning Lightning on is the user gesture that unlocks audio.
       if (layer === 'thunder' && on) {
@@ -1047,13 +1074,15 @@ async function main(): Promise<void> {
       rerenderStorm();
     }
     if (s.followMap !== prev.followMap) {
-      // Pinning the weather while looking around: back to your location's weather (the map stays put).
-      if (!s.followMap && mode === 'center' && dot.position) {
-        setMode('gps');
-        select(dot.position, { gps: true });
+      // Following again: the weather jumps to the cross. Pinning keeps the place on the card.
+      if (s.followMap && mode === 'center') {
+        const c = map.getCenter();
+        select({ lat: c.lat, lon: wrapLon(c.lng) });
       }
       renderLocate();
+      renderPin();
     }
+    if (s.selected !== prev.selected) renderPin();
     if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
     if (s.weatherMap !== prev.weatherMap) showWeatherMap(s);
     if (s.weatherMap !== prev.weatherMap || s.selected !== prev.selected || s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit) {
