@@ -80,12 +80,12 @@ export class ThunderLayer {
       const p = project(s.lon, s.lat);
       // Wide faint pass, then the core.
       ctx.globalAlpha = a * 0.16;
-      ctx.lineWidth = 6;
+      ctx.lineWidth = 3.5;
       strokePath(ctx, s.bolt, p.x, p.y);
       ctx.globalAlpha = a;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.4;
       strokePath(ctx, s.bolt, p.x, p.y);
-      ctx.lineWidth = 1.25;
+      ctx.lineWidth = 0.9;
       ctx.globalAlpha = a * 0.8;
       strokePath(ctx, s.branch, p.x, p.y);
     }
@@ -110,7 +110,8 @@ function strokePath(ctx: CanvasRenderingContext2D, pts: Float32Array, ox: number
 }
 
 export function makeStrike(lon: number, lat: number, born: number): Strike {
-  const len = 80 + Math.random() * 70;
+  // Short, so the bolt lands on its spot instead of filling the sky above it.
+  const len = 26 + Math.random() * 24;
   // Come in from above, within ±35° of vertical; end at the strike point.
   const ang = -Math.PI / 2 + (Math.random() - 0.5) * (Math.PI * 0.39);
   const start: [number, number] = [Math.cos(ang) * len, Math.sin(ang) * len];

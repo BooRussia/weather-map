@@ -49,7 +49,7 @@ import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule } from './ui/capsule';
-import { alertMark, hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
+import { alertMark, boltMark, hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
 import { LayersMenu } from './ui/layersMenu';
 import { alertDetail, alertsList, alertsOfType, type AlertsHooks } from './ui/alertsPanel';
 import { getAlert, type Alert } from './data/nws';
@@ -820,6 +820,57 @@ async function main(): Promise<void> {
     if (!store.get().layers.tropics) return;
     if (storms.length) openStorm(selectedStorm ?? strongest().id);
     else showNote('No active tropical systems');
+  });
+
+  /* ---------- lightning only ---------- */
+
+  // One tap: radar and live lightning, nothing else (hurricanes, storm tracks, outlooks, alert areas,
+  // clouds, wind, the weather map all off). Tap again for what was on before; changing any layer ends it.
+  const boltBtn = $<HTMLButtonElement>('#bolt-btn');
+  boltBtn.append(svg(boltMark));
+  let beforeBolt: Pick<AppState, 'layers' | 'alertAreas' | 'weatherMap'> | null = null;
+  const boltOnly = (s: AppState) =>
+    s.layers.rain &&
+    s.layers.thunder &&
+    !s.layers.wind &&
+    !s.layers.clouds &&
+    !s.layers.tropics &&
+    !s.layers.outlook &&
+    !s.layers.cells &&
+    !s.alertAreas &&
+    s.weatherMap === 'none';
+  const renderBoltBtn = () => {
+    const on = beforeBolt != null;
+    boltBtn.setAttribute('aria-pressed', String(on));
+    boltBtn.setAttribute('aria-label', on ? 'Show the other layers again' : 'Lightning only');
+  };
+  boltBtn.addEventListener('click', () => {
+    const s = store.get();
+    if (beforeBolt) {
+      const back = beforeBolt;
+      beforeBolt = null;
+      store.set({ layers: back.layers, alertAreas: back.alertAreas, weatherMap: back.weatherMap });
+      renderBoltBtn();
+      return;
+    }
+    beforeBolt = { layers: s.layers, alertAreas: s.alertAreas, weatherMap: s.weatherMap };
+    if (sheet.current === 'storm') sheet.close();
+    store.set({
+      layers: { ...s.layers, rain: true, thunder: true, wind: false, clouds: false, tropics: false, outlook: false, cells: false },
+      alertAreas: false,
+      weatherMap: 'none',
+    });
+    renderBoltBtn();
+    // The tap is the gesture that unlocks the crackle; say so if there's none in view.
+    primeAudio();
+    void loadLightning(true);
+  });
+  // Any other change to the layers ends lightning-only (the button lets go; nothing is put back).
+  store.subscribe((s) => {
+    if (beforeBolt && !boltOnly(s)) {
+      beforeBolt = null;
+      renderBoltBtn();
+    }
   });
 
   /* ---------- refresh ---------- */

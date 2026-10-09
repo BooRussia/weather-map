@@ -416,3 +416,43 @@ describe('satellite clouds (beta)', () => {
     expect(sunElevation(27, -87, Date.parse('2026-10-09T17:30:00Z'))).toBeGreaterThan(50);
   });
 });
+
+describe('lightning points', () => {
+  it('reads flash density from the colors, and black as none', async () => {
+    const { flashDensity } = await import('../src/data/lightning');
+    expect(flashDensity(0, 0, 0)).toBe(0);
+    expect(flashDensity(0, 0, 150)).toBeLessThan(flashDensity(0, 0, 255));
+    expect(flashDensity(0, 0, 255)).toBeLessThan(flashDensity(0, 120, 255));
+    expect(flashDensity(0, 120, 255)).toBeLessThan(flashDensity(200, 255, 255));
+  });
+
+  it('puts one point at the middle of a flash, and one at each peak where flashes stack', async () => {
+    const { densityPeaks } = await import('../src/data/lightning');
+    const w = 20;
+    const h = 10;
+    const d = new Uint16Array(w * h);
+    // A lone flash: a flat 3 × 3 patch.
+    for (let y = 2; y < 5; y++) for (let x = 2; x < 5; x++) d[y * w + x] = 200;
+    // Two overlapping flashes: a wide patch with a denser middle.
+    for (let y = 1; y < 8; y++) for (let x = 10; x < 18; x++) d[y * w + x] = 200;
+    d[4 * w + 14] = 400;
+    const peaks = densityPeaks(d, w, h);
+    expect(peaks).toHaveLength(2);
+    expect(peaks[0]).toMatchObject({ x: 3.5, y: 3.5, d: 200 });
+    expect(peaks[1]).toMatchObject({ x: 14.5, y: 4.5, d: 400 });
+  });
+
+  it('merges points split by a tile edge', async () => {
+    const { flashPoints } = await import('../src/data/lightning');
+    const pts = flashPoints(
+      [
+        { lon: -85, lat: 29, level: 2 },
+        { lon: -85.005, lat: 29, level: 1 },
+        { lon: -84.5, lat: 29, level: 1 },
+      ],
+      0.02,
+    );
+    expect(pts).toHaveLength(2);
+    expect(pts[0]).toMatchObject({ lon: -85, level: 2 });
+  });
+});

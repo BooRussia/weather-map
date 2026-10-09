@@ -325,4 +325,13 @@ describe('lightning geometry', () => {
     expect(s.bolt[1]).toBeLessThan(0); // starts above the strike point
     expect(s.branch.length).toBeGreaterThan(4);
   });
+
+  it('keeps bolts short, so they land on their spot', () => {
+    for (let i = 0; i < 50; i++) {
+      const s = makeStrike(-82, 29, 0);
+      let top = 0;
+      for (let k = 1; k < s.bolt.length; k += 2) top = Math.min(top, s.bolt[k]);
+      expect(-top).toBeLessThan(70);
+    }
+  });
 });

@@ -13,8 +13,9 @@ const REALEARTH = REALEARTH_API;
 /** GOES-East sees the U.S. and the Atlantic; GOES-West the West and the Pacific. */
 const EAST = 'GOESEastGLMFEDRadC';
 const WEST = 'GOESWestGLMFEDRadC';
-const MAX_ZOOM = 6;
-const MAX_TILES = 12;
+/** RealEarth serves the flash grid (~2 km) to zoom 7. */
+const MAX_ZOOM = 7;
+const MAX_TILES = 16;
 
 /** Flashes binned on a coarse grid: where, how strong (1..4), and the bin size in degrees. */
 export interface LightningData {
@@ -46,6 +47,69 @@ export function flashLevel(r: number, g: number, b: number): number {
   return 1;
 }
 
+/**
+ * The density itself, finely: the ramp brightens blue, then adds green, then
+ * red, so the channel sum climbs with it. 0: no flashes. Black is how
+ * RealEarth paints an empty tile (opaque), so it counts as none.
+ */
+export const flashDensity = (r: number, g: number, b: number) => (r + g + b < 30 ? 0 : r + g + b);
+
+/**
+ * Where flashes centered on one tile's density grid: the satellite records
+ * each flash as a smear (its extent), so a lone flash is a flat patch and
+ * overlapping flashes stack into a peak. Each local maximum (a pixel at least
+ * as dense as its eight neighbors, flat stretches of equal value taken
+ * together) becomes one point at its middle, in pixel units.
+ */
+export function densityPeaks(d: Uint16Array, w: number, h: number): { x: number; y: number; d: number }[] {
+  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : d[y * w + x]);
+  const isMax = (x: number, y: number) => {
+    const v = d[y * w + x];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && at(x + dx, y + dy) > v) return false;
+    return true;
+  };
+  const seen = new Uint8Array(w * h);
+  const out: { x: number; y: number; d: number }[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const v = d[i];
+      if (!v || seen[i] || !isMax(x, y)) continue;
+      // The flat stretch of this value around it; a true peak only if nothing next to it is higher.
+      let sx = 0;
+      let sy = 0;
+      let n = 0;
+      let peak = true;
+      const stack = [i];
+      seen[i] = 1;
+      while (stack.length) {
+        const k = stack.pop()!;
+        const kx = k % w;
+        const ky = (k / w) | 0;
+        sx += kx;
+        sy += ky;
+        n++;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const nx = kx + dx;
+            const ny = ky + dy;
+            const nv = at(nx, ny);
+            if (nv > v) peak = false;
+            if (nv !== v) continue;
+            const j = ny * w + nx;
+            if (seen[j]) continue;
+            seen[j] = 1;
+            stack.push(j);
+          }
+        }
+      }
+      if (peak) out.push({ x: sx / n + 0.5, y: sy / n + 0.5, d: v });
+    }
+  }
+  return out;
+}
+
 async function tilePixels(url: string, signal: AbortSignal): Promise<ImageData | null> {
   const res = await fetch(url, { signal });
   if (!res.ok) return null;
@@ -58,6 +122,61 @@ async function tilePixels(url: string, signal: AbortSignal): Promise<ImageData |
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+export interface FlashPixel {
+  lon: number;
+  lat: number;
+  level: number;
+}
+
+/** Peaks closer than this merge, degrees (~2 km): the same flash split by a tile edge, or two pixels of one peak. */
+const MIN_SPACING_DEG = 0.02;
+
+/**
+ * Merge flash points closer than `spacing` degrees, keeping the densest
+ * (greedy non-maximum suppression on a spatial hash).
+ */
+export function flashPoints(lit: FlashPixel[], spacing: number): StormCell[] {
+  if (!lit.length) return [];
+  const key = (lon: number, lat: number) => `${Math.floor(lon / spacing)},${Math.floor(lat / spacing)}`;
+  const crowd = new Map<string, number>();
+  for (const p of lit) {
+    const k = key(p.lon, p.lat);
+    crowd.set(k, (crowd.get(k) ?? 0) + 1);
+  }
+  const around = (lon: number, lat: number) => {
+    const cx = Math.floor(lon / spacing);
+    const cy = Math.floor(lat / spacing);
+    let n = 0;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) n += crowd.get(`${cx + dx},${cy + dy}`) ?? 0;
+    return n;
+  };
+  const ranked = lit.map((p) => ({ p, score: p.level * 1e6 + around(p.lon, p.lat) })).sort((a, b) => b.score - a.score);
+  const kept = new Map<string, StormCell[]>();
+  const out: StormCell[] = [];
+  for (const { p } of ranked) {
+    const cx = Math.floor(p.lon / spacing);
+    const cy = Math.floor(p.lat / spacing);
+    const cosLat = Math.cos((p.lat * Math.PI) / 180);
+    let near = false;
+    for (let dx = -1; dx <= 1 && !near; dx++) {
+      for (let dy = -1; dy <= 1 && !near; dy++) {
+        for (const q of kept.get(`${cx + dx},${cy + dy}`) ?? []) {
+          if (Math.hypot((q.lon - p.lon) * cosLat, q.lat - p.lat) < spacing) {
+            near = true;
+            break;
+          }
+        }
+      }
+    }
+    if (near) continue;
+    const cell: StormCell = { lon: p.lon, lat: p.lat, level: p.level };
+    out.push(cell);
+    const k = `${cx},${cy}`;
+    (kept.get(k) ?? kept.set(k, []).get(k)!).push(cell);
+  }
+  return out;
 }
 
 /** The latest minute of lightning over (a padded) view. */
@@ -76,7 +195,7 @@ export async function getLightning(view: Bounds, mapZoom: number, signal: AbortS
   const east = Math.min(180, view.east + padX);
   const north = Math.min(84, view.north + padY);
   const south = Math.max(-84, view.south - padY);
-  let z = Math.max(2, Math.min(MAX_ZOOM, Math.floor(mapZoom) - 1));
+  let z = Math.max(2, Math.min(MAX_ZOOM, Math.floor(mapZoom)));
   const span = (zz: number) => ({
     x0: Math.floor(tileX(west, zz)),
     x1: Math.floor(tileX(east, zz)),
@@ -86,9 +205,9 @@ export async function getLightning(view: Bounds, mapZoom: number, signal: AbortS
   let t = span(z);
   while (z > 2 && (t.x1 - t.x0 + 1) * (t.y1 - t.y0 + 1) > MAX_TILES) t = span(--z);
 
-  // Bin flashes about two tile pixels wide: enough detail, not too many glows.
-  const deg = (360 / (256 * 2 ** z)) * 2;
-  const bins = new Map<string, StormCell>();
+  // The density peaks on each tile: where flashes centered.
+  const deg = 360 / (256 * 2 ** z);
+  const lit: FlashPixel[] = [];
   const jobs: Promise<void>[] = [];
   for (let x = t.x0; x <= t.x1; x++) {
     for (let y = t.y0; y <= t.y1; y++) {
@@ -96,18 +215,17 @@ export async function getLightning(view: Bounds, mapZoom: number, signal: AbortS
       jobs.push(
         tilePixels(url, signal).then((img) => {
           if (!img) return;
-          const d = img.data;
-          for (let i = 0, p = 0; i < d.length; i += 4, p++) {
-            if (d[i + 3] < 128) continue;
-            const px = p % img.width;
-            const py = (p / img.width) | 0;
-            const lon = lonAt(x + (px + 0.5) / img.width, z);
-            const lat = latAt(y + (py + 0.5) / img.height, z);
-            const key = `${Math.floor(lon / deg)},${Math.floor(lat / deg)}`;
-            const level = flashLevel(d[i], d[i + 1], d[i + 2]);
-            const cell = bins.get(key);
-            if (!cell) bins.set(key, { lon: (Math.floor(lon / deg) + 0.5) * deg, lat: (Math.floor(lat / deg) + 0.5) * deg, level });
-            else if (level > cell.level) cell.level = level;
+          const px = img.data;
+          const dens = new Uint16Array(img.width * img.height);
+          const level = new Uint8Array(img.width * img.height);
+          for (let i = 0, p = 0; i < px.length; i += 4, p++) {
+            if (px[i + 3] < 128) continue;
+            dens[p] = flashDensity(px[i], px[i + 1], px[i + 2]);
+            if (dens[p]) level[p] = flashLevel(px[i], px[i + 1], px[i + 2]);
+          }
+          for (const pk of densityPeaks(dens, img.width, img.height)) {
+            const k = Math.min(img.width * img.height - 1, Math.floor(pk.y) * img.width + Math.floor(pk.x));
+            lit.push({ lon: lonAt(x + pk.x / img.width, z), lat: latAt(y + pk.y / img.height, z), level: level[k] || 1 });
           }
         }),
       );
@@ -115,7 +233,7 @@ export async function getLightning(view: Bounds, mapZoom: number, signal: AbortS
   }
   await Promise.all(jobs);
   return {
-    cells: [...bins.values()],
+    cells: flashPoints(lit, Math.max(1.5 * deg, MIN_SPACING_DEG)),
     cellDeg: { lon: deg, lat: deg },
     at,
     covers: { west: lonAt(t.x0, z), east: lonAt(t.x1 + 1, z), north: latAt(t.y0, z), south: latAt(t.y1 + 1, z) },

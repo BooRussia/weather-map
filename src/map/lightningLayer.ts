@@ -6,9 +6,10 @@ const GLOW = 'lightning-glow';
 const CORE = 'lightning-core';
 
 /**
- * Where lightning is flashing right now: soft warm-white glows that blend
- * into a haze, larger and brighter where flashes are dense, with a bright
- * core where they're densest. The animated bolts (layers/thunder) strike inside these.
+ * Where lightning is flashing right now: a small warm-white glow at each
+ * flash cluster's center (data/lightning picks one point per cluster), a
+ * touch larger and brighter where flashes are dense, with a bright core
+ * where they're densest, so you can tell where it struck. The animated bolts (layers/thunder) strike inside these.
  */
 export class LightningLayer {
   private visible = false;
@@ -24,22 +25,38 @@ export class LightningLayer {
       source: SOURCE,
       layout: { visibility: 'none' },
       paint: {
-        // Wider than the bins are apart, so neighbors melt into one glow instead of a dot grid.
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, ['+', 6, ['*', 2, ['get', 'level']]], 9, ['+', 18, ['*', 5, ['get', 'level']]]],
+        // Small: a point per flash cluster, kept a few kilometers apart.
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          3,
+          ['+', 1.5, ['*', 0.4, ['get', 'level']]],
+          6,
+          ['+', 2.5, ['*', 0.8, ['get', 'level']]],
+          9,
+          ['+', 4, ['*', 1.2, ['get', 'level']]],
+          12,
+          ['+', 6, ['*', 1.6, ['get', 'level']]],
+        ],
         'circle-color': '#fff6c2',
-        'circle-blur': 1,
-        'circle-opacity': ['interpolate', ['linear'], ['get', 'level'], 1, 0.12, 4, 0.4],
+        'circle-blur': 0.5,
+        'circle-opacity': ['interpolate', ['linear'], ['get', 'level'], 1, 0.6, 4, 0.9],
       },
     });
-    // A bright core only where flashes are densest (cores everywhere would draw a dot grid).
+    // A bright pinpoint at every flash center.
     m.addLayer({
       id: CORE,
       type: 'circle',
       source: SOURCE,
-      minzoom: 5,
-      filter: ['>=', ['get', 'level'], 3],
+      minzoom: 4,
       layout: { visibility: 'none' },
-      paint: { 'circle-radius': 2, 'circle-color': '#ffffff', 'circle-blur': 0.6, 'circle-opacity': 0.85 },
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 0.8, 9, 1.6, 12, 2.4],
+        'circle-color': '#ffffff',
+        'circle-blur': 0.3,
+        'circle-opacity': 0.95,
+      },
     });
   }
 

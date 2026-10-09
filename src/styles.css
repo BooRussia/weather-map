@@ -2786,6 +2786,15 @@ body.map-only .sheet {
   stroke-width: 2.2;
 }
 
+/* Lightning only: the bolt fills yellow while it's on. */
+#bolt-btn[aria-pressed='true'] {
+  color: var(--c-sun);
+}
+
+#bolt-btn[aria-pressed='true'] .icon path {
+  fill: currentColor;
+}
+
 #trip-btn[aria-expanded='true'] {
   color: var(--accent);
 }
