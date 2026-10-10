@@ -37,6 +37,7 @@ export class StopTip {
     this.pinnedFlag = pinned;
     // A tapped card can be used (its rows open things); a hover card lets the pointer through.
     this.el.classList.toggle('is-pinned', pinned);
+    this.el.setAttribute('role', pinned ? 'dialog' : 'tooltip');
     if (key !== this.key) {
       content.querySelectorAll(':scope > *').forEach((row, i) => (row as HTMLElement).style.setProperty('--i', String(i)));
       this.el.replaceChildren(content);

@@ -1,15 +1,26 @@
 import type { LatLon } from '../config';
 import { searchPlaces, type Place } from '../data/photon';
+import type { Tag } from '../data/tags';
 import { $, h, svg } from './dom';
-import { searchIcon } from './icons';
+import { closeIcon, searchIcon } from './icons';
 
 export const PIN = `<svg class="icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></svg>`;
 export const HOUSE = `<svg class="icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20H4z" /><path d="M10 20v-5h4v5" /></svg>`;
 const DEBOUNCE_MS = 280;
 
+/** Tagged places, listed while the field is empty. */
+export interface SavedPlaces {
+  list(): readonly Tag[];
+  pick(t: Tag): void;
+  remove(t: Tag): void;
+  /** How to tag one, shown while there are none. */
+  hint: string;
+}
+
 /**
  * The search field: city and street-address suggestions as you type
  * (Photon), nearest first. Arrow keys move, Enter picks, Escape closes.
+ * Empty, it lists the places you've tagged.
  */
 export class SearchBox {
   private readonly input = $<HTMLInputElement>('#search');
@@ -22,6 +33,7 @@ export class SearchBox {
   constructor(
     private readonly near: () => LatLon | null,
     private readonly onPick: (p: Place) => void,
+    private readonly saved: SavedPlaces | null = null,
   ) {
     $('#search-icon').append(svg(searchIcon));
     $('#search-form').addEventListener('submit', (e) => {
@@ -35,6 +47,7 @@ export class SearchBox {
     this.input.addEventListener('keydown', (e) => this.key(e));
     this.input.addEventListener('focus', () => {
       if (this.results.length) this.show(true);
+      else if (!this.input.value.trim()) this.renderSaved();
     });
     document.addEventListener('pointerdown', (e) => {
       if (!(e.target as HTMLElement).closest('.top')) this.show(false);
@@ -51,7 +64,8 @@ export class SearchBox {
     this.ctrl?.abort();
     if (q.length < 2) {
       this.results = [];
-      this.show(false);
+      if (!q && document.activeElement === this.input) this.renderSaved();
+      else this.show(false);
       return;
     }
     const ctrl = new AbortController();
@@ -87,6 +101,45 @@ export class SearchBox {
             });
             return h('li', {}, btn);
           })),
+    );
+    this.show(true);
+  }
+
+  /** The tagged places (tap one to go there, × to remove it), or how to tag one. */
+  private renderSaved(): void {
+    if (!this.saved) return;
+    const tags = this.saved.list();
+    this.active = -1;
+    if (!tags.length) {
+      this.list.replaceChildren(h('li', { class: 'result-empty' }, this.saved.hint));
+      this.show(true);
+      return;
+    }
+    this.list.replaceChildren(
+      h('li', { class: 'result-head', role: 'presentation' }, 'Tagged places'),
+      ...[...tags].reverse().map((t) => {
+        const go = h(
+          'button',
+          { type: 'button', class: 'result', role: 'option', 'aria-selected': 'false' },
+          h('span', { class: 'result-mark' }, svg(PIN)),
+          h('span', {}, h('span', { class: 'result-title' }, t.name)),
+        );
+        // pointerdown keeps focus in the field (the list stays put); click works for keys too.
+        go.addEventListener('pointerdown', (e) => e.preventDefault());
+        go.addEventListener('click', () => {
+          this.input.value = '';
+          this.show(false);
+          this.input.blur();
+          this.saved!.pick(t);
+        });
+        const remove = h('button', { type: 'button', class: 'result-remove', 'aria-label': `Remove ${t.name}` }, svg(closeIcon));
+        remove.addEventListener('pointerdown', (e) => e.preventDefault());
+        remove.addEventListener('click', () => {
+          this.saved!.remove(t);
+          this.renderSaved();
+        });
+        return h('li', { class: 'result-saved' }, go, remove);
+      }),
     );
     this.show(true);
   }

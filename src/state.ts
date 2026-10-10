@@ -2,6 +2,7 @@ import type { Basemap, ColorMode, LatLon } from './config';
 import type { ModelGroup } from './data/tropical';
 import { WEATHER_MAPS, type WeatherMapId } from './maps/catalog';
 import type { OutlookDay, OutlookKind } from './data/outlooks';
+import { readTags, type Tag } from './data/tags';
 
 export type Theme = 'liquid' | 'classic';
 import type { TempUnit, WindUnit } from './util/units';
@@ -79,6 +80,8 @@ export interface AppState {
   outlookDay: OutlookDay;
   /** The day's storm reports with the storm cells. */
   stormReports: boolean;
+  /** Places tagged on the map (kept on the device). */
+  tags: Tag[];
   /** The point the HUD describes. */
   selected: LatLon;
   /** The selected point came from the device location (shows the GPS arrow). */
@@ -109,6 +112,7 @@ interface Prefs {
   outlookKind?: OutlookKind;
   outlookDay?: OutlookDay;
   stormReports?: boolean;
+  tags?: Tag[];
 }
 
 function readPrefs(): Prefs {
@@ -142,6 +146,7 @@ function writePrefs(s: AppState): void {
       outlookKind: s.outlookKind,
       outlookDay: s.outlookDay,
       stormReports: s.stormReports,
+      tags: s.tags,
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
@@ -180,6 +185,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     outlookKind: prefs.outlookKind === 'flood' ? 'flood' : 'severe',
     outlookDay: prefs.outlookDay === 2 || prefs.outlookDay === 3 ? prefs.outlookDay : 1,
     stormReports: prefs.stormReports ?? false,
+    tags: readTags(prefs.tags),
     selected,
     gps,
   };
@@ -206,7 +212,8 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.weatherMap !== undefined ||
         patch.outlookKind !== undefined ||
         patch.outlookDay !== undefined ||
-        patch.stormReports !== undefined
+        patch.stormReports !== undefined ||
+        patch.tags !== undefined
       ) {
         writePrefs(state);
       }

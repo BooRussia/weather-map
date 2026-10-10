@@ -63,6 +63,14 @@ function timeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
  * progressively: place first, then temperature + condition, then alerts.
  * Pass `previous` on a refresh so the HUD keeps its values meanwhile.
  */
+/** A point's name, as the readout would show it: the NWS town, else an OpenStreetMap place, else coordinates. */
+export async function placeName(point: LatLon, signal?: AbortSignal): Promise<string> {
+  const p = await getPoint(point.lat, point.lon, signal).catch(() => null);
+  if (p) return placeLabel(p);
+  const name = await reverseName(point.lat, point.lon, signal).catch(() => null);
+  return name ?? formatCoord(point.lat, point.lon);
+}
+
 export async function loadConditions(
   point: LatLon,
   signal: AbortSignal,

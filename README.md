@@ -11,7 +11,8 @@ Live radar, wind, and forecasts over a satellite map, phone first. One screen: t
 Switch under Layers → Units, sound & appearance → Theme. The choice is remembered. Both themes share one layout; `DESIGN.md` defines both.
 
 ### On the map
-- **Search** (top): cities and street addresses, suggestions as you type, nearby results first. Press `/` on a keyboard to jump to it.
+- **Search** (top): cities and street addresses, suggestions as you type, nearby results first. Press `/` on a keyboard to jump to it. Tap the empty field for your tagged places.
+- **Tagged places**: press and hold the map (right-click with a mouse) to tag a spot. It's named after the nearest town, and you can type your own name ("Lake house"). Or tap **Tag this place** on a place's weather page. Each tag is a white pin with its name, small when zoomed out and bigger as you zoom in; tap it to fly there and get its weather, under its own name (the pin turns blue while you're on it). Press and hold a pin to rename or remove it, or remove tags from the search list. Tags stay on the device, up to 50.
 - **You** are the blue dot. The **locate button** (top right, under Layers) snaps the map back to you and fills in blue while it follows you.
 - **The weather stays on you** (or the place you searched) while you look around: the **pin** in the weather card's bottom corner is on by default, and a pin marks a searched place on the map. Hover it for what it does. Tap it off and the readout follows the **center cross** instead: drag, tap, or search, and it reloads when the map settles. Units, thunder sound, the look, and where the data comes from sit at the bottom of the Layers drawer.
 - **Readout** (glass card): place ("My location" when it's you), temperature, condition, `H:87° L:76°`. Tap it for the weather page.

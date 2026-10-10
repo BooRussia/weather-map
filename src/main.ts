@@ -6,7 +6,7 @@ import '@fontsource/ibm-plex-sans/latin-500.css';
 import './styles.css';
 
 import { CONDITIONS_REFRESH_MS, DEFAULT_LOCATION, DEFAULT_PLACE_LABEL, GRID_MAX_AGE_MS, INITIAL_ZOOM, SAT_RAIN_PRODUCT, TIMELINE_PAST_HOURS, type LatLon } from './config';
-import { loadConditions, type Conditions } from './data/conditions';
+import { loadConditions, placeName, type Conditions } from './data/conditions';
 import { geoPermission } from './data/geolocate';
 import { GridController } from './data/gridController';
 import { WindController } from './data/windController';
@@ -25,6 +25,9 @@ import { OutlookLayer } from './map/outlookLayer';
 import { StormLayer, type StormHit } from './map/stormLayer';
 import { LightningLayer } from './map/lightningLayer';
 import { RadarSitesLayer } from './map/radarSitesLayer';
+import { TagsLayer } from './map/tagsLayer';
+import { addTag, removeTag, renameTag, tagAt, tagName, type Tag } from './data/tags';
+import { tagCard } from './ui/tagCard';
 import { getRadarSites, getSiteScans, siteCall, type RadarSite, type SiteFrames, type SiteProduct } from './data/radarSites';
 import { renderSiteBar } from './ui/siteBar';
 import { getLightning } from './data/lightning';
@@ -187,6 +190,9 @@ async function main(): Promise<void> {
     lightning.setVisible(s.layers.thunder);
     stormCells.install();
     window.setTimeout(() => stormCells.set(s.layers.cells, s.stormReports), 600);
+    // Tagged places over everything else.
+    tagsLayer.install();
+    renderTags();
   });
 
   // Rain streaks need the Rain layer on AND the falling-rain setting on; radar needs only the layer.
@@ -356,6 +362,7 @@ async function main(): Promise<void> {
   /* ---------- one radar (tap a tower) ---------- */
 
   const sitesLayer = new RadarSitesLayer(map, token('--accent') || '#0a84ff');
+  const tagsLayer = new TagsLayer(map, token('--accent') || '#0a84ff');
   const renderSite = () =>
     renderSiteBar(chosenSite, siteFrames?.product ?? 'N0B', {
       product: (p) => void chooseSite(chosenSite, p),
@@ -429,7 +436,7 @@ async function main(): Promise<void> {
 
   let loadCtrl: AbortController | null = null;
   let lastLoaded = 0;
-  /** A search result's own name beats the NWS "3 mi ESE of …" label for that point. */
+  /** A search result's own name beats the NWS "3 mi ESE of …" label for that point (and a tag's name). */
   let labelOverride: string | null = null;
   /** New point: clear the readout first. Refresh: keep showing the old values until new ones land. */
   const loadSelected = (newPoint: boolean) => {
@@ -441,7 +448,10 @@ async function main(): Promise<void> {
       renderAll();
     }
     void loadConditions(store.get().selected, loadCtrl.signal, newPoint ? null : conditions, (c) => {
-      conditions = labelOverride ? { ...c, place: labelOverride } : c;
+      // A search result's name, else a tagged place's own name, else what NWS calls the point.
+      const s = store.get();
+      const name = labelOverride ?? tagAt(s.tags, s.selected)?.name;
+      conditions = name ? { ...c, place: name } : c;
       renderAll();
     });
   };
@@ -489,13 +499,14 @@ async function main(): Promise<void> {
   const pinMarker = new Marker({ element: pinEl, anchor: 'bottom' });
   let pinShown = false;
   function renderPin(): void {
-    const pinned = !store.get().followMap;    pinBtn.setAttribute('aria-pressed', String(pinned));
+    const pinned = !store.get().followMap;
+    pinBtn.setAttribute('aria-pressed', String(pinned));
     pinBtn.setAttribute('aria-label', pinned ? 'Weather pinned here. Tap to follow the map again' : 'Pin the weather here');
     // A quick label on hover (the browser's own tooltip takes a second to show).
     pinBtn.dataset.tip = pinned ? 'Pinned here · tap to follow the map' : 'Pin the weather here';
-    // The pin marks a place on the map; your own location already has its blue dot.
-    const show = pinned && mode === 'center' && !tripOpen;
+    // The pin marks a place on the map; your own location already has its blue dot, a tagged place its own pin.
     const s = store.get().selected;
+    const show = pinned && mode === 'center' && !tripOpen && !tagAt(store.get().tags, s);
     if (show) pinMarker.setLngLat([s.lon, s.lat]);
     if (show && !pinShown) pinMarker.addTo(map);
     if (!show && pinShown) pinMarker.remove();
@@ -546,10 +557,20 @@ async function main(): Promise<void> {
 
   // Tap: bring that spot under the cross. (With the weather pinned, a tap changes nothing.)
   map.on('click', (e) => {
+    if (held) {
+      held = false;
+      return;
+    }
     // A trip stop's dot opens its card; with a card open from a tap, a tap elsewhere just closes it.
     const stop = tripLayer?.hit(e.point, 14) ?? null;
     if (stop != null) {
       openStopTip(stop, true);
+      return;
+    }
+    // A tagged place's pin: fly there and show its weather.
+    const tag = tagsLayer.hit(e.point);
+    if (tag) {
+      goToTag(tag);
       return;
     }
     if (stopTip.pinned) {
@@ -630,7 +651,170 @@ async function main(): Promise<void> {
       const zoom = place.kind === 'area' ? Math.max(map.getZoom(), 8) : Math.max(map.getZoom(), 11);
       map.flyTo({ center: [place.lon, place.lat], zoom, duration: 900, essential: true });
     },
+    {
+      list: () => store.get().tags,
+      pick: (t) => goToTag(t),
+      remove: (t) => {
+        store.set({ tags: removeTag(store.get().tags, t.id) });
+        relabel(t, null);
+        showNote(`Removed ${t.name}.`);
+      },
+      hint: matchMedia('(hover: hover)').matches ? 'Right-click the map to tag a place.' : 'Press and hold the map to tag a place.',
+    },
   );
+
+  /* ---------- tagged places ---------- */
+
+  /** Zoom a tagged place reaches at least (a town and its surroundings). */
+  const TAG_ZOOM = 10;
+  /** How long a press on the map is held to tag the spot, ms. */
+  const HOLD_MS = 500;
+  const renderTags = () => {
+    const s = store.get();
+    tagsLayer.set(s.tags, tagAt(s.tags, s.selected)?.id ?? null);
+  };
+  /** Fly to a tagged place and show its weather, under its own name. */
+  const goToTag = (t: Tag) => {
+    closeStopTip();
+    following = false;
+    setMode('center');
+    select({ lat: t.lat, lon: t.lon }, { label: t.name });
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    map.flyTo({ center: [t.lon, t.lat], zoom: Math.max(map.getZoom(), TAG_ZOOM), duration: still ? 0 : 1100, essential: true });
+  };
+  /** While the readout is on a tag it shows the tag's name: keep that in step when the tag changes. */
+  const relabel = (t: Tag, name: string | null) => {
+    if (!tagAt([t], store.get().selected)) return;
+    labelOverride = name;
+    if (name && conditions) {
+      conditions = { ...conditions, place: name };
+      renderAll();
+    } else if (!name) {
+      loadSelected(false);
+    }
+  };
+  let tagLookup: AbortController | null = null;
+  /** The card to tag a spot (or rename or remove the tag already there). */
+  const openTagCard = (at: LatLon, existing: Tag | null) => {
+    tagLookup?.abort();
+    const p = existing ? { lat: existing.lat, lon: existing.lon } : at;
+    let found = existing?.name ?? '';
+    const card = tagCard(existing?.name ?? null, {
+      save: (raw) => {
+        const s = store.get();
+        const name = tagName(raw, found);
+        store.set({ tags: existing ? renameTag(s.tags, existing.id, name) : addTag(s.tags, p, name) });
+        if (existing) relabel(existing, name);
+        closeStopTip();
+        showNote(existing ? `Renamed to ${name}.` : `Tagged ${name}. Tap its pin to go there.`);
+      },
+      remove: existing
+        ? () => {
+            store.set({ tags: removeTag(store.get().tags, existing.id) });
+            relabel(existing, null);
+            closeStopTip();
+            showNote(`Removed ${existing.name}.`);
+          }
+        : undefined,
+      cancel: () => closeStopTip(),
+    });
+    if (!existing) {
+      const ctrl = new AbortController();
+      tagLookup = ctrl;
+      void placeName(p, ctrl.signal).then((name) => {
+        if (ctrl.signal.aborted) return;
+        found = name;
+        card.setName(found);
+      });
+    }
+    tipAnchor = p;
+    tripLayer?.highlight(null);
+    const s = screenOf(p);
+    stopTip.show(areaKey--, card.el, s.x, s.y, true);
+    // With a keyboard, type the name right away (on phones the keyboard would cover the map).
+    if (matchMedia('(hover: hover)').matches) card.el.querySelector('input')?.focus({ preventScroll: true });
+  };
+  // Press and hold the map (right-click with a mouse) to tag the spot, or to rename or remove a tag.
+  let held = false;
+  let lastHold = 0;
+  const onHold = (point: { x: number; y: number }) => {
+    if (performance.now() - lastHold < 800) return; // a long press can also fire contextmenu
+    lastHold = performance.now();
+    held = true;
+    const ll = map.unproject([point.x, point.y]);
+    openTagCard({ lat: ll.lat, lon: wrapLon(ll.lng) }, tagsLayer.hit(point));
+  };
+  {
+    const surface = map.getCanvasContainer();
+    let timer = 0;
+    let from: { x: number; y: number } | null = null;
+    const cancel = () => {
+      window.clearTimeout(timer);
+      from = null;
+    };
+    const local = (t: Touch) => {
+      const r = surface.getBoundingClientRect();
+      return { x: t.clientX - r.left, y: t.clientY - r.top };
+    };
+    surface.addEventListener(
+      'touchstart',
+      (e) => {
+        cancel();
+        held = false;
+        if (e.touches.length !== 1) return;
+        from = local(e.touches[0]);
+        timer = window.setTimeout(() => {
+          if (!from) return;
+          navigator.vibrate?.(8);
+          onHold(from);
+          from = null;
+        }, HOLD_MS);
+      },
+      { passive: true },
+    );
+    surface.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!from) return;
+        const p = local(e.touches[0]);
+        if (e.touches.length !== 1 || Math.hypot(p.x - from.x, p.y - from.y) > 10) cancel();
+      },
+      { passive: true },
+    );
+    surface.addEventListener('touchend', cancel, { passive: true });
+    surface.addEventListener('touchcancel', cancel, { passive: true });
+    surface.addEventListener('mousedown', () => (held = false));
+    map.on('contextmenu', (e) => {
+      e.originalEvent.preventDefault();
+      onHold(e.point);
+      held = false; // no click follows a right-click
+    });
+  }
+
+  // The weather page's Tag button: tag the place it shows, or untag it.
+  const pageTag = $<HTMLButtonElement>('#page-tag');
+  pageTag.prepend(svg(PIN));
+  const renderPageTag = () => {
+    const s = store.get();
+    const t = tagAt(s.tags, s.selected);
+    pageTag.setAttribute('aria-pressed', String(!!t));
+    pageTag.setAttribute('aria-label', t ? `Tagged as ${t.name}. Tap to remove the tag` : 'Tag this place');
+    $('#page-tag-text').textContent = t ? 'Tagged' : 'Tag this place';
+  };
+  pageTag.addEventListener('click', () => {
+    const s = store.get();
+    const t = tagAt(s.tags, s.selected);
+    if (t) {
+      store.set({ tags: removeTag(s.tags, t.id) });
+      relabel(t, null);
+      showNote(`Removed ${t.name}.`);
+      return;
+    }
+    const name = tagName(conditions?.place ?? '', `${s.selected.lat.toFixed(3)}, ${s.selected.lon.toFixed(3)}`);
+    store.set({ tags: addTag(s.tags, s.selected, name) });
+    showNote(`Tagged ${name}. Its pin is on the map.`);
+  });
+  renderPageTag();
 
   /* ---------- trip weather ---------- */
 
@@ -723,12 +907,11 @@ async function main(): Promise<void> {
   };
   if (matchMedia('(hover: hover)').matches) {
     map.on('mousemove', (e) => {
+      const i = tripLayer ? tripLayer.hit(e.point, 8) : null;
+      const cursor = i != null || tagsLayer.hit(e.point) ? 'pointer' : '';
+      if (map.getCanvas().style.cursor !== cursor) map.getCanvas().style.cursor = cursor;
       if (!tripLayer) return;
-      const i = tripLayer.hit(e.point, 8);
-      if (i !== hoverStop) {
-        hoverStop = i;
-        map.getCanvas().style.cursor = i != null ? 'pointer' : '';
-      }
+      if (i !== hoverStop) hoverStop = i;
       if (i != null) openStopTip(i, false);
       else if (stopTip.shown != null && !stopTip.pinned) {
         // A beat's grace, so sliding to the next dot glides the card instead of closing it.
@@ -1111,7 +1294,11 @@ async function main(): Promise<void> {
       renderLocate();
       renderPin();
     }
-    if (s.selected !== prev.selected) renderPin();
+    if (s.selected !== prev.selected || s.tags !== prev.tags) {
+      renderPin();
+      renderTags();
+      renderPageTag();
+    }
     if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
     if (s.weatherMap !== prev.weatherMap) showWeatherMap(s);
     if (s.weatherMap !== prev.weatherMap || s.selected !== prev.selected || s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit) {
@@ -1126,6 +1313,7 @@ async function main(): Promise<void> {
       palette.wind = palette.lightning = token('--fg');
       palette.rain = token('--muted');
       tripLayer?.setColors(tripColors());
+      tagsLayer.setAccent(token('--accent'));
     }
     if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme) {
       renderAll();
