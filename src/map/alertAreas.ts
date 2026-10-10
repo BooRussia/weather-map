@@ -1,5 +1,5 @@
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
-import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
+import type { GeoJSONSource, Map as MlMap, PointLike } from 'maplibre-gl';
 import type { Bounds } from '../field/grid';
 import { alertColorExpression } from '../data/alertColors';
 import { getAlertAreas, type AlertAreaProps } from '../data/warnings';
@@ -30,12 +30,17 @@ function extend(box: Bounds, coords: Position | Position[] | Position[][] | Posi
   for (const c of coords as Position[]) extend(box, c);
 }
 
+/** One alert's identity across its zones. */
+const alertId = (p: AlertAreaProps) => p.cap_id || p.url || `${p.prod_type}|${p.wfo}|${p.expiration}`;
+
+const SIG_RANK: Record<string, number> = { W: 3, A: 2, Y: 1, S: 0 };
+
 /** Zones of the same alert grouped into one item, with a box around them all. */
 export function groupAlerts(features: Feature<Geometry, AlertAreaProps>[]): AlertItem[] {
   const byId = new Map<string, AlertItem>();
   for (const f of features) {
     if (!f.geometry || !f.properties) continue;
-    const id = f.properties.cap_id || f.properties.url || `${f.properties.prod_type}|${f.properties.wfo}|${f.properties.expiration}`;
+    const id = alertId(f.properties);
     let item = byId.get(id);
     if (!item) {
       item = { id, props: f.properties, box: { west: Infinity, east: -Infinity, south: Infinity, north: -Infinity } };
@@ -125,6 +130,19 @@ export class AlertAreas {
     return this.items
       .filter((a) => overlaps(a.box, view))
       .sort((a, b2) => (a.props.sig === b2.props.sig ? 0 : a.props.sig === 'W' ? -1 : 1) || Date.parse(a.props.expiration) - Date.parse(b2.props.expiration));
+  }
+
+  /** The alerts whose areas are under a tap: warnings, then watches, then advisories and statements. */
+  hit(point: { x: number; y: number }): AlertItem[] {
+    if (!this.visible || !this.map.getLayer(FILL)) return [];
+    const box: [PointLike, PointLike] = [
+      [point.x - 2, point.y - 2],
+      [point.x + 2, point.y + 2],
+    ];
+    const ids = new Set(this.map.queryRenderedFeatures(box, { layers: [FILL] }).map((f) => alertId(f.properties as AlertAreaProps)));
+    return this.items
+      .filter((a) => ids.has(a.id))
+      .sort((a, b) => (SIG_RANK[b.props.sig] ?? 0) - (SIG_RANK[a.props.sig] ?? 0) || Date.parse(a.props.expiration) - Date.parse(b.props.expiration));
   }
 
   /** Make sure alerts are loaded for the view now (e.g. when the list opens with the layer off). */

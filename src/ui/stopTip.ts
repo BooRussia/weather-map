@@ -35,6 +35,8 @@ export class StopTip {
   show(key: number, content: HTMLElement, x: number, y: number, pinned: boolean): void {
     const fresh = this.key == null;
     this.pinnedFlag = pinned;
+    // A tapped card can be used (its rows open things); a hover card lets the pointer through.
+    this.el.classList.toggle('is-pinned', pinned);
     if (key !== this.key) {
       content.querySelectorAll(':scope > *').forEach((row, i) => (row as HTMLElement).style.setProperty('--i', String(i)));
       this.el.replaceChildren(content);

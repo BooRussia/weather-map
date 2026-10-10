@@ -66,8 +66,8 @@ export interface AppState {
   /** Liquid (Apple-like, default) or Classic (the original black-and-amber). */
   theme: Theme;
   /**
-   * Moving the map moves the readout to the center cross (default). Off: the
-   * readout stays on your location, or the place you searched, while you look around.
+   * Moving the map moves the readout to the center cross. Off (the default, the pin on the weather
+   * card): the readout stays on your location, or the place it shows, while you look around.
    */
   followMap: boolean;
   tropics: TropicalOptions;
@@ -101,7 +101,8 @@ interface Prefs {
   precipType?: boolean;
   alertAreas?: boolean;
   theme?: Theme;
-  followMap?: boolean;
+  /** The weather card's pin (2026-10-09: pinned by default; replaces the old followMap key). */
+  pinned?: boolean;
   tropics?: Partial<TropicalOptions>;
   modelGroups?: ModelGroup[];
   weatherMap?: WeatherMapId;
@@ -134,7 +135,7 @@ function writePrefs(s: AppState): void {
       precipType: s.precipType,
       alertAreas: s.alertAreas,
       theme: s.theme,
-      followMap: s.followMap,
+      pinned: !s.followMap,
       tropics: s.tropics,
       modelGroups: s.modelGroups,
       weatherMap: s.weatherMap,
@@ -172,7 +173,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     precipType: prefs.precipType ?? true,
     alertAreas: prefs.alertAreas ?? true,
     theme: prefs.theme === 'classic' ? 'classic' : 'liquid',
-    followMap: prefs.followMap ?? true,
+    followMap: prefs.pinned === false,
     tropics: { ...DEFAULT_TROPICS, ...prefs.tropics },
     modelGroups: Array.isArray(prefs.modelGroups) ? prefs.modelGroups : legacyGroups() ?? DEFAULT_MODEL_GROUPS,
     weatherMap: WEATHER_MAPS.some((m) => m.id === prefs.weatherMap) ? prefs.weatherMap! : 'none',

@@ -547,30 +547,33 @@ button {
 
 .cap-pin {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
+  right: 8px;
+  bottom: 8px;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  color: var(--muted);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
   transition:
     color var(--dur) var(--ease),
     background-color var(--dur) var(--ease);
 }
 
 .cap-pin .icon {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
 }
 
 .cap-pin:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .cap-pin[aria-pressed='true'] {
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-on);
 }
 
 .cap-pin[aria-pressed='true'] .icon path {
@@ -578,8 +581,44 @@ button {
 }
 
 .cap-pin[aria-pressed='true'] .icon circle {
-  fill: var(--accent-on);
+  fill: var(--accent);
   stroke: none;
+}
+
+/* What the pin does, right away on hover or keyboard focus. */
+.cap-pin::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  color: var(--fg);
+  font-size: var(--fs-foot);
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-4px, -50%);
+  pointer-events: none;
+  transition:
+    opacity 120ms var(--ease),
+    transform 120ms var(--ease);
+}
+
+@media (hover: hover) {
+  .cap-pin:hover::after {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+}
+
+.cap-pin:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
 }
 
 /* The pinned place on the map. */
@@ -3000,6 +3039,52 @@ body.map-only .sheet {
 
 .stop-tip.is-placing {
   transition: none;
+}
+
+.stop-tip.is-open.is-pinned {
+  pointer-events: auto;
+}
+
+/* A tapped area's card: one row per alert (opens its full text), then the outlook. */
+.tip-list {
+  display: grid;
+  gap: 2px;
+  min-width: 220px;
+}
+
+.tip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0 -6px;
+  padding: 6px;
+  border-radius: 12px;
+  text-align: left;
+  color: var(--fg);
+  transition: background-color var(--dur) var(--ease);
+}
+
+button.tip-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tip-row .icon {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.tip-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tip-row-sub {
+  font-size: var(--fs-foot);
+  color: var(--muted);
 }
 
 .stop-tip.is-open .tip-body > * {

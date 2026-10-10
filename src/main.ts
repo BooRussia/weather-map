@@ -40,7 +40,8 @@ import { GEOMET_MAPS, GeoMetSource, RoutedSource } from './maps/geometSource';
 import { GibsInfraredSource } from './maps/gibsSource';
 import { renderMapLegend } from './ui/mapLegend';
 import type { TripLayer } from './map/tripLayer';
-import type { StopTip } from './ui/stopTip';
+import { StopTip } from './ui/stopTip';
+import { areaCard, type OutlookHit } from './ui/areaCard';
 import { TropicalLayer } from './map/tropicalLayer';
 import type { FeatureCollection } from 'geojson';
 import { getOutlook, getStormGIS, getStorms, getWindProbs, type ModelGroup, type Outlook, type Storm, type StormGIS } from './data/tropical';
@@ -488,11 +489,10 @@ async function main(): Promise<void> {
   const pinMarker = new Marker({ element: pinEl, anchor: 'bottom' });
   let pinShown = false;
   function renderPin(): void {
-    const pinned = !store.get().followMap;
-    pinBtn.setAttribute('aria-pressed', String(pinned));
-    const label = pinned ? 'Weather pinned here. Tap to follow the map again' : 'Pin the weather here';
-    pinBtn.setAttribute('aria-label', label);
-    pinBtn.title = label;
+    const pinned = !store.get().followMap;    pinBtn.setAttribute('aria-pressed', String(pinned));
+    pinBtn.setAttribute('aria-label', pinned ? 'Weather pinned here. Tap to follow the map again' : 'Pin the weather here');
+    // A quick label on hover (the browser's own tooltip takes a second to show).
+    pinBtn.dataset.tip = pinned ? 'Pinned here · tap to follow the map' : 'Pin the weather here';
     // The pin marks a place on the map; your own location already has its blue dot.
     const show = pinned && mode === 'center' && !tripOpen;
     const s = store.get().selected;
@@ -507,6 +507,7 @@ async function main(): Promise<void> {
     showNote(pinned ? 'Weather pinned here. Move the map freely.' : 'Weather follows the map again.');
   });
   renderLocate();
+  renderPin();
 
   const dot = new LocationDot(map, (p) => {
     saveLastFix(p);
@@ -551,7 +552,7 @@ async function main(): Promise<void> {
       openStopTip(stop, true);
       return;
     }
-    if (stopTip?.pinned) {
+    if (stopTip.pinned) {
       closeStopTip();
       return;
     }
@@ -569,6 +570,13 @@ async function main(): Promise<void> {
       return;
     }
     if (tropical.hit(e.point)) return;
+    // A watch, warning, or outlook area: say what it is.
+    const areaAlerts = alertAreas.hit(e.point);
+    const areaOutlook = stormOutlook.hit(e.point);
+    if (areaAlerts.length || areaOutlook) {
+      openAreaTip(areaAlerts, areaOutlook, { lat: e.lngLat.lat, lon: e.lngLat.lng });
+      return;
+    }
     if (!followsMap()) return;
     following = false;
     setMode('center');
@@ -643,10 +651,9 @@ async function main(): Promise<void> {
       : { top: 80, right: 80, bottom: 150, left: r.right + 30 };
   };
   const createTrip = async (): Promise<TripPanel> => {
-    const [{ TripPanel }, { TripLayer }, { StopTip }] = await Promise.all([import('./ui/trip'), import('./map/tripLayer'), import('./ui/stopTip')]);
+    const [{ TripPanel }, { TripLayer }] = await Promise.all([import('./ui/trip'), import('./map/tripLayer')]);
     const layer = new TripLayer(map, tripColors());
     tripLayer = layer;
-    stopTip = new StopTip(() => [document.querySelector('.controls')]);
     trip = new TripPanel({
       myLocation: () => dot.position,
       near: () => store.get().selected,
@@ -673,35 +680,50 @@ async function main(): Promise<void> {
     });
     return trip;
   };
-  // A stop's dot: hover it (tap on phones) for when you'll be there, the weather then, and any alerts.
-  let stopTip: StopTip | null = null;
+  // One small card on the map, for a trip stop's dot (hover it, or tap on phones: when you'll be there,
+  // the weather then, and any alerts) or a tapped watch, warning, or outlook area (what it is).
+  const stopTip = new StopTip(() => [document.querySelector('.controls')]);
+  /** Where the open card points (it follows as the map moves). */
+  let tipAnchor: LatLon | null = null;
   let tipLeave = 0;
   let hoverStop: number | null = null;
-  const stopScreenPoint = (i: number) => {
-    const pt = trip?.stopPoint(i);
-    if (!pt) return null;
-    const p = map.project([pt.lon, pt.lat]);
+  let areaKey = -1;
+  const screenOf = (p: LatLon) => {
+    const s = map.project([p.lon, p.lat]);
     const r = map.getContainer().getBoundingClientRect();
-    return { x: r.left + p.x, y: r.top + p.y };
+    return { x: r.left + s.x, y: r.top + s.y };
   };
   const openStopTip = (i: number, pinned: boolean) => {
-    if (!stopTip) return;
     window.clearTimeout(tipLeave);
     if (stopTip.shown === i && stopTip.pinned === pinned) return;
     const card = trip?.stopCard(i);
-    const at = stopScreenPoint(i);
-    if (!card || !at) return;
+    const pt = trip?.stopPoint(i);
+    if (!card || !pt) return;
+    tipAnchor = pt;
+    const at = screenOf(pt);
     stopTip.show(i, card, at.x, at.y, pinned);
     tripLayer?.highlight(i);
   };
   const closeStopTip = () => {
     window.clearTimeout(tipLeave);
-    stopTip?.hide();
+    stopTip.hide();
+    tipAnchor = null;
     tripLayer?.highlight(null);
+  };
+  /** A tapped alert or outlook area: what's there. */
+  const openAreaTip = (alerts: AlertItem[], outlook: OutlookHit | null, at: LatLon) => {
+    tipAnchor = at;
+    tripLayer?.highlight(null);
+    const card = areaCard(alerts, outlook, (a) => {
+      closeStopTip();
+      openAlertSheet(a);
+    });
+    const s = screenOf(at);
+    stopTip.show(areaKey--, card, s.x, s.y, true);
   };
   if (matchMedia('(hover: hover)').matches) {
     map.on('mousemove', (e) => {
-      if (!stopTip || !tripLayer) return;
+      if (!tripLayer) return;
       const i = tripLayer.hit(e.point, 8);
       if (i !== hoverStop) {
         hoverStop = i;
@@ -715,15 +737,14 @@ async function main(): Promise<void> {
       }
     });
     map.getCanvas().addEventListener('mouseleave', () => {
-      if (stopTip?.shown != null && !stopTip.pinned) closeStopTip();
+      if (stopTip.shown != null && !stopTip.pinned) closeStopTip();
     });
   }
-  // The card stays with its dot as the map moves.
+  // The card stays with its spot as the map moves.
   map.on('move', () => {
-    const i = stopTip?.shown;
-    if (i == null) return;
-    const at = stopScreenPoint(i);
-    if (at) stopTip!.follow(at.x, at.y);
+    if (stopTip.shown == null || !tipAnchor) return;
+    const at = screenOf(tipAnchor);
+    stopTip.follow(at.x, at.y);
   });
   let tripLoading: Promise<TripPanel> | null = null;
   const loadTrip = () => (tripLoading ??= createTrip());
@@ -961,6 +982,14 @@ async function main(): Promise<void> {
       if (alertCache.size > 120) alertCache.delete(alertCache.keys().next().value!);
     }
     return p;
+  };
+  /** One alert's full text in the sheet, from a tap on its area on the map. */
+  const openAlertSheet = (item: AlertItem) => {
+    alertShown = item;
+    sheet.open('alerts', item.props.prod_type, alertDetail(item, null, false, alertsHooks), null, () => (alertShown = null));
+    describeAlert(item)
+      .then((a) => alertShown === item && sheet.update(item.props.prod_type, alertDetail(item, a, false, alertsHooks)))
+      .catch(() => alertShown === item && sheet.update(item.props.prod_type, alertDetail(item, null, true, alertsHooks)));
   };
   const alertsHooks: AlertsHooks = {
     frame: (items) => {

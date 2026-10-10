@@ -286,7 +286,11 @@ export class TimelineBar {
     }
     if (this.waited > BUFFER_NOTE_S) this.shownQ = Number.NaN; // restore the label
     this.waited = 0;
-    this.pos = Math.min(this.pos + dt * (this.loopWindow ? AUTO_FRAMES_PER_SECOND : FRAMES_PER_SECOND), next);
+    // Run on past a frame into the next when it's loaded, keeping the time left over (stopping on
+    // every frame would cost a sliver of motion four times a second: a faint, steady hitch).
+    let pos = this.pos + dt * (this.loopWindow ? AUTO_FRAMES_PER_SECOND : FRAMES_PER_SECOND);
+    if (pos > next && !(next + 1 <= end && this.frames.ready((next + 1) * STEP_H))) pos = next;
+    this.pos = Math.min(pos, next + 1);
     this.apply();
   };
 

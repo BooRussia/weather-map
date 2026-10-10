@@ -1,5 +1,6 @@
-import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
+import type { GeoJSONSource, Map as MlMap, PointLike } from 'maplibre-gl';
 import { getOutlookAreas, type OutlookDay, type OutlookKind } from '../data/outlooks';
+import type { OutlookHit } from '../ui/areaCard';
 
 const SOURCE = 'outlook-areas';
 const FILL = 'outlook-fill';
@@ -75,6 +76,21 @@ export class OutlookLayer {
       if (this.map.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
     }
     if (visible) void this.load();
+  }
+
+  /** The worst risk area under a tap, with which outlook and day it is. */
+  hit(point: { x: number; y: number }): OutlookHit | null {
+    if (!this.visible || !this.map.getLayer(FILL)) return null;
+    const box: [PointLike, PointLike] = [
+      [point.x - 2, point.y - 2],
+      [point.x + 2, point.y + 2],
+    ];
+    let best: OutlookHit | null = null;
+    for (const f of this.map.queryRenderedFeatures(box, { layers: [FILL] })) {
+      const p = f.properties as { name: string; rank: number; fill: string };
+      if (!best || p.rank > best.rank) best = { name: p.name, rank: p.rank, fill: p.fill, kind: this.kind, day: this.day };
+    }
+    return best;
   }
 
   refreshIfStale(): void {

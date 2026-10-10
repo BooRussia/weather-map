@@ -1,6 +1,7 @@
 import { alertColor } from '../data/alertColors';
 import type { Alert } from '../data/nws';
 import type { AlertItem } from '../map/alertAreas';
+import { alertUntil } from './areaCard';
 import { h, svg } from './dom';
 import { chevronIcon } from './icons';
 
@@ -21,14 +22,6 @@ const DANGER = ['TO', 'EW', 'SV', 'FF', 'SS', 'HU', 'TY', 'TR', 'BZ', 'IS', 'WS'
 const danger = (phenom: string) => {
   const i = DANGER.indexOf(phenom);
   return i < 0 ? DANGER.length : i;
-};
-
-const until = (iso: string) => {
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return 'until further notice';
-  const d = new Date(t);
-  const sameDay = d.toDateString() === new Date().toDateString();
-  return `until ${d.toLocaleString([], sameDay ? { hour: 'numeric', minute: '2-digit' } : { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`;
 };
 
 /** "KTBW" → "NWS Tampa Bay" would need a table; the office code is what NWS prints, so keep it. */
@@ -66,7 +59,12 @@ export function alertsList(items: AlertItem[], hooks: AlertsHooks): HTMLElement 
         { class: 'group' },
         ...rows.map(([type, list]) => {
           const soonest = list.reduce((a, b) => (Date.parse(b.props.expiration) < Date.parse(a.props.expiration) ? b : a));
-          const sub = list.length > 1 ? `${list.length} in view · first ends ${until(soonest.props.expiration).replace('until ', '')}` : `${office(list[0].props.wfo)} · ${until(list[0].props.expiration)}`;
+          // Hurricane alerts run until NWS ends them: no "first ends" to give.
+          const ends = alertUntil(soonest.props);
+          const sub =
+            list.length > 1
+              ? `${list.length} in view${ends.startsWith('until ') ? ` · first ends ${ends.slice('until '.length)}` : ''}`
+              : `${office(list[0].props.wfo)} · ${alertUntil(list[0].props)}`;
           return row(type, sub, swatch(list[0]), () => {
             hooks.frame(list);
             if (list.length === 1) hooks.openAlert(list[0]);
@@ -99,7 +97,7 @@ export function alertsOfType(type: string, items: AlertItem[], hooks: AlertsHook
       'div',
       { class: 'group' },
       ...list.map((a, i) => {
-        const r = row(office(a.props.wfo), until(a.props.expiration), swatch(a), () => {
+        const r = row(office(a.props.wfo), alertUntil(a.props), swatch(a), () => {
           hooks.frame([a]);
           hooks.openAlert(a);
         });
@@ -109,7 +107,7 @@ export function alertsOfType(type: string, items: AlertItem[], hooks: AlertsHook
             .then((full) => {
               if (!full.areaDesc) return;
               r.querySelector('.alert-name')!.textContent = full.areaDesc;
-              r.querySelector('.row-sub')!.textContent = `${office(a.props.wfo)} · ${until(a.props.expiration)}`;
+              r.querySelector('.row-sub')!.textContent = `${office(a.props.wfo)} · ${alertUntil(a.props)}`;
             })
             .catch(() => {});
         }
@@ -130,7 +128,7 @@ export function alertDetail(item: AlertItem, alert: Alert | null, failed: boolea
     {},
     backRow('All alerts', hooks),
     h('p', { class: 'alert-title' }, swatch(item), alert?.headline ?? p.prod_type),
-    h('p', { class: 'pop-note' }, `${office(p.wfo)} · ${until(p.expiration)}`),
+    h('p', { class: 'pop-note' }, `${office(p.wfo)} · ${alertUntil(p)}`),
     alert?.areaDesc ? h('p', { class: 'alert-area' }, alert.areaDesc) : null,
     alert
       ? h('div', {}, ...paragraphs(alert.description), ...(alert.instruction ? [h('p', { class: 'group-label' }, 'What to do'), ...paragraphs(alert.instruction)] : []))

@@ -1,6 +1,6 @@
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MlMap } from 'maplibre-gl';
 import type { ColorMode } from '../config';
-import { frameSource, STEP_H, tileMirrors, tilePalette, type FrameSource, type TilePalette, type Timeline } from '../data/timeline';
+import { frameSource, framesBetween, STEP_H, tileMirrors, tilePalette, type FrameSource, type TilePalette, type Timeline } from '../data/timeline';
 import { compile, GAUSS9_FS, QUAD_VS, target, texture2d, type Program } from './gl';
 import { RadarFlow } from './radarFlow';
 import { COVERAGE_SIZE, RadarCoverage } from './radarCoverage';
@@ -20,8 +20,8 @@ const PTYPE_MAX_Z = 6;
 const PTYPE_SPREAD_KM = 12;
 /** MapLibre's in-tile coordinate range. */
 const EXTENT = 8192;
-/** Decoded tiles kept on the GPU (128 KB each: strength and echo). */
-const MAX_TILES = 280;
+/** Decoded tiles kept on the GPU (128 KB each: strength and echo): enough for the opening loop with its 5-minute frames. */
+const MAX_TILES = 400;
 const MAX_INFLIGHT = 20;
 /** Failed tiles (e.g. a 503) are retried after this long, ms. */
 const RETRY_MS = 30_000;
@@ -153,15 +153,20 @@ out vec4 o;
 void main() { vec2 vc = texture(u_tex, v_uv).rg; o = vec4(vc, vc); }`;
 
 /**
- * Color both frames from the ramp and crossfade them. Strength is the mean
- * over echoes nearby (strength sum / echo share), so a small storm keeps its
- * color; the echo share only softens the edge. Where both frames have rain
- * the combined coverage stays constant (B over A), so nothing pulses
- * mid-fade. Output is premultiplied, as MapLibre blends.
+ * Color the frames from the ramp. Strength is the mean over echoes nearby
+ * (strength sum / echo share), so a small storm keeps its color; the echo
+ * share only softens the edge. Output is premultiplied, as MapLibre blends.
+ *
+ * Between two frames, reflectivity is mixed as amounts (strength, echo)
+ * and colored once: rain in both stays solid and shifts color smoothly, and
+ * an edge moves to its new place instead of one picture fading through the
+ * other (no washed-out, half-clear moment at every frame). Velocity keeps a
+ * color crossfade (B over A): averaging inbound and outbound would gray a
+ * couplet out mid-fade.
  *
  * Gliding: with the rain's motion between the frames (radarFlow.ts), frame a
  * is carried forward and frame b back to the in-between moment, so the two
- * line up and storms slide along their paths while they fade.
+ * line up and storms slide along their paths while they change.
  */
 const COMPOSITE_FS = `#version 300 es
 precision highp float;
@@ -179,6 +184,7 @@ uniform float u_nowW;
 uniform sampler2D u_typeA;
 uniform sampler2D u_typeB;
 uniform float u_types;
+uniform float u_mixAmounts;
 in vec2 v_uv;
 out vec4 o;
 // The ramps: rows rain, snow, ice, mix.
@@ -212,8 +218,15 @@ void main() {
     sa = mix(sn, sa, u_nowW);
     sb = mix(sn, sb, u_nowW);
   }
-  vec4 ca = frame(sa, texture(u_typeA, ua));
-  vec4 cb = frame(sb, texture(u_typeB, ub));
+  vec4 ta = texture(u_typeA, ua);
+  vec4 tb = texture(u_typeB, ub);
+  if (u_mixAmounts > 0.5) {
+    vec4 c = frame(mix(sa, sb, u_f), mix(ta, tb, u_f));
+    o = vec4(c.rgb * c.a, c.a) * u_opacity;
+    return;
+  }
+  vec4 ca = frame(sa, ta);
+  vec4 cb = frame(sb, tb);
   float A = ca.a * (1.0 - u_f);
   float T = mix(ca.a, cb.a, u_f);
   float B = A > 0.999 ? 0.0 : clamp((T - A) / (1.0 - A), 0.0, 1.0);
@@ -339,6 +352,15 @@ export class RadarLayer implements CustomLayerInterface {
   private nowcast: { k: number; w: number } | null = null;
   private aheadOffsets: number[] = [];
   private precipType = true;
+  /** The frames drawn this map frame and how far from the first to the second (5-minute frames inside the MRMS window). */
+  private drawF = 0;
+  /** Bumped when a setting changes what the field holds, so a cached build is redone. */
+  private epoch = 0;
+  /** How often each frame's tiles have changed (decoded, dropped): a cached build of that frame is redone. */
+  private versions = new Map<string, number>();
+  /** What the field and the type textures were last built from: unchanged, the build is skipped. */
+  private fieldKey = '';
+  private typesKey = '';
 
   constructor(
     private readonly map: MlMap,
@@ -370,6 +392,7 @@ export class RadarLayer implements CustomLayerInterface {
       this.product = product;
       this.rampDirty = true;
       this.timeline = t;
+      this.epoch++;
       this.standIns.clear();
       this.replan(true);
       this.map.triggerRepaint();
@@ -385,6 +408,7 @@ export class RadarLayer implements CustomLayerInterface {
       });
     const before = names();
     this.timeline = t;
+    this.epoch++;
     const after = names();
     if (this.standIns.size > 12) this.standIns.clear();
     after.forEach((f, i) => {
@@ -396,6 +420,7 @@ export class RadarLayer implements CustomLayerInterface {
   /** The radar towers (their reach decides where satellite rain fills in). */
   setSites(sites: readonly { lon: number; lat: number }[]): void {
     this.coverage.setSites(sites);
+    this.epoch++;
     this.replan(true);
     this.map.triggerRepaint();
   }
@@ -403,6 +428,7 @@ export class RadarLayer implements CustomLayerInterface {
   /** Color rain, snow, mix, and ice apart. */
   setPrecipType(on: boolean): void {
     this.precipType = on;
+    this.epoch++;
     this.replan(true);
     this.map.triggerRepaint();
   }
@@ -410,12 +436,14 @@ export class RadarLayer implements CustomLayerInterface {
   setColorMode(mode: ColorMode): void {
     this.mode = mode;
     this.rampDirty = true;
+    this.epoch++;
     this.replan(true);
     this.map.triggerRepaint();
   }
 
   setRadarOn(on: boolean): void {
     this.radarOn = on;
+    this.epoch++;
     if (on) this.replan(true);
     this.map.triggerRepaint();
   }
@@ -427,7 +455,11 @@ export class RadarLayer implements CustomLayerInterface {
     // Radar off: nothing to wait for (the timeline still drives wind and the weather map).
     if (!this.radarOn) return true;
     if (this.inNowcast(offset) && !this.nowSources().every((f) => this.sourceArrived(f))) return false;
-    return this.sourceArrived(this.sourceAt(offset));
+    const src = this.sourceAt(offset);
+    if (!this.sourceArrived(src)) return false;
+    // Playback reaches a frame through the 5-minute frames before it (the MRMS window).
+    const before = offset - STEP_H;
+    return before < this.timeline.minOffset || framesBetween(this.timeline, this.sourceAt(before), src).every((f) => this.sourceArrived(f));
   }
 
   private sourceArrived(src: FrameSource): boolean {
@@ -464,6 +496,21 @@ export class RadarLayer implements CustomLayerInterface {
     return true;
   }
 
+  private bump(frame: string): void {
+    if (this.versions.size > 4000) {
+      this.versions.clear();
+      this.epoch++;
+    }
+    this.versions.set(frame, (this.versions.get(frame) ?? 0) + 1);
+  }
+
+  /** A frame's version, with the one standing in for it while its own tiles load. */
+  private version(frame: string | null | undefined): string {
+    if (!frame) return '-';
+    const standIn = this.standIns.get(frame);
+    return `${this.versions.get(frame) ?? 0}.${standIn ? (this.versions.get(standIn) ?? 0) : ''}`;
+  }
+
   /** Precipitation type colors apply: switched on, reflectivity, in Color. */
   private typesOn(): boolean {
     return this.precipType && this.product === 'reflectivity' && this.mode === 'color';
@@ -477,24 +524,54 @@ export class RadarLayer implements CustomLayerInterface {
   /** Start loading the next `count` frames from `offset`. */
   prefetch(offset: number, direction: 1 | -1, count: number): void {
     const ahead: FrameSource[] = [];
+    const offsets: number[] = [];
+    // From the frame before: playback reaches the first one through the 5-minute frames leading into it.
+    const before = offset - STEP_H * direction;
+    let prev: FrameSource | null = before >= this.timeline.minOffset && before <= this.timeline.maxOffset ? this.sourceAt(before) : null;
     for (let k = 0; k < count; k++) {
-      const o = offset + k * 0.25 * direction;
+      const o = offset + k * STEP_H * direction;
       if (o < this.timeline.minOffset || o > this.timeline.maxOffset) break;
-      ahead.push(this.sourceAt(o));
+      const src = this.sourceAt(o);
+      if (prev) {
+        const subs = direction > 0 ? framesBetween(this.timeline, prev, src) : framesBetween(this.timeline, src, prev).reverse();
+        ahead.push(...subs);
+      }
+      ahead.push(src);
+      offsets.push(o);
+      prev = src;
     }
     this.ahead = ahead;
-    this.aheadOffsets = ahead.map((_, k) => offset + k * 0.25 * direction);
+    this.aheadOffsets = offsets;
     this.replan(false);
   }
 
   /** Show frame `a` fading into frame `b` (f = 0…1). */
   blend(a: number, b: number, f: number): void {
     this.last = [a, b, f];
-    const shown = [this.sourceAt(a)];
-    if (f > 0 && b <= this.timeline.maxOffset) shown.push(this.sourceAt(b));
-    this.shown = shown;
+    const d = this.drawn();
+    this.shown = d.fb ? [d.fa, d.fb] : [d.fa];
     this.replan(false);
     this.map.triggerRepaint();
+  }
+
+  /**
+   * The two frames to draw for the playhead and how far between them: the timeline's pair, or inside the
+   * MRMS window the real 5-minute frames on either side of the moment.
+   */
+  private drawn(): { fa: FrameSource; fb: FrameSource | null; f: number } {
+    const [a, b, f] = this.last;
+    const fa = this.sourceAt(a);
+    if (!(f > 0 && b <= this.timeline.maxOffset)) return { fa, fb: null, f: 0 };
+    const fb = this.sourceAt(b);
+    const subs = framesBetween(this.timeline, fa, fb);
+    if (!subs.length) return { fa, fb, f };
+    const chain = [fa, ...subs, fb];
+    const at = fa.at + f * (fb.at - fa.at);
+    let i = 0;
+    while (i < chain.length - 2 && chain[i + 1].at <= at) i++;
+    const p = chain[i];
+    const q = chain[i + 1];
+    return { fa: p, fb: q, f: Math.max(0, Math.min(1, (at - p.at) / (q.at - p.at))) };
   }
 
   private sourceAt(offset: number): FrameSource {
@@ -650,6 +727,7 @@ export class RadarLayer implements CustomLayerInterface {
         'u_typeA',
         'u_typeB',
         'u_types',
+        'u_mixAmounts',
       ]),
       merge: compile(gl, QUAD_VS, MERGE_FS, ['u_radar', 'u_sat', 'u_cov']),
       copyBa: compile(gl, QUAD_VS, COPY_BA_FS, ['u_src']),
@@ -740,6 +818,7 @@ export class RadarLayer implements CustomLayerInterface {
       t.tex = tex;
       t.img = null;
       t.state = 'ready';
+      this.bump(frame);
       const watched = this.inNowcast(this.playhead()) ? [...this.shown, ...this.nowSources()] : this.shown;
       if (watched.some((f) => f.url === frame || f.sat === frame)) this.shownDecodes++;
     }
@@ -755,6 +834,7 @@ export class RadarLayer implements CustomLayerInterface {
       if (this.tiles.size <= MAX_TILES * 0.85) break;
       if (t.tex) gl.deleteTexture(t.tex);
       this.tiles.delete(k);
+      this.bump(k.slice(0, k.indexOf('|')));
     }
   }
 
@@ -941,13 +1021,11 @@ export class RadarLayer implements CustomLayerInterface {
     this.evict(gl);
 
     const s = this.resizeField(gl, r);
-    const [a, b, f] = this.last;
-    const both = f > 0 && b <= this.timeline.maxOffset;
-    const fa = this.sourceAt(a);
-    const fb = both ? this.sourceAt(b) : null;
+    const { fa, fb, f } = this.drawn();
+    this.drawF = fb ? f : 0;
     const center = this.map.getCenter();
     const zoom = this.map.getZoom();
-    const view = `${r.fieldW}x${r.fieldH} ${center.lng.toFixed(5)},${center.lat.toFixed(5)},${zoom.toFixed(4)}`;
+    const view = `${r.fieldW}x${r.fieldH} ${center.lng.toFixed(5)},${center.lat.toFixed(5)},${zoom.toFixed(4)},${this.map.getBearing().toFixed(2)},${this.map.getPitch().toFixed(2)}`;
 
     // 0. Nowcast: the newest two observed frames, their motion, and "now" kept for carrying along it.
     this.nowcast = null;
@@ -957,6 +1035,7 @@ export class RadarLayer implements CustomLayerInterface {
       const key = `${n0.url} ${n0.sat} ${n1.url} ${n1.sat} ${view} ${this.shownDecodes}`;
       if (key !== this.nowKey) {
         this.nowKey = key;
+        this.fieldKey = ''; // the field is about to hold the nowcast's frames
         const nowOut = r.field[this.buildField(gl, r, args, n0, n1, s)];
         this.nowPairH = Math.max(1, n1.at - n0.at) / 3_600_000;
         this.nowFlowReady =
@@ -973,16 +1052,30 @@ export class RadarLayer implements CustomLayerInterface {
       this.nowcast = { k: this.nowFlowReady ? t / this.nowPairH : 0, w: smoothstep(NOWCAST_HANDOFF_H, NOWCAST_H, t) };
     }
 
-    // 1–2. The frames on screen.
-    r.out = this.buildField(gl, r, args, fa, fb, s);
+    // 1–2. The frames on screen, built only when something they're made of changed (between frame
+    // changes, playback just recolors the same field).
+    const v = (f: string | null | undefined) => `${f} ${this.version(f)}`;
+    const fieldKey = `${v(fa.url)} ${v(fa.sat)} ${v(fb?.url)} ${v(fb?.sat)} ${view} ${s} ${this.satOn()} ${this.coverage.version} ${this.product} ${this.epoch}`;
+    if (fieldKey !== this.fieldKey) {
+      this.fieldKey = fieldKey;
+      r.out = this.buildField(gl, r, args, fa, fb, s);
+    }
     const out = r.field[r.out];
-    if (this.typesOn()) this.buildTypes(gl, r, args, [fa.ptype, fb?.ptype ?? null], pixelKm(center.lat, zoom) / s);
+    if (this.typesOn()) {
+      const typesKey = `${v(fa.ptype)} ${v(fb?.ptype)} ${view} ${s} ${this.epoch}`;
+      if (typesKey !== this.typesKey) {
+        this.typesKey = typesKey;
+        this.buildTypes(gl, r, args, [fa.ptype, fb?.ptype ?? null], pixelKm(center.lat, zoom) / s);
+      }
+    } else {
+      this.typesKey = '';
+    }
 
-    // 3. Gliding: where the rain moves from frame a to frame b, redone when the pair, the view, or
-    // their tiles change. Not for velocity (a couplet's two halves would be dragged apart).
+    // 3. Gliding: where the rain moves from frame a to frame b, redone with the field.
+    // Not for velocity (a couplet's two halves would be dragged apart).
     this.flowOn = false;
     if (fb && !velocity && r.fieldFloat) {
-      const key = `${fa.url} ${fb.url} ${view} ${this.shownDecodes}`;
+      const key = this.fieldKey;
       if (key === this.flowKey) {
         this.flowOn = this.flowReady;
       } else {
@@ -1056,7 +1149,6 @@ export class RadarLayer implements CustomLayerInterface {
   render(gl: WebGL2RenderingContext): void {
     const r = this.res;
     if (!this.radarOn || !r || !r.fieldW) return;
-    const [, b, f] = this.last;
     gl.bindVertexArray(r.quad);
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.enable(gl.BLEND);
@@ -1095,7 +1187,8 @@ export class RadarLayer implements CustomLayerInterface {
     gl.uniform1i(r.composite.u.u_typeB, 6);
     gl.uniform1f(r.composite.u.u_types, types ? 1 : 0);
     gl.activeTexture(gl.TEXTURE0);
-    gl.uniform1f(r.composite.u.u_f, b <= this.timeline.maxOffset ? f : 0);
+    gl.uniform1f(r.composite.u.u_f, this.drawF);
+    gl.uniform1f(r.composite.u.u_mixAmounts, this.product === 'reflectivity' ? 1 : 0);
     gl.uniform1f(r.composite.u.u_opacity, 1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);

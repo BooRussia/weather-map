@@ -122,6 +122,33 @@ export function ptypeTiles(t: Timeline, at: number): string | null {
   return PTYPE_TILE_URL.replace('{minutes}', String(minutes).padStart(4, '0')).replace('{init}', utcStamp(init));
 }
 
+/** Satellite rain for a moment: the newest estimate up to SAT_MAX_AGE_MS old. */
+function satAt(t: Timeline, at: number): string | null {
+  const s = frameBefore(t.sat, at, SAT_MAX_AGE_MS);
+  return s == null ? null : satTiles(s);
+}
+
+/** Inside the MRMS window, real frames this far apart play between the timeline's 15-minute marks. */
+export const SUB_STEP_MS = 5 * 60_000;
+
+/**
+ * The MRMS frames between two neighboring frames, about 5 minutes apart, so the last 2 hours play the
+ * radar's own motion instead of motion filled in between 15-minute frames. Empty unless both ends are MRMS.
+ */
+export function framesBetween(t: Timeline, a: FrameSource, b: FrameSource): FrameSource[] {
+  if (t.site || tilePalette(a.url) !== 'mrms' || tilePalette(b.url) !== 'mrms' || !(b.at > a.at)) return [];
+  const n = Math.round((b.at - a.at) / SUB_STEP_MS);
+  const out: FrameSource[] = [];
+  let prev = a.at;
+  for (let k = 1; k < n; k++) {
+    const at = nearestFrame(t.radar, a.at + (k * (b.at - a.at)) / n, SUB_STEP_MS / 2);
+    if (at == null || at <= prev || at >= b.at) continue;
+    out.push({ kind: 'past', url: mrmsTiles(at), at, sat: satAt(t, at), ptype: ptypeTiles(t, at) });
+    prev = at;
+  }
+  return out;
+}
+
 /** Which tiles to show at an offset. */
 export function frameSource(t: Timeline, offset: number): FrameSource {
   const o = snap(offset);
@@ -135,10 +162,7 @@ export function frameSource(t: Timeline, offset: number): FrameSource {
   }
   // Now and the last 2 hours from MRMS; older from the IEM archive (both base reflectivity, the lowest beam).
   // Past radar range, satellite rain fills in.
-  const sat = (at: number) => {
-    const s = frameBefore(t.sat, at, SAT_MAX_AGE_MS);
-    return s == null ? null : satTiles(s);
-  };
+  const sat = (at: number) => satAt(t, at);
   const newest = t.radar[t.radar.length - 1];
   if (o === 0 && newest != null) return { kind: 'live', url: mrmsTiles(newest), at: newest, sat: sat(newest), ptype: ptypeTiles(t, newest) };
   // Without MRMS: IEM's always-latest tiles, versioned by the composite's time so each new scan is a new URL.
