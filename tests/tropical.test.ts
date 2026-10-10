@@ -10,10 +10,12 @@ import {
   stormGraphics,
   stormTitle,
   surgeTiles,
+  trackFromNow,
   type ModelGroup,
+  type ModelTrack,
   type Storm,
 } from '../src/data/tropical';
-import { createStore, DEFAULT_TROPICS } from '../src/state';
+import { createStore, DEFAULT_MODEL_GROUPS, DEFAULT_TROPICS } from '../src/state';
 
 /** A few a-deck lines: two OFCL runs, one interpolated GFS, its raw run, a stale model, members, an intensity-only aid. */
 const ADECK = [
@@ -94,9 +96,29 @@ describe('storms', () => {
         { tech: 'AP01', group: 'member', init: 0, pts: [[0, 22, -96, 30], [24, 24, -94, 40]] },
       ],
     } as unknown as Storm;
-    const lines = modelLines(storm, new Set<ModelGroup>(['official']));
+    const lines = modelLines(storm, new Set<ModelGroup>(['official']), 0);
     expect(lines.features).toHaveLength(1);
     expect(lines.features[0].geometry).toEqual({ type: 'LineString', coordinates: [[-96, 22], [-93, 23]] });
+  });
+
+  it('draws each model from now on, starting where its run puts the storm now', () => {
+    const H = 3_600_000;
+    const run = { tech: 'HWRF', group: 'hurricane', init: 0, pts: [[0, 20, -90, 60], [12, 22, -90, 70], [24, 24, -88, 80], [36, 26, -86, 75]] } as const;
+    const pts = trackFromNow(run as unknown as ModelTrack, 18 * H);
+    expect(pts).toHaveLength(3);
+    expect(pts[0][0]).toBe(18);
+    expect(pts[0][1]).toBeCloseTo(23);
+    expect(pts[0][2]).toBeCloseTo(-89);
+    expect(pts[0][3]).toBeCloseTo(75);
+    expect(pts.slice(1).map((p) => p[0])).toEqual([24, 36]);
+    // Exactly on a point: no duplicate; before the run: all of it; after it: nothing.
+    expect(trackFromNow(run as unknown as ModelTrack, 24 * H).map((p) => p[0])).toEqual([24, 36]);
+    expect(trackFromNow(run as unknown as ModelTrack, -H)).toHaveLength(4);
+    expect(trackFromNow(run as unknown as ModelTrack, 40 * H)).toEqual([]);
+    // A run entirely in the past isn't drawn.
+    const storm = { models: [run] } as unknown as Storm;
+    expect(modelLines(storm, new Set<ModelGroup>(['hurricane']), 40 * H).features).toHaveLength(0);
+    expect(modelLines(storm, new Set<ModelGroup>(['hurricane']), 30 * H).features[0].geometry).toMatchObject({ type: 'LineString' });
   });
 });
 
@@ -139,21 +161,41 @@ describe('hurricane choices are remembered', () => {
   };
   afterEach(() => vi.unstubAllGlobals());
 
-  it('fills choices saved by an older version with the defaults', () => {
-    vi.stubGlobal('localStorage', storage({ 'weather-map:prefs:v2': JSON.stringify({ tropics: { models: false } }) }));
-    const store = createStore({ lat: 0, lon: 0 }, false);
-    expect(store.get().tropics).toEqual({ ...DEFAULT_TROPICS, models: false });
+  it('first load shows only the essentials', () => {
+    vi.stubGlobal('localStorage', storage({}));
+    const s = createStore({ lat: 0, lon: 0 }, false).get();
+    expect(s.layers.tropics).toBe(true);
+    const on = Object.entries(s.tropics).filter(([, v]) => v === true).map(([k]) => k).sort();
+    expect(on).toEqual(['cone', 'outlook', 'past', 'track', 'warnings']);
+    expect(s.tropics.windProb).toBe(0);
+    expect(s.modelGroups).toEqual(DEFAULT_MODEL_GROUPS);
+    expect(s.modelGroups).not.toContain('member');
   });
 
-  it('moves model groups saved under the old key, and saves changes', () => {
-    const ls = storage({ 'weather-map:models:v1': JSON.stringify(['official', 'member']) });
+  it('fills choices saved by this version with the defaults', () => {
+    vi.stubGlobal('localStorage', storage({ 'weather-map:prefs:v2': JSON.stringify({ tropicsV: 2, tropics: { models: true } }) }));
+    const store = createStore({ lat: 0, lon: 0 }, false);
+    expect(store.get().tropics).toEqual({ ...DEFAULT_TROPICS, models: true });
+  });
+
+  it('starts choices saved under the old everything-on defaults over, once', () => {
+    const old = { theme: 'classic', tropics: { ...DEFAULT_TROPICS, models: true, windField: true, surge: true }, modelGroups: ['official', 'member'] };
+    vi.stubGlobal('localStorage', storage({ 'weather-map:prefs:v2': JSON.stringify(old) }));
+    const s = createStore({ lat: 0, lon: 0 }, false).get();
+    expect(s.tropics).toEqual(DEFAULT_TROPICS);
+    expect(s.modelGroups).toEqual(DEFAULT_MODEL_GROUPS);
+    expect(s.theme).toBe('classic');
+  });
+
+  it('saves changes and reads them back', () => {
+    const ls = storage({});
     vi.stubGlobal('localStorage', ls);
     const store = createStore({ lat: 0, lon: 0 }, false);
-    expect(store.get().modelGroups).toEqual(['official', 'member']);
-    store.set({ tropics: { ...store.get().tropics, cone: false, windProb: 64 } });
+    store.set({ tropics: { ...store.get().tropics, cone: false, models: true, windProb: 64 }, modelGroups: ['official', 'member'] });
     const saved = JSON.parse(ls.dump.get('weather-map:prefs:v2')!);
-    expect(saved.tropics.cone).toBe(false);
-    expect(saved.tropics.windProb).toBe(64);
-    expect(saved.modelGroups).toEqual(['official', 'member']);
+    expect(saved.tropicsV).toBe(2);
+    const again = createStore({ lat: 0, lon: 0 }, false).get();
+    expect(again.tropics).toEqual({ ...DEFAULT_TROPICS, cone: false, models: true, windProb: 64 });
+    expect(again.modelGroups).toEqual(['official', 'member']);
   });
 });

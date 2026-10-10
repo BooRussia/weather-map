@@ -981,8 +981,11 @@ async function main(): Promise<void> {
       groups: modelGroups,
       // The store redraws the map and the panel (see the subscription below).
       setGroup: (group, on) => {
-        const groups = store.get().modelGroups.filter((g) => g !== group);
-        store.set({ modelGroups: on ? [...groups, group] : groups });
+        const s = store.get();
+        const groups = s.modelGroups.filter((g) => g !== group);
+        // Spaghetti is off on first load: turning a group on here shows the models again, that group alone.
+        if (on && !s.tropics.models) store.set({ modelGroups: [group], tropics: { ...s.tropics, models: true } });
+        else store.set({ modelGroups: on ? [...groups, group] : groups });
       },
       select: (id) => {
         selectedStorm = id;
@@ -1280,6 +1283,8 @@ async function main(): Promise<void> {
         void refreshTropics();
       }
       if (s.tropics.windProb !== windProbsKt) void loadWindProbs();
+      // The panel's model switches follow Spaghetti models.
+      if (t.models !== p.models) rerenderStorm();
     }
     if (s.modelGroups !== prev.modelGroups) {
       drawTropics();

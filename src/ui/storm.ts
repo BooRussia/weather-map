@@ -127,7 +127,8 @@ export function stormPanel(storms: Storm[], gis: Map<string, StormGIS>, generate
       const n = storm.models.filter((m) => m.group === grp).length;
       const st = MODEL_STYLE[grp];
       const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch', 'aria-label': st.label });
-      input.checked = hooks.groups().has(grp);
+      // On the map only while Spaghetti models is on (Layers → Hurricanes); turning one on turns that on.
+      input.checked = hooks.state().tropics.models && hooks.groups().has(grp);
       input.addEventListener('change', () => hooks.setGroup(grp, input.checked));
       return h(
         'label',

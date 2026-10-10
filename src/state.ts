@@ -30,21 +30,30 @@ export interface TropicalOptions {
   sst: boolean;
 }
 
+/**
+ * First load shows only the essentials (owner, 2026-10-10: everything at once was too cluttered):
+ * where the storm is going (cone and track), where it's been, the coast's warnings, and storms that may
+ * form. The rest is one tap away in Layers → Hurricanes.
+ */
 export const DEFAULT_TROPICS: TropicalOptions = {
   cone: true,
   track: true,
-  models: true,
+  models: false,
   past: true,
   warnings: true,
-  windField: true,
+  windField: false,
   windProb: 0,
   arrival: false,
-  surge: true,
+  surge: false,
   outlook: true,
   sst: false,
 };
 
-export const DEFAULT_MODEL_GROUPS: ModelGroup[] = ['official', 'consensus', 'hurricane', 'global', 'ensembleMean', 'member'];
+/** Spaghetti groups when first switched on: the main models; ensemble means and members are opt-in. */
+export const DEFAULT_MODEL_GROUPS: ModelGroup[] = ['official', 'consensus', 'hurricane', 'global'];
+
+/** Saved hurricane choices from before this version give way to the defaults above, once. */
+const TROPICS_PREFS_V = 2;
 
 export interface AppState {
   /** `clouds`: satellite clouds, cut out of live GOES imagery. `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
@@ -106,6 +115,8 @@ interface Prefs {
   theme?: Theme;
   /** The weather card's pin (2026-10-09: pinned by default; replaces the old followMap key). */
   pinned?: boolean;
+  /** Which hurricane defaults `tropics` and `modelGroups` were saved under (TROPICS_PREFS_V). */
+  tropicsV?: number;
   tropics?: Partial<TropicalOptions>;
   modelGroups?: ModelGroup[];
   weatherMap?: WeatherMapId;
@@ -140,6 +151,7 @@ function writePrefs(s: AppState): void {
       alertAreas: s.alertAreas,
       theme: s.theme,
       pinned: !s.followMap,
+      tropicsV: TROPICS_PREFS_V,
       tropics: s.tropics,
       modelGroups: s.modelGroups,
       weatherMap: s.weatherMap,
@@ -154,19 +166,11 @@ function writePrefs(s: AppState): void {
   }
 }
 
-/** Model groups saved before they moved into prefs (2026-10-06). */
-function legacyGroups(): ModelGroup[] | null {
-  try {
-    const v = JSON.parse(localStorage.getItem('weather-map:models:v1') ?? 'null') as ModelGroup[] | null;
-    return Array.isArray(v) ? v : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Tiny observable store. Layer toggles are deliberately not persisted. */
 export function createStore(selected: LatLon, gps: boolean) {
   const prefs = readPrefs();
+  // Hurricane choices saved under the old everything-on defaults start over from the new ones.
+  const tropicsCurrent = prefs.tropicsV === TROPICS_PREFS_V;
   let state: AppState = {
     layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false, cells: true },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
@@ -179,8 +183,8 @@ export function createStore(selected: LatLon, gps: boolean) {
     alertAreas: prefs.alertAreas ?? true,
     theme: prefs.theme === 'classic' ? 'classic' : 'liquid',
     followMap: prefs.pinned === false,
-    tropics: { ...DEFAULT_TROPICS, ...prefs.tropics },
-    modelGroups: Array.isArray(prefs.modelGroups) ? prefs.modelGroups : legacyGroups() ?? DEFAULT_MODEL_GROUPS,
+    tropics: { ...DEFAULT_TROPICS, ...(tropicsCurrent ? prefs.tropics : {}) },
+    modelGroups: tropicsCurrent && Array.isArray(prefs.modelGroups) ? prefs.modelGroups : DEFAULT_MODEL_GROUPS,
     weatherMap: WEATHER_MAPS.some((m) => m.id === prefs.weatherMap) ? prefs.weatherMap! : 'none',
     outlookKind: prefs.outlookKind === 'flood' ? 'flood' : 'severe',
     outlookDay: prefs.outlookDay === 2 || prefs.outlookDay === 3 ? prefs.outlookDay : 1,

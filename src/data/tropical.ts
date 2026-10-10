@@ -333,16 +333,35 @@ export async function getStorms(signal?: AbortSignal): Promise<{ storms: Storm[]
   }
 }
 
-/** A storm's model guidance as map lines; each point carries its time and wind. */
-export function modelLines(storm: Storm, groups: Set<ModelGroup>): FeatureCollection {
+/**
+ * A model's track from `now` on: a run made hours ago starts where the storm was then, so the part
+ * before now only retraces the past (the past track shows that). The first point is where the run
+ * put the storm now. Empty when the whole run is in the past.
+ */
+export function trackFromNow(m: ModelTrack, now = Date.now()): ModelTrack['pts'] {
+  const t = (now - m.init) / 3_600_000;
+  const i = m.pts.findIndex((p) => p[0] >= t);
+  if (i < 0) return [];
+  if (i === 0) return m.pts;
+  const a = m.pts[i - 1];
+  const b = m.pts[i];
+  const f = (t - a[0]) / (b[0] - a[0]);
+  const at: ModelTrack['pts'][number] = [t, a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2]), a[3] + f * (b[3] - a[3])];
+  return [at, ...m.pts.slice(f >= 1 ? i + 1 : i)];
+}
+
+/** A storm's model guidance as map lines, from now on; each point carries its time and wind. */
+export function modelLines(storm: Storm, groups: Set<ModelGroup>, now = Date.now()): FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: storm.models
-      .filter((m) => groups.has(m.group) && m.pts.length >= 2)
-      .map((m) => ({
+      .filter((m) => groups.has(m.group))
+      .map((m) => ({ m, pts: trackFromNow(m, now) }))
+      .filter(({ pts }) => pts.length >= 2)
+      .map(({ m, pts }) => ({
         type: 'Feature',
         properties: { tech: m.tech, group: m.group },
-        geometry: { type: 'LineString', coordinates: m.pts.map(([, lat, lon]) => [lon, lat]) },
+        geometry: { type: 'LineString', coordinates: pts.map(([, lat, lon]) => [lon, lat]) },
       })),
   };
 }

@@ -1,17 +1,19 @@
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { GeoJSONSource, LngLatBoundsLike, Map as MlMap, PaddingOptions, PointLike } from 'maplibre-gl';
-import { category, modelLines, surgeTiles, type ModelGroup, type Outlook, type Storm, type StormGIS } from '../data/tropical';
+import { category, modelLines, surgeTiles, trackFromNow, type ModelGroup, type Outlook, type Storm, type StormGIS } from '../data/tropical';
 import type { TropicalOptions } from '../state';
 
 /**
- * Hurricanes on the map, bottom to top: sea surface temperature, NHC's
- * seven-day outlook areas, wind-speed odds, potential storm surge, the
- * forecast cone, the wind field, coastal watches and warnings, arrival times
- * of storm-force winds, the spaghetti (ensemble members faintest, the
- * official forecast boldest), the past and forecast track, forecast points
- * colored by intensity, and each storm's marker. Each part can be switched
- * off (Layers → Hurricanes). Colors are hazard data (DESIGN.md: the
- * documented exception): Saffir–Simpson, NHC's watch/warning, wind-radii, and
+ * Hurricanes on the map. Under the radar (so rain keeps its true colors and
+ * the tints don't pile up on it): sea surface temperature, NHC's seven-day
+ * outlook areas, wind-speed odds, potential storm surge, and the faint fills
+ * of the forecast cone and the wind field. Over the radar: the outlines, the
+ * coastal watches and warnings, arrival times of storm-force winds, the
+ * spaghetti from now on (ensemble members faintest, the official forecast
+ * boldest), the past and forecast track, forecast points colored by
+ * intensity, and each storm's marker. Each part can be switched off
+ * (Layers → Hurricanes). Colors are hazard data (DESIGN.md: the documented
+ * exception): Saffir–Simpson, NHC's watch/warning, wind-radii, and
  * probability colors, and a color per model group.
  */
 
@@ -107,6 +109,8 @@ export class TropicalLayer {
   private opts: TropicalOptions | null = null;
   private surgeIds = new Set<string>();
   private before: string | undefined;
+  /** Where area fills go: just under the radar. */
+  private under: string | undefined;
 
   constructor(
     private readonly map: MlMap,
@@ -118,6 +122,7 @@ export class TropicalLayer {
     this.installed = true;
     const m = this.map;
     this.before = m.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+    this.under = m.getLayer('radar') ? 'radar' : this.before;
     // The fallback style has no glyphs: no text then.
     this.hasText = !!m.getStyle().glyphs;
     const font = ['Montserrat Medium', 'Open Sans Bold', 'Noto Sans Regular'];
@@ -132,10 +137,10 @@ export class TropicalLayer {
 
     // Sea temperature sits under the radar, like the satellite imagery.
     m.addSource(SST, { type: 'raster', tiles: [sstTiles()], tileSize: 256, maxzoom: 7, attribution: 'NASA GIBS (GHRSST MUR)' });
-    add({ id: SST, type: 'raster', source: SST, paint: { 'raster-opacity': 0.55 } }, m.getLayer('radar') ? 'radar' : this.before);
+    add({ id: SST, type: 'raster', source: SST, paint: { 'raster-opacity': 0.55 } }, this.under);
 
     const risk = ['match', ['get', 'risk7day'], 'High', '#ff453a', 'Medium', '#ff9f0a', '#ffd60a'];
-    add({ id: `${S.outlook}-fill`, type: 'fill', source: S.outlook, paint: { 'fill-color': risk as never, 'fill-opacity': 0.14 } });
+    add({ id: `${S.outlook}-fill`, type: 'fill', source: S.outlook, paint: { 'fill-color': risk as never, 'fill-opacity': 0.14 } }, this.under);
     add({ id: `${S.outlook}-line`, type: 'line', source: S.outlook, paint: { 'line-color': risk as never, 'line-width': 1.5, 'line-dasharray': [3, 2] } });
     add({
       id: S.outlookPts,
@@ -150,12 +155,13 @@ export class TropicalLayer {
       source: S.prob,
       filter: ['!=', ['get', 'percentage'], '<5%'],
       paint: { 'fill-color': ['match', ['get', 'percentage'], ...PROB_BANDS.flat(), '#000'] as never, 'fill-opacity': 0.42 },
-    });
-    add({ id: `${S.cone}-fill`, type: 'fill', source: S.cone, paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.1 } });
-    add({ id: `${S.cone}-line`, type: 'line', source: S.cone, paint: { 'line-color': '#ffffff', 'line-opacity': 0.6, 'line-width': 1.2 } });
+    }, this.under);
+    add({ id: `${S.cone}-fill`, type: 'fill', source: S.cone, paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.1 } }, this.under);
     const radii = ['match', ['get', 'radii'], 34, RADII_COLOR[34], 50, RADII_COLOR[50], 64, RADII_COLOR[64], '#fff'];
-    add({ id: `${S.wind}-fill`, type: 'fill', source: S.wind, paint: { 'fill-color': radii as never, 'fill-opacity': 0.2 } });
-    add({ id: `${S.wind}-line`, type: 'line', source: S.wind, paint: { 'line-color': radii as never, 'line-width': 1.2, 'line-opacity': 0.9 } });
+    // Nested rings: faint fills, so the core isn't three tints deep; the outlines carry it.
+    add({ id: `${S.wind}-fill`, type: 'fill', source: S.wind, paint: { 'fill-color': radii as never, 'fill-opacity': 0.08 } }, this.under);
+    add({ id: `${S.cone}-line`, type: 'line', source: S.cone, paint: { 'line-color': '#ffffff', 'line-opacity': 0.6, 'line-width': 1.2 } });
+    add({ id: `${S.wind}-line`, type: 'line', source: S.wind, paint: { 'line-color': radii as never, 'line-width': 1.5, 'line-opacity': 0.9 } });
     add({ id: S.warn, type: 'line', source: S.warn, layout: { 'line-cap': 'round' }, paint: { 'line-color': WARNING_COLOR as never, 'line-width': 5 } });
     add({
       id: `${S.arrival}-line`,
@@ -303,11 +309,12 @@ export class TropicalLayer {
       const p = f.properties as Record<string, unknown>;
       p.cat = category(Number(p.maxwind) || 0);
     }
-    const models = fc(storms.flatMap((s) => tag(modelLines(s, groups), s.id)));
+    const now = Date.now();
+    const models = fc(storms.flatMap((s) => tag(modelLines(s, groups, now), s.id)));
     const ends = fc(
       storms.flatMap((s) =>
         s.models
-          .filter((m) => groups.has(m.group) && m.group !== 'member' && m.pts.length >= 2)
+          .filter((m) => groups.has(m.group) && m.group !== 'member' && trackFromNow(m, now).length >= 2)
           .map((m) => {
             const [, lat, lon] = m.pts[m.pts.length - 1];
             return { type: 'Feature', properties: { tech: m.tech, group: m.group, storm: s.id }, geometry: { type: 'Point', coordinates: [lon, lat] } } as Feature;
@@ -371,7 +378,7 @@ export class TropicalLayer {
     gis?.cone.features.forEach((f) => walk(f.geometry));
     gis?.points.features.forEach((f) => walk(f.geometry));
     if (!this.opts || this.opts.models) {
-      for (const m of storm.models) if (groups.has(m.group) && m.group !== 'member') for (const [, lat, lon] of m.pts) coords.push([lon, lat]);
+      for (const m of storm.models) if (groups.has(m.group) && m.group !== 'member') for (const [, lat, lon] of trackFromNow(m)) coords.push([lon, lat]);
     }
     const xs = coords.map((c) => c[0]);
     const ys = coords.map((c) => c[1]);

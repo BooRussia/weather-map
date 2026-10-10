@@ -13,6 +13,12 @@ const WWA_QUERY =
  */
 export const MARINE = ['SC', 'GL', 'SR', 'HF', 'SE', 'UP', 'MH', 'MF', 'MS', 'MA', 'SI', 'SW', 'RB', 'BW', 'LO', 'RP', 'SU'];
 
+/**
+ * Marine products: hurricane and tropical-storm warnings for coastal and offshore waters come in the
+ * marine weather message (MWW), as big boxes over the sea. The coast's own alerts (TCV) cover land.
+ */
+export const MARINE_PRODUCTS = ['MWW', 'CWF', 'OFF', 'NSH', 'SMW', 'MWS'];
+
 export interface AlertAreaProps {
   /** "Tornado Warning", "Flood Watch". */
   prod_type: string;
@@ -40,7 +46,7 @@ export async function getAlertAreas(
   // Simplify to about one screen pixel at this zoom.
   const degPerPx = 360 / (512 * 2 ** zoom);
   const q = new URLSearchParams({
-    where: `sig IN ('W','A') AND phenom NOT IN (${MARINE.map((m) => `'${m}'`).join(',')})`,
+    where: `sig IN ('W','A') AND phenom NOT IN (${MARINE.map((m) => `'${m}'`).join(',')}) AND (msg_type IS NULL OR msg_type NOT IN (${MARINE_PRODUCTS.map((m) => `'${m}'`).join(',')}))`,
     geometry: [clampLon(b.west), b.south, clampLon(b.east), b.north].map((n) => n.toFixed(3)).join(','),
     geometryType: 'esriGeometryEnvelope',
     inSR: '4326',

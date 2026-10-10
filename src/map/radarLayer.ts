@@ -20,15 +20,20 @@ const PTYPE_MAX_Z = 6;
 const PTYPE_SPREAD_KM = 12;
 /** MapLibre's in-tile coordinate range. */
 const EXTENT = 8192;
-/** Decoded tiles kept on the GPU (128 KB each: strength and echo): enough for the opening loop with its 5-minute frames. */
-const MAX_TILES = 400;
+/** Decoded tiles kept on the GPU (128 KB each: strength and echo): enough for the opening loop with its 5-minute frames and the margin. */
+const MAX_TILES = 480;
 const MAX_INFLIGHT = 20;
 /** Failed tiles (e.g. a 503) are retried after this long, ms. */
 const RETRY_MS = 30_000;
 /** Images decoded per map frame, so a burst of arrivals doesn't hitch a frame. */
 const DECODES_PER_FRAME = 6;
-/** Cap on the smoothing buffer's size, pixels. */
-const MAX_FIELD_PX = 1_200_000;
+/** Cap on the smoothing buffer's size, pixels (the screen and its margin). */
+const MAX_FIELD_PX = 2_000_000;
+/**
+ * The field reaches past the screen by this share of its longer side on every edge, so rain carried
+ * along its motion near an edge comes from real radar instead of the edge's last row stretched out.
+ */
+const FIELD_MARGIN = 0.08;
 /**
  * Smoothing radius (Gaussian sigma), CSS pixels, and its share of a tile pixel when zoomed past the data.
  * Light, with tiles a zoom finer than the map: smooth edges that keep a storm's fine structure.
@@ -42,6 +47,10 @@ const BLUR_PER_TEXEL = 0.75;
  */
 const NOWCAST_HANDOFF_H = 0.75;
 const NOWCAST_H = 1.75;
+/** The nowcast carries rain along the broad motion only (smoothed over about this many km): finer noise, multiplied over an hour, drew streaks. */
+const NOWCAST_SMOOTH_KM = 40;
+/** The map counts as settled this long after it last moved: only then is the rain's motion measured again for a new view. */
+const SETTLE_MS = 300;
 
 let velocityRamp: Uint8Array | null = null;
 const buildVelocityRampCached = () => (velocityRamp ??= buildVelocityRamp());
@@ -67,6 +76,25 @@ interface Cover {
   x1: number;
   y0: number;
   y1: number;
+}
+
+/** Where the field lies, in Web Mercator (0…1 across the world, y down): its northwest corner and size. */
+interface FieldView {
+  x0: number;
+  y0: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Field uv now → field uv at an earlier view `at` (north is v = 1): scale xy, offset zw.
+ * A motion read there is divided by the scale to be one here.
+ */
+export function viewXf(now: FieldView, at: FieldView | null): [number, number, number, number] {
+  if (!at) return [1, 1, 0, 0];
+  const sx = now.w / at.w;
+  const sy = now.h / at.h;
+  return [sx, sy, (now.x0 - at.x0) / at.w, 1 - sy - (now.y0 - at.y0) / at.h];
 }
 
 const lonToX = (lon: number) => (lon + 180) / 360;
@@ -126,14 +154,17 @@ void main() {
   o = code == 0 ? vec4(0.0) : vec4(code == 2 ? 1.0 : 0.0, code == 3 ? 1.0 : 0.0, code == 4 ? 1.0 : 0.0, 1.0);
 }`;
 
+/** u_pad shrinks the screen into the middle of the field, leaving its margin around it. */
 const TILE_VS = `#version 300 es
 in vec2 a_pos;
 uniform mat4 u_matrix;
 uniform vec4 u_uv;
+uniform vec2 u_pad;
 out vec2 v_uv;
 void main() {
   v_uv = u_uv.xy + a_pos * u_uv.zw;
   gl_Position = u_matrix * vec4(a_pos * ${EXTENT}.0, 0.0, 1.0);
+  gl_Position.xy *= u_pad;
 }`;
 
 /** A type tile as it is (snow, ice, mix, precipitation). */
@@ -167,19 +198,28 @@ void main() { vec2 vc = texture(u_tex, v_uv).rg; o = vec4(vc, vc); }`;
  * Gliding: with the rain's motion between the frames (radarFlow.ts), frame a
  * is carried forward and frame b back to the in-between moment, so the two
  * line up and storms slide along their paths while they change.
+ *
+ * The field covers the screen and a margin (u_fieldXf maps the screen into
+ * it). Each motion was measured at some earlier view and is mapped into this
+ * one (u_flowXf, u_nowXf), so zooming or panning doesn't measure it again
+ * every frame: rain keeps its motion instead of wobbling while the map moves.
  */
 const COMPOSITE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_field;
 uniform sampler2D u_ramp;
+uniform vec4 u_fieldXf;
 uniform sampler2D u_flow;
 uniform vec2 u_flowTexel;
+uniform vec4 u_flowXf;
 uniform float u_f;
 uniform float u_opacity;
 uniform sampler2D u_now;
 uniform sampler2D u_nowFlow;
 uniform vec2 u_nowFlowTexel;
+uniform vec4 u_nowXf;
 uniform float u_nowK;
+uniform int u_nowSteps;
 uniform float u_nowW;
 uniform sampler2D u_typeA;
 uniform sampler2D u_typeB;
@@ -202,21 +242,34 @@ vec4 frame(vec2 sc, vec4 ty) {
   c.a *= smoothstep(0.2, 0.45, share);
   return c;
 }
+// A motion at field point uv, in field uv: read where it was measured (xf), scaled back to this view.
+vec2 motion(sampler2D flow, vec2 texel, vec4 xf, vec2 uv) {
+  vec4 m = texture(flow, uv * xf.xy + xf.zw);
+  return m.xy / max(m.z, 0.05) * texel / xf.xy;
+}
 void main() {
-  vec4 m = texture(u_flow, v_uv);
-  vec2 d = m.xy / max(m.z, 0.05) * u_flowTexel;
-  vec2 ua = v_uv - u_f * d;
-  vec2 ub = v_uv + (1.0 - u_f) * d;
+  vec2 uv = v_uv * u_fieldXf.xy + u_fieldXf.zw;
+  vec2 d = motion(u_flow, u_flowTexel, u_flowXf, uv);
+  vec2 ua = uv - u_f * d;
+  vec2 ub = uv + (1.0 - u_f) * d;
   vec2 sa = texture(u_field, ua).rg;
   vec2 sb = texture(u_field, ub).ba;
   // The first hours ahead: the radar now, moved along its motion, handing off to the model (u_nowW = the
   // model's share). Mixed as (strength, echo) before coloring, so both stay solid while they trade places.
   if (u_nowW < 0.999) {
-    vec4 mn = texture(u_nowFlow, v_uv);
-    vec2 dn = mn.xy / max(mn.z, 0.05) * u_nowFlowTexel;
-    vec2 sn = texture(u_now, v_uv - u_nowK * dn).rg;
-    sa = mix(sn, sa, u_nowW);
-    sb = mix(sn, sb, u_nowW);
+    // Back along the motion in short steps, so curved paths (a hurricane's bands) stay curved.
+    vec2 p = uv;
+    float h = u_nowK / float(u_nowSteps);
+    for (int i = 0; i < 8; i++) {
+      if (i >= u_nowSteps) break;
+      p -= h * motion(u_nowFlow, u_nowFlowTexel, u_nowXf, p);
+    }
+    vec2 sn = texture(u_now, p).rg;
+    // Rain that comes from past the field's edge isn't known: there the model takes over.
+    vec2 e = min(p, 1.0 - p);
+    float w = mix(1.0, u_nowW, smoothstep(0.0, 0.03, min(e.x, e.y)));
+    sa = mix(sn, sa, w);
+    sb = mix(sn, sb, w);
   }
   vec4 ta = texture(u_typeA, ua);
   vec4 tb = texture(u_typeB, ub);
@@ -288,6 +341,8 @@ interface Gl {
   fieldFloat: boolean;
   fieldW: number;
   fieldH: number;
+  /** The screen's place in the field: field uv = screen uv × scale + offset. */
+  fieldXf: [number, number, number, number];
   /** Which field holds the finished picture this frame. */
   out: 0 | 1;
   /** Satellite rain and the radars' coverage, at half the field's size (both are coarse). */
@@ -339,14 +394,24 @@ export class RadarLayer implements CustomLayerInterface {
   private standIns = new Map<string, string>();
   /** The rain's motion between the two frames on screen (gliding playback). */
   private readonly flow = new RadarFlow();
+  /** What the motion was measured from (the frame pair; that pair's field), and the view it was measured at. */
+  private flowPair = '';
   private flowKey = '';
+  private flowView: FieldView | null = null;
   private flowReady = false;
   private flowOn = false;
+  /** When the map last moved (the motion is measured again only once it has settled). */
+  private movedAt = 0;
+  /** Where the field lies this frame. */
+  private here: FieldView = { x0: 0, y0: 0, w: 1, h: 1 };
   /** Tiles of the frames on screen decoded so far: the flow is redone when they change the picture. */
   private shownDecodes = 0;
   /** The nowcast: the radar's motion over its last two frames, and how far along it to carry "now". */
   private readonly nowFlow = new RadarFlow();
   private nowKey = '';
+  private nowFlowPair = '';
+  private nowFlowKey = '';
+  private nowFlowView: FieldView | null = null;
   private nowFlowReady = false;
   private nowPairH = STEP_H;
   private nowcast: { k: number; w: number } | null = null;
@@ -369,6 +434,7 @@ export class RadarLayer implements CustomLayerInterface {
     private radarOn: boolean,
   ) {
     map.on('move', () => {
+      this.movedAt = performance.now();
       // Re-plan while panning (throttled), so tiles stream in mid-gesture.
       if (this.moveTimer) return;
       this.moveTimer = window.setTimeout(() => {
@@ -376,7 +442,11 @@ export class RadarLayer implements CustomLayerInterface {
         this.replan(true);
       }, 250);
     });
-    map.on('moveend', () => this.replan(true));
+    map.on('moveend', () => {
+      this.replan(true);
+      // Once settled, measure the motion for the new view (even while paused).
+      window.setTimeout(() => this.map.triggerRepaint(), SETTLE_MS + 20);
+    });
   }
 
   /** Add below the basemap labels. */
@@ -462,10 +532,11 @@ export class RadarLayer implements CustomLayerInterface {
     return before < this.timeline.minOffset || framesBetween(this.timeline, this.sourceAt(before), src).every((f) => this.sourceArrived(f));
   }
 
+  /** The tiles on screen have arrived (the margin's may still be coming). */
   private sourceArrived(src: FrameSource): boolean {
-    if (!this.arrived(src.url, this.cover(), false)) return false;
-    if (src.sat && this.satOn() && !this.arrived(src.sat, this.cover(SAT_MAX_Z), true)) return false;
-    return !src.ptype || !this.typesOn() || this.arrived(src.ptype, this.cover(PTYPE_MAX_Z), false);
+    if (!this.arrived(src.url, this.cover(undefined, false), false)) return false;
+    if (src.sat && this.satOn() && !this.arrived(src.sat, this.cover(SAT_MAX_Z, false), true)) return false;
+    return !src.ptype || !this.typesOn() || this.arrived(src.ptype, this.cover(PTYPE_MAX_Z, false), false);
   }
 
   /** A moment (hours from now) inside the nowcast's reach. */
@@ -580,12 +651,38 @@ export class RadarLayer implements CustomLayerInterface {
 
   /* ---------- loading ---------- */
 
-  /** The tiles in view, a zoom finer than the map once it's past the midpoint (crisper storms). */
-  private cover(cap = this.timeline.site ? SITE_MAX_Z : MAX_Z): Cover {
+  /** The field's margin past each screen edge, CSS px. */
+  private marginPx(): number {
+    const el = this.map.getContainer();
+    return Math.round(FIELD_MARGIN * Math.max(el.clientWidth, el.clientHeight));
+  }
+
+  /** Where the field (the screen and its margin) lies on the map now. */
+  private fieldView(): FieldView {
+    const el = this.map.getContainer();
+    const m = this.marginPx();
+    const nw = this.map.unproject([-m, -m]);
+    const se = this.map.unproject([el.clientWidth + m, el.clientHeight + m]);
+    const x0 = lonToX(nw.lng);
+    const y0 = latToY(nw.lat);
+    return { x0, y0, w: lonToX(se.lng) - x0, h: latToY(se.lat) - y0 };
+  }
+
+  /** The map has stopped moving (for a moment). */
+  private settled(): boolean {
+    return !this.map.isMoving() && performance.now() - this.movedAt > SETTLE_MS;
+  }
+
+  /**
+   * The tiles in view (with the field's margin unless `margin` is off), a zoom finer than the map once
+   * it's past the midpoint (crisper storms).
+   */
+  private cover(cap = this.timeline.site ? SITE_MAX_Z : MAX_Z, margin = true): Cover {
     const z = Math.max(MIN_Z, Math.min(cap, Math.floor(this.map.getZoom() + 0.9)));
     const el = this.map.getContainer();
-    const nw = this.map.unproject([0, 0]);
-    const se = this.map.unproject([el.clientWidth, el.clientHeight]);
+    const m = margin ? this.marginPx() : 0;
+    const nw = this.map.unproject([-m, -m]);
+    const se = this.map.unproject([el.clientWidth + m, el.clientHeight + m]);
     const n = 2 ** z;
     const clamp = (v: number) => Math.max(0, Math.min(n - 1, Math.floor(v * n)));
     return { z, x0: clamp(lonToX(nw.lng)), x1: clamp(lonToX(se.lng)), y0: clamp(latToY(nw.lat)), y1: clamp(latToY(se.lat)) };
@@ -710,19 +807,23 @@ export class RadarLayer implements CustomLayerInterface {
     return {
       quad,
       decode: compile(gl, QUAD_VS, DECODE_FS, ['u_src', 'u_lut']),
-      tile: compile(gl, TILE_VS, TILE_FS, ['u_matrix', 'u_uv', 'u_tex']),
+      tile: compile(gl, TILE_VS, TILE_FS, ['u_matrix', 'u_uv', 'u_pad', 'u_tex']),
       blur: compile(gl, QUAD_VS, GAUSS9_FS, ['u_tex', 'u_step']),
       composite: compile(gl, QUAD_VS, COMPOSITE_FS, [
         'u_field',
         'u_ramp',
+        'u_fieldXf',
         'u_flow',
         'u_flowTexel',
+        'u_flowXf',
         'u_f',
         'u_opacity',
         'u_now',
         'u_nowFlow',
         'u_nowFlowTexel',
+        'u_nowXf',
         'u_nowK',
+        'u_nowSteps',
         'u_nowW',
         'u_typeA',
         'u_typeB',
@@ -732,7 +833,7 @@ export class RadarLayer implements CustomLayerInterface {
       merge: compile(gl, QUAD_VS, MERGE_FS, ['u_radar', 'u_sat', 'u_cov']),
       copyBa: compile(gl, QUAD_VS, COPY_BA_FS, ['u_src']),
       decodeType: compile(gl, QUAD_VS, DECODE_TYPE_FS, ['u_src', 'u_lut']),
-      typeTile: compile(gl, TILE_VS, TYPE_TILE_FS, ['u_matrix', 'u_uv', 'u_tex']),
+      typeTile: compile(gl, TILE_VS, TYPE_TILE_FS, ['u_matrix', 'u_uv', 'u_pad', 'u_tex']),
       type: [texture2d(gl, gl.LINEAR), texture2d(gl, gl.LINEAR)],
       typeTmp: texture2d(gl, gl.LINEAR),
       now: texture2d(gl, gl.LINEAR),
@@ -744,6 +845,7 @@ export class RadarLayer implements CustomLayerInterface {
       fieldFloat: !!gl.getExtension('EXT_color_buffer_float'),
       fieldW: 0,
       fieldH: 0,
+      fieldXf: [1, 1, 0, 0],
       out: 0,
       sat: texture2d(gl, gl.LINEAR),
       satTmp: texture2d(gl, gl.LINEAR),
@@ -838,10 +940,13 @@ export class RadarLayer implements CustomLayerInterface {
     }
   }
 
+  /** Size the field for the screen and its margin; returns field pixels per CSS pixel. */
   private resizeField(gl: WebGL2RenderingContext, r: Gl): number {
     const el = this.map.getContainer();
-    const w = el.clientWidth;
-    const h = el.clientHeight;
+    const m = this.marginPx();
+    const w = el.clientWidth + 2 * m;
+    const h = el.clientHeight + 2 * m;
+    r.fieldXf = [el.clientWidth / w, el.clientHeight / h, m / w, m / h];
     const s = Math.min(1, Math.sqrt(MAX_FIELD_PX / Math.max(1, w * h)));
     const fw = Math.max(1, Math.round(w * s));
     const fh = Math.max(1, Math.round(h * s));
@@ -1026,21 +1131,43 @@ export class RadarLayer implements CustomLayerInterface {
     const center = this.map.getCenter();
     const zoom = this.map.getZoom();
     const view = `${r.fieldW}x${r.fieldH} ${center.lng.toFixed(5)},${center.lat.toFixed(5)},${zoom.toFixed(4)},${this.map.getBearing().toFixed(2)},${this.map.getPitch().toFixed(2)}`;
+    const here = this.fieldView();
+    // While the map moves, each motion keeps the view it was measured at (the composite maps it into
+    // this one); it's measured again when its frames change, or once the map settles.
+    const settled = this.settled();
+    for (const p of [r.tile, r.typeTile]) {
+      gl.useProgram(p.prog);
+      gl.uniform2f(p.u.u_pad, r.fieldXf[0], r.fieldXf[1]);
+    }
 
     // 0. Nowcast: the newest two observed frames, their motion, and "now" kept for carrying along it.
     this.nowcast = null;
     const t = this.playhead();
     if (this.inNowcast(t)) {
       const [n0, n1] = this.nowSources();
-      const key = `${n0.url} ${n0.sat} ${n1.url} ${n1.sat} ${view} ${this.shownDecodes}`;
-      if (key !== this.nowKey) {
+      const pair = `${n0.url} ${n0.sat} ${n1.url} ${n1.sat} ${this.epoch}`;
+      const key = `${pair} ${view} ${this.shownDecodes}`;
+      const measure = pair !== this.nowFlowPair || (settled && key !== this.nowFlowKey);
+      if (key !== this.nowKey || measure) {
         this.nowKey = key;
         this.fieldKey = ''; // the field is about to hold the nowcast's frames
         const nowOut = r.field[this.buildField(gl, r, args, n0, n1, s)];
         this.nowPairH = Math.max(1, n1.at - n0.at) / 3_600_000;
-        this.nowFlowReady =
-          r.fieldFloat &&
-          this.nowFlow.compute(gl, { field: nowOut, fieldW: r.fieldW, fieldH: r.fieldH, pxKm: pixelKm(center.lat, zoom) / s, minutes: (n1.at - n0.at) / 60_000 });
+        if (measure) {
+          this.nowFlowPair = pair;
+          this.nowFlowKey = key;
+          this.nowFlowView = here;
+          this.nowFlowReady =
+            r.fieldFloat &&
+            this.nowFlow.compute(gl, {
+              field: nowOut,
+              fieldW: r.fieldW,
+              fieldH: r.fieldH,
+              pxKm: pixelKm(center.lat, zoom) / s,
+              minutes: (n1.at - n0.at) / 60_000,
+              smoothKm: NOWCAST_SMOOTH_KM,
+            });
+        }
         this.target(gl, r, r.now, r.fieldW, r.fieldH);
         gl.useProgram(r.copyBa.prog);
         gl.activeTexture(gl.TEXTURE0);
@@ -1071,16 +1198,16 @@ export class RadarLayer implements CustomLayerInterface {
       this.typesKey = '';
     }
 
-    // 3. Gliding: where the rain moves from frame a to frame b, redone with the field.
-    // Not for velocity (a couplet's two halves would be dragged apart).
+    // 3. Gliding: where the rain moves from frame a to frame b, measured on the field when the frames
+    // change (or the map settles on a new view). Not for velocity (a couplet's two halves would be dragged apart).
     this.flowOn = false;
     if (fb && !velocity && r.fieldFloat) {
-      const key = this.fieldKey;
-      if (key === this.flowKey) {
-        this.flowOn = this.flowReady;
-      } else {
-        this.flowKey = key;
-        this.flowOn = this.flowReady = this.flow.compute(gl, {
+      const pair = `${fa.url} ${fa.sat} ${fb.url} ${fb.sat} ${this.product} ${this.epoch}`;
+      if (pair !== this.flowPair || (settled && this.fieldKey !== this.flowKey)) {
+        this.flowPair = pair;
+        this.flowKey = this.fieldKey;
+        this.flowView = here;
+        this.flowReady = this.flow.compute(gl, {
           field: out,
           fieldW: r.fieldW,
           fieldH: r.fieldH,
@@ -1088,7 +1215,9 @@ export class RadarLayer implements CustomLayerInterface {
           minutes: (fb.at - fa.at) / 60_000,
         });
       }
+      this.flowOn = this.flowReady;
     }
+    this.here = here;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindVertexArray(null);
@@ -1160,12 +1289,14 @@ export class RadarLayer implements CustomLayerInterface {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, r.ramp);
     gl.uniform1i(r.composite.u.u_ramp, 1);
+    gl.uniform4f(r.composite.u.u_fieldXf, ...r.fieldXf);
     const flow = this.flowOn ? this.flow.result : null;
     const [fw, fh] = this.flow.size;
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, flow ?? this.flow.zero(gl));
     gl.uniform1i(r.composite.u.u_flow, 2);
     gl.uniform2f(r.composite.u.u_flowTexel, flow ? 1 / fw : 0, flow ? 1 / fh : 0);
+    gl.uniform4f(r.composite.u.u_flowXf, ...viewXf(this.here, flow ? this.flowView : null));
     const now = this.nowcast;
     const nowFlow = now && this.nowFlowReady ? this.nowFlow.result : null;
     const [nw, nh] = this.nowFlow.size;
@@ -1176,7 +1307,9 @@ export class RadarLayer implements CustomLayerInterface {
     gl.bindTexture(gl.TEXTURE_2D, nowFlow ?? this.flow.zero(gl));
     gl.uniform1i(r.composite.u.u_nowFlow, 4);
     gl.uniform2f(r.composite.u.u_nowFlowTexel, nowFlow ? 1 / nw : 0, nowFlow ? 1 / nh : 0);
+    gl.uniform4f(r.composite.u.u_nowXf, ...viewXf(this.here, nowFlow ? this.nowFlowView : null));
     gl.uniform1f(r.composite.u.u_nowK, now?.k ?? 0);
+    gl.uniform1i(r.composite.u.u_nowSteps, Math.max(1, Math.min(8, Math.ceil(now?.k ?? 1))));
     gl.uniform1f(r.composite.u.u_nowW, now ? now.w : 1);
     const types = this.typesOn();
     gl.activeTexture(gl.TEXTURE5);

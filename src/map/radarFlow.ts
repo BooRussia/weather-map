@@ -12,6 +12,8 @@ const MIN_TEXEL_KM = 2;
 const MAX_SPEED_KMH = 150;
 /** Search radius on the coarsest level, texels (13 × 13 candidates). */
 const MAX_RADIUS = 6;
+/** One smoothing pass's Gaussian sigma per tap step (GAUSS9_FS). */
+const SIGMA_PER_STEP = 1.75;
 
 /** Field → finest level: each frame's strength (field r for frame a, b for frame b), box-averaged per texel. */
 const DOWN_FS = `#version 300 es
@@ -114,6 +116,11 @@ export interface FlowInput {
   pxKm: number;
   /** Minutes from frame a to frame b. */
   minutes: number;
+  /**
+   * Smooth the answer over about this distance, km (a Gaussian's sigma): only the broad motion is kept.
+   * For carrying rain far ahead (the nowcast), where a block's own noise would be multiplied into streaks.
+   */
+  smoothKm?: number;
 }
 
 interface Plan {
@@ -218,6 +225,16 @@ export class RadarFlow {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       // Spread trusted vectors over the coarse answer (the next level's starting point) and the final one.
       if (top || l === 0) this.smooth(gl, p.blur, fbo, l, l === 0 ? 1.5 : 1);
+    }
+
+    // Broad motion only: passes with doubling steps until the smoothing reaches smoothKm (variances add).
+    if (i.smoothKm) {
+      const want = (i.smoothKm / plan.texKm) ** 2;
+      let have = (SIGMA_PER_STEP * 1.5) ** 2;
+      for (let step = 1.5; have < want && step <= 24; step *= 2) {
+        this.smooth(gl, p.blur, fbo, 0, step);
+        have += (SIGMA_PER_STEP * step) ** 2;
+      }
     }
     return true;
   }

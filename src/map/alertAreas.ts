@@ -54,9 +54,17 @@ export function groupAlerts(features: Feature<Geometry, AlertAreaProps>[]): Aler
 const overlaps = (a: Bounds, b: Bounds) => a.west <= b.east && a.east >= b.west && a.south <= b.north && a.north >= b.south;
 
 /**
+ * Tropical-cyclone alerts (hurricane, tropical storm, storm surge, typhoon) span whole regions zone by
+ * zone: outlining them would draw every county line for hundreds of miles, so they're tinted only.
+ */
+export const TROPICAL_PHENOMENA = ['HU', 'TR', 'SS', 'TY'];
+
+/**
  * Active NWS alert areas in their hazard colors (red tornado warning, orange
  * severe thunderstorm warning…): warnings outlined over a light fill,
- * watches a faint fill only (zone shapes would draw every county line).
+ * watches and tropical-cyclone alerts a fill only (zone shapes would draw
+ * every county line). Fills lie under the radar, so rain keeps its true
+ * colors inside a warning; outlines lie over it.
  */
 export class AlertAreas {
   private covered: Bounds | null = null;
@@ -99,14 +107,14 @@ export class AlertAreas {
           'fill-opacity': ['case', ['==', ['get', 'sig'], 'W'], 0.16, 0.08],
         },
       },
-      firstSymbol,
+      map.getLayer('radar') ? 'radar' : firstSymbol,
     );
     map.addLayer(
       {
         id: LINE,
         type: 'line',
         source: SOURCE,
-        filter: ['==', ['get', 'sig'], 'W'],
+        filter: ['all', ['==', ['get', 'sig'], 'W'], ['!', ['in', ['get', 'phenom'], ['literal', TROPICAL_PHENOMENA]]]],
         layout: { visibility: vis, 'line-join': 'round' },
         paint: { 'line-color': color, 'line-width': 1.75 },
       },

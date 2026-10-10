@@ -3,6 +3,7 @@ import { framesBetween, frameSource, makeTimeline, SUB_STEP_MS, tilePalette } fr
 import { createStore } from '../src/state';
 import { alertUntil } from '../src/ui/areaCard';
 import type { AlertAreaProps } from '../src/data/warnings';
+import { viewXf } from '../src/map/radarLayer';
 
 const at = (iso: string) => Date.parse(iso);
 
@@ -92,5 +93,33 @@ describe('a tapped alert area', () => {
   it('runs until further notice for hurricane alerts and blank times', () => {
     expect(alertUntil(props({ phenom: 'HU', expiration: new Date().toISOString() }))).toBe('in effect');
     expect(alertUntil(props({}))).toBe('in effect');
+  });
+});
+
+describe('radar motion kept through a zoom or pan', () => {
+  // A field 0.2 × 0.1 of the world wide; field uv has north at v = 1.
+  const at = { x0: 0.2, y0: 0.3, w: 0.2, h: 0.1 };
+  const uvOf = (v: { x0: number; y0: number; w: number; h: number }, mx: number, my: number) => [(mx - v.x0) / v.w, 1 - (my - v.y0) / v.h];
+
+  it('is the identity at the view it was measured at, or with none', () => {
+    expect(viewXf(at, at)).toEqual([1, 1, 0, 0]);
+    expect(viewXf(at, null)).toEqual([1, 1, 0, 0]);
+  });
+
+  it('finds the same spot on the map after zooming in and panning', () => {
+    const now = { x0: 0.25, y0: 0.32, w: 0.1, h: 0.05 };
+    const [sx, sy, ox, oy] = viewXf(now, at);
+    for (const [mx, my] of [
+      [0.27, 0.33],
+      [0.3, 0.35],
+      [0.34, 0.36],
+    ]) {
+      const [u, v] = uvOf(now, mx, my);
+      const [ua, va] = uvOf(at, mx, my);
+      expect(u * sx + ox).toBeCloseTo(ua, 9);
+      expect(v * sy + oy).toBeCloseTo(va, 9);
+    }
+    // Zoomed in 2×: a motion of 0.01 there spans 0.02 here.
+    expect(0.01 / sx).toBeCloseTo(0.02, 9);
   });
 });
