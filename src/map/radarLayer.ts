@@ -1,6 +1,6 @@
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MlMap } from 'maplibre-gl';
 import type { ColorMode } from '../config';
-import { frameSource, framesBetween, STEP_H, tileMirrors, tilePalette, type FrameSource, type TilePalette, type Timeline } from '../data/timeline';
+import { frameSource, framesBetween, satTiles, STEP_H, tileMirrors, tilePalette, type FrameSource, type TilePalette, type Timeline } from '../data/timeline';
 import { compile, GAUSS9_FS, QUAD_VS, target, texture2d, type Program } from './gl';
 import { RadarFlow } from './radarFlow';
 import { COVERAGE_SIZE, RadarCoverage } from './radarCoverage';
@@ -9,13 +9,21 @@ import { buildLut, buildMrmsLut, buildPtypeLut, buildSatLut, buildTypeRamps, bui
 /** What the tiles on screen are: reflectivity (composite, site N0B, HRRR) or a site's storm-relative velocity. */
 export type RadarProduct = 'reflectivity' | 'velocity';
 
-/** Tile zooms requested: MRMS is ~1 km (z7), one radar's own scans finer, the satellite estimate ~4 km. */
+/**
+ * Tile zooms requested: MRMS is ~1 km (z7), one radar's own scans finer, the satellite estimate ~4 km
+ * (z5's pixels are ~4 km: finer tiles were 4× the requests to the slowest host for no more detail).
+ */
 const MIN_Z = 3;
 const MAX_Z = 7;
 const SITE_MAX_Z = 8;
-const SAT_MAX_Z = 6;
-/** Precipitation type comes from the HRRR (3 km): coarse tiles are plenty. */
-const PTYPE_MAX_Z = 6;
+const SAT_MAX_Z = 5;
+/** Precipitation type comes from the HRRR (3 km) and is spread ~12 km anyway: z5 (~4 km pixels) is plenty. */
+const PTYPE_MAX_Z = 5;
+/**
+ * The whole timeline is kept loaded this many zooms coarser (radar only, a tile or two a frame), so
+ * scrubbing anywhere shows the rain at once; the full tiles sharpen it when the playhead rests there.
+ */
+const PREVIEW_DZ = 2;
 /** How far a type spreads past the model's own precipitation, km (its rain and the radar's rarely line up exactly). */
 const PTYPE_SPREAD_KM = 12;
 /** MapLibre's in-tile coordinate range. */
@@ -27,7 +35,21 @@ const EXTENT = 8192;
  */
 const MAX_TILES = 480;
 const WANT_HEADROOM = 1.25;
-const MAX_INFLIGHT = 20;
+const MAX_INFLIGHT = 32;
+/**
+ * Requests in flight per host. IEM's four hostnames speak HTTP/1.1 (the browser opens 6 connections to
+ * each); the others are HTTP/2. Capping each keeps a slow host (the satellite estimate, ~0.5 s a tile)
+ * from filling every slot while the radar's own tiles wait behind it.
+ */
+const MAX_PER_HOST = 6;
+const MAX_PER_H2_HOST = 8;
+
+/** A tile's host, IEM's by mirror (the same one load() picks). */
+export function hostOf(frame: string, x: number, y: number): string {
+  const start = frame.indexOf('//') + 2;
+  const host = frame.slice(start, frame.indexOf('/', start));
+  return host.startsWith('mesonet.') ? `mesonet${(x + y) % 4}` : host;
+}
 /** Failed tiles (e.g. a 503) are retried after this long, ms. */
 const RETRY_MS = 30_000;
 /** Images decoded per map frame, so a burst of arrivals doesn't hitch a frame. */
@@ -74,6 +96,8 @@ interface TileEntry {
   tex: WebGLTexture | null;
   used: number;
   failedAt: number;
+  /** Its host (hostOf), for the per-host request cap. */
+  host: string;
 }
 
 interface Cover {
@@ -423,6 +447,21 @@ export class RadarLayer implements CustomLayerInterface {
   private tiles = new Map<string, TileEntry>();
   private toDecode: string[] = [];
   private inflight = 0;
+  private readonly hostInflight = new Map<string, number>();
+  /**
+   * Playing faster than full-resolution tiles arrive (fresh hours: the archive draws its tiles on demand),
+   * frames load and draw one zoom coarser, a quarter of the tiles, until playback stops.
+   */
+  private draft = false;
+  /** Playback is running: the scrubbing preview's requests wait, so every connection goes to the frames ahead. */
+  private playing = false;
+  /** The timeline's satellite frames as tile URLs, oldest first (for satFor's stand-ins). */
+  private satList: string[] = [];
+  private satListFor: Timeline | null = null;
+  /** The whole timeline's preview tiles (PREVIEW_DZ coarser), and what they were listed for. */
+  private previewKeys: string[] = [];
+  private previewSet = new Set<string>();
+  private previewFor = '';
   private clock = 0;
   /** Tile keys to load, most urgent first, and their frame templates. */
   private want: string[] = [];
@@ -541,6 +580,22 @@ export class RadarLayer implements CustomLayerInterface {
     this.map.triggerRepaint();
   }
 
+  /** Playback started or stopped (the scrubbing preview loads only while it's stopped). */
+  setPlaying(on: boolean): void {
+    if (on === this.playing) return;
+    this.playing = on;
+    if (!on) this.pump();
+  }
+
+  /** Load and draw frames a zoom coarser (true while playback can't keep up at full resolution). */
+  setDraft(on: boolean): void {
+    if (on === this.draft) return;
+    this.draft = on;
+    this.epoch++;
+    this.replan(true);
+    this.map.triggerRepaint();
+  }
+
   /** Color rain, snow, mix, and ice apart. */
   setPrecipType(on: boolean): void {
     this.precipType = on;
@@ -571,18 +626,49 @@ export class RadarLayer implements CustomLayerInterface {
     // Radar off: nothing to wait for (the timeline still drives wind and the weather map).
     if (!this.radarOn) return true;
     if (this.inNowcast(offset) && !this.nowSources().every((f) => this.sourceArrived(f))) return false;
-    const src = this.sourceAt(offset);
-    if (!this.sourceArrived(src)) return false;
-    // Playback reaches a frame through the 5-minute frames before it (the MRMS window).
-    const before = offset - STEP_H;
-    return before < this.timeline.minOffset || framesBetween(this.timeline, this.sourceAt(before), src).every((f) => this.sourceArrived(f));
+    // The 5-minute frames before it (the MRMS window) don't hold playback up: until they're here it
+    // glides from the 15-minute frame before along the tracked motion (drawn()).
+    return this.sourceArrived(this.sourceAt(offset));
   }
 
-  /** The tiles on screen have arrived (the margin's may still be coming). */
+  /**
+   * Something true to show for the frame at `offset`: its tiles on screen, or its preview (coarser). For
+   * scrubbing, which shows the rain at once and lets it sharpen.
+   */
+  showable(offset: number): boolean {
+    if (!this.radarOn) return true;
+    const url = this.sourceAt(offset).url;
+    return this.arrived(url, this.cover(undefined, false), false) || this.arrived(url, this.cover(undefined, false, PREVIEW_DZ), false);
+  }
+
+  /**
+   * The tiles on screen have arrived (the margin's may still be coming). Not the satellite estimate's:
+   * its host is slow (~0.6 s a tile) and it changes slowly, so satFor() stands in a nearby one meanwhile.
+   */
   private sourceArrived(src: FrameSource): boolean {
     if (!this.arrived(src.url, this.cover(undefined, false), false)) return false;
-    if (src.sat && this.satOn() && !this.arrived(src.sat, this.cover(SAT_MAX_Z, false), true)) return false;
     return !src.ptype || !this.typesOn() || this.arrived(src.ptype, this.cover(PTYPE_MAX_Z, false), false);
+  }
+
+  /**
+   * A frame's satellite rain, or while its tiles are still coming, the nearest estimate that's here
+   * (within an hour; they're 15 minutes apart and change slowly), so playback never waits on it.
+   */
+  private satFor(url: string | null): string | null {
+    if (!url || !this.satOn()) return url;
+    const cs = this.cover(SAT_MAX_Z);
+    if (this.arrived(url, cs, true)) return url;
+    if (this.satListFor !== this.timeline) {
+      this.satListFor = this.timeline;
+      this.satList = this.timeline.sat.map(satTiles);
+    }
+    const i = this.satList.indexOf(url);
+    if (i < 0) return url;
+    for (const d of [-1, 1, -2, 2, -3, 3, -4, 4]) {
+      const u = this.satList[i + d];
+      if (u && this.arrived(u, cs, true)) return u;
+    }
+    return url;
   }
 
   /** A moment (hours from now) inside the nowcast's reach. */
@@ -657,6 +743,29 @@ export class RadarLayer implements CustomLayerInterface {
     this.replan(false);
   }
 
+  /**
+   * Load the `count` frames nearest `offset` on both sides, nearest first, with the 5-minute frames
+   * between neighbors: scrubbing goes either way.
+   */
+  prefetchAround(offset: number, count: number): void {
+    const q0 = Math.round(offset / STEP_H);
+    const inRange = (q: number) => q * STEP_H >= this.timeline.minOffset - 1e-9 && q * STEP_H <= this.timeline.maxOffset + 1e-9;
+    const qs: number[] = [];
+    for (let k = 0; qs.length < count && k <= count; k++) {
+      for (const q of k ? [q0 + k, q0 - k] : [q0]) if (inRange(q) && qs.length < count) qs.push(q);
+    }
+    const have = new Set(qs);
+    const ahead: FrameSource[] = [];
+    for (const q of qs) {
+      const src = this.sourceAt(q * STEP_H);
+      ahead.push(src);
+      if (have.has(q + 1)) ahead.push(...framesBetween(this.timeline, src, this.sourceAt((q + 1) * STEP_H)));
+    }
+    this.ahead = ahead;
+    this.aheadOffsets = qs.map((q) => q * STEP_H);
+    this.replan(false);
+  }
+
   /** Show frame `a` fading into frame `b` (f = 0…1). */
   blend(a: number, b: number, f: number): void {
     this.last = [a, b, f];
@@ -675,8 +784,9 @@ export class RadarLayer implements CustomLayerInterface {
     const fa = this.sourceAt(a);
     if (!(f > 0 && b <= this.timeline.maxOffset)) return { fa, fb: null, f: 0 };
     const fb = this.sourceAt(b);
+    // The 5-minute frames between, when they're here (scrubbing can get ahead of them).
     const subs = framesBetween(this.timeline, fa, fb);
-    if (!subs.length) return { fa, fb, f };
+    if (!subs.length || !subs.every((s) => this.arrived(s.url, this.cover(undefined, false), false))) return { fa, fb, f };
     const chain = [fa, ...subs, fb];
     const at = fa.at + f * (fb.at - fa.at);
     let i = 0;
@@ -717,8 +827,8 @@ export class RadarLayer implements CustomLayerInterface {
    * The tiles in view (with the field's margin unless `margin` is off), a zoom finer than the map once
    * it's past the midpoint (crisper storms).
    */
-  private cover(cap = this.timeline.site ? SITE_MAX_Z : MAX_Z, margin = true): Cover {
-    const z = Math.max(MIN_Z, Math.min(cap, Math.floor(this.map.getZoom() + 0.9)));
+  private cover(cap = this.timeline.site ? SITE_MAX_Z : MAX_Z, margin = true, coarser = this.draft ? 1 : 0): Cover {
+    const z = Math.max(MIN_Z, Math.min(cap, Math.floor(this.map.getZoom() + 0.9)) - coarser);
     const el = this.map.getContainer();
     const m = margin ? this.marginPx() : 0;
     const nw = this.map.unproject([-m, -m]);
@@ -740,7 +850,8 @@ export class RadarLayer implements CustomLayerInterface {
     const cs = this.cover(SAT_MAX_Z);
     const ct = this.cover(PTYPE_MAX_Z);
     const box = (k: Cover) => `${k.z}/${k.x0}/${k.x1}/${k.y0}/${k.y1}`;
-    const key = `${sources.map((f) => `${f.url}+${sat ? f.sat : ''}+${types ? f.ptype : ''}`).join(' ')}#${box(c)}#${box(cs)}#${box(ct)}#${this.coverage.version}`;
+    const preview = this.previewTiles();
+    const key = `${sources.map((f) => `${f.url}+${sat ? f.sat : ''}+${types ? f.ptype : ''}`).join(' ')}#${box(c)}#${box(cs)}#${box(ct)}#${this.coverage.version}#${this.previewFor}`;
     if (!force && key === this.planKey) return;
     this.planKey = key;
     const cells = (k: Cover) => {
@@ -760,9 +871,30 @@ export class RadarLayer implements CustomLayerInterface {
       if (f.sat) for (const [x, y] of satCells) want.add(tileKey(f.sat, cs.z, x, y));
       if (f.ptype) for (const [x, y] of typeCells) want.add(tileKey(f.ptype, ct.z, x, y));
     }
+    // Last, whatever's left of the whole timeline's preview, nearest now first.
+    for (const k of preview) want.add(k);
     this.want = [...want];
     this.wantSet = want;
     this.pump();
+  }
+
+  /** The whole timeline's preview tiles (radar only, PREVIEW_DZ coarser, on screen), nearest now first. */
+  private previewTiles(): string[] {
+    const t = this.timeline;
+    const c = this.cover(undefined, false, PREVIEW_DZ);
+    const key = `${t.base} ${t.init} ${t.live} ${t.radar.length} ${t.radar[t.radar.length - 1]} ${t.site?.scans.length ?? ''} ${t.minOffset} ${t.maxOffset} ${c.z}/${c.x0}/${c.x1}/${c.y0}/${c.y1}`;
+    if (key === this.previewFor) return this.previewKeys;
+    this.previewFor = key;
+    const qs: number[] = [];
+    for (let q = Math.round(t.minOffset / STEP_H); q * STEP_H <= t.maxOffset + 1e-9; q++) qs.push(q);
+    qs.sort((a, b) => Math.abs(a) - Math.abs(b));
+    const keys: string[] = [];
+    for (const q of qs) {
+      const url = this.sourceAt(q * STEP_H).url;
+      for (let x = c.x0; x <= c.x1; x++) for (let y = c.y0; y <= c.y1; y++) keys.push(tileKey(url, c.z, x, y));
+    }
+    this.previewSet = new Set(keys);
+    return (this.previewKeys = keys);
   }
 
   private pump(): void {
@@ -774,11 +906,17 @@ export class RadarLayer implements CustomLayerInterface {
         t.used = ++this.clock;
         continue;
       }
-      this.load(key);
+      if (this.playing && this.previewSet.has(key)) continue;
+      const bar = key.indexOf('|');
+      const [, x, y] = key.slice(bar + 1).split('/').map(Number);
+      const host = hostOf(key.slice(0, bar), x, y);
+      const cap = host.startsWith('mesonet') ? MAX_PER_HOST : MAX_PER_H2_HOST;
+      if ((this.hostInflight.get(host) ?? 0) >= cap) continue;
+      this.load(key, host);
     }
   }
 
-  private load(key: string): void {
+  private load(key: string, host: string): void {
     const [frame, zxy] = key.split('|');
     const [z, x, y] = zxy.split('/').map(Number);
     const url = tileMirrors(frame)[(x + y) % 4]
@@ -786,20 +924,25 @@ export class RadarLayer implements CustomLayerInterface {
       .replace('{x}', String(x))
       .replace('{y}', String(y))
       .replace('{bbox-epsg-3857}', tileBbox(z, x, y));
-    const entry: TileEntry = { state: 'loading', img: new Image(), tex: null, used: ++this.clock, failedAt: 0 };
+    const entry: TileEntry = { state: 'loading', img: new Image(), tex: null, used: ++this.clock, failedAt: 0, host };
     this.tiles.set(key, entry);
     this.inflight++;
+    this.hostInflight.set(host, (this.hostInflight.get(host) ?? 0) + 1);
+    const done = () => {
+      this.inflight--;
+      this.hostInflight.set(host, (this.hostInflight.get(host) ?? 1) - 1);
+    };
     const img = entry.img!;
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      this.inflight--;
+      done();
       entry.state = 'decode';
       this.toDecode.push(key);
       this.map.triggerRepaint();
       this.pump();
     };
     img.onerror = () => {
-      this.inflight--;
+      done();
       entry.state = 'failed';
       entry.img = null;
       entry.failedAt = performance.now();
@@ -1223,7 +1366,7 @@ export class RadarLayer implements CustomLayerInterface {
     // 1–2. The frames on screen, built only when something they're made of changed (between frame
     // changes, playback just recolors the same field).
     const v = (f: string | null | undefined) => `${f} ${this.version(f)}`;
-    const fieldKey = `${v(fa.url)} ${v(fa.sat)} ${v(fb?.url)} ${v(fb?.sat)} ${view} ${s} ${this.satOn()} ${this.coverage.version} ${this.product} ${this.epoch}`;
+    const fieldKey = `${v(fa.url)} ${v(this.satFor(fa.sat))} ${v(fb?.url)} ${v(this.satFor(fb?.sat ?? null))} ${view} ${s} ${this.satOn()} ${this.coverage.version} ${this.product} ${this.epoch}`;
     if (fieldKey !== this.fieldKey) {
       this.fieldKey = fieldKey;
       r.out = this.buildField(gl, r, args, fa, fb, s);
@@ -1306,7 +1449,7 @@ export class RadarLayer implements CustomLayerInterface {
     gl.colorMask(true, true, true, true);
 
     // Past radar range, the satellite estimate (field[0] + satellite → field[1]).
-    const out = this.drawSatellite(gl, r, args, fa.sat, fb?.sat ?? null, s) ? 1 : 0;
+    const out = this.drawSatellite(gl, r, args, this.satFor(fa.sat), this.satFor(fb?.sat ?? null), s) ? 1 : 0;
 
     // Blur, horizontal then vertical. Wider when zoomed past the data's resolution.
     // Velocity is smoothed lightly: blurring would average a rotation couplet's inbound and outbound away.

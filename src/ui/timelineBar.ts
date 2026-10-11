@@ -9,26 +9,54 @@ import { pauseIcon, playIcon } from './icons';
 const FRAMES_PER_SECOND = 4;
 /** The short autoplay loop runs at half speed, so two hours take four seconds, not two. */
 const AUTO_FRAMES_PER_SECOND = 2;
-/** Frames requested ahead of the playhead. */
-const PREFETCH = 8;
+/** Frames requested ahead of the playhead (3 s at full speed). */
+const PREFETCH = 12;
 /** A short loop (autoplay's two hours) is kept loaded whole, up to this many frames. */
 const LOOP_PREFETCH_MAX = 16;
-/** After a stall, resume once this many frames ahead have loaded, so playback doesn't stutter. */
+/** Starting, and after a stall, play once this many frames ahead have loaded, so it doesn't stutter. */
 const RESUME_FRAMES = 3;
+/**
+ * Playback eases its speed to how far ahead it has loaded: full speed with this many frames ready,
+ * down to MIN_SPEED with one, so a slow network slows it smoothly instead of stopping it dead.
+ */
+const BUFFER_FULL = 4;
+const MIN_SPEED = 0.3;
+/** How fast the speed follows (per second): starts and slowdowns ease in rather than jump. */
+const SPEED_EASE = 3;
+/** Waiting longer than this, playback moves on to a frame whose preview is here (soft) rather than stand still, s. */
+const STALL_PREVIEW_S = 0.6;
 /** Stop waiting on a frame after this long (a hung tile) and show what has loaded, seconds. */
 const MAX_WAIT_S = 6;
 /** Pause on the last frame before looping, seconds. */
 const HOLD_S = 1.2;
 /** Say "Loading radar" if playback waits on the network longer than this, seconds. */
 const BUFFER_NOTE_S = 0.5;
-/** A scrubbed-to frame shows when loaded, or after this long regardless, ms. */
+/** A jumped-to frame shows when it (or its preview) is here, or after this long regardless, ms. */
 const SCRUB_WAIT_MS = 2500;
+/** Frames loaded around the thumb while scrubbing (both ways), with the 5-minute frames between. */
+const SCRUB_AROUND = 6;
+/** Letting go of the thumb (or pausing) glides to the nearest whole frame over this long, seconds. */
+const SNAP_S = 0.16;
+/**
+ * Playing with less than a full buffer for this long (seconds), frames go a zoom coarser (a quarter of
+ * the tiles) until playback stops; when it does, the frame sharpens again.
+ */
+const DRAFT_AFTER_S = 0.75;
 
 /** What the bar needs from the map: readiness, preloading, and a crossfade. */
 export interface Frames {
+  /** The frame's tiles on screen have loaded: playback may go there. */
   ready(offset: number): boolean;
+  /** Something true to show for the frame (its tiles, or its coarser preview): scrubbing may show it. */
+  showable(offset: number): boolean;
   /** Load `count` frames from `offset`; while a loop plays, wrapping from its end to its start. */
   prefetch(offset: number, direction: 1 | -1, count: number, loop?: Loop | null): void;
+  /** Load the `count` frames nearest `offset`, both ways (scrubbing). */
+  prefetchAround(offset: number, count: number): void;
+  /** Load and draw a zoom coarser while playback can't keep up at full resolution. */
+  setDraft(on: boolean): void;
+  /** Playback started or stopped (background loading waits while it runs). */
+  setPlaying(on: boolean): void;
   blend(a: number, b: number, f: number): void;
 }
 
@@ -53,7 +81,11 @@ function clock(ms: number): string {
  * The play bar. Playback runs on requestAnimationFrame: the playhead moves
  * continuously between 15-minute frames and the map crossfades them, so
  * storms glide instead of jumping. It never advances onto a frame that
- * hasn't loaded, so there are no gaps; on a slow network it waits instead.
+ * hasn't loaded, so there are no gaps: it starts once a few frames are in,
+ * and on a slow network eases its speed to what has loaded rather than stop
+ * and start. Scrubbing follows the thumb continuously (gliding between
+ * frames, the coarse preview standing in until the full tiles arrive) and
+ * settles on the nearest frame when let go.
  */
 export class TimelineBar {
   private readonly range = $<HTMLInputElement>('#tl-range');
@@ -71,6 +103,16 @@ export class TimelineBar {
   private shownQ = Number.NaN;
   private pending: number | null = null;
   private pendingSince = 0;
+  /** Playback's eased share of full speed (BUFFER_FULL). */
+  private speed = 1;
+  /** Starting or after a stall: wait for RESUME_FRAMES before moving. */
+  private buffering = false;
+  /** Where the thumb is while scrubbing, frames (fractional); null otherwise. */
+  private scrubAt: number | null = null;
+  /** A short glide to a whole frame (letting go, pausing). */
+  private snap: { from: number; to: number; t: number } | null = null;
+  /** How long playback has run short of a full buffer, seconds (it decays while full). */
+  private starved = 0;
   /** Autoplay's loop, in frames; null for ordinary playback (to the end, back to where it started). */
   private loopWindow: { from: number; to: number } | null = null;
   private state: TimelineBarState = { colorMode: 'color', radarOn: true, mapLabel: null, site: null, velocity: false, precipType: true };
@@ -84,12 +126,9 @@ export class TimelineBar {
   ) {
     $('#tl-play').addEventListener('click', () => this.toggle());
     this.range.step = 'any';
-    this.range.addEventListener('input', () => {
-      // Read the drag first: pausing redraws the slider at the playhead.
-      const q = Math.round(Number(this.range.value) / STEP_H);
-      this.pause();
-      this.goTo(q);
-    });
+    // Dragging (or tapping the track) follows the thumb; letting go settles on a frame.
+    this.range.addEventListener('input', () => this.scrub(Number(this.range.value)));
+    this.range.addEventListener('change', () => this.release());
     this.setTimeline(timeline);
     this.drawPlay();
   }
@@ -152,6 +191,19 @@ export class TimelineBar {
   private start(): void {
     this.hold = 0;
     this.waited = 0;
+    this.snap = null;
+    this.scrubAt = null;
+    // Ease in from a slow start once a few frames are in.
+    this.buffering = true;
+    this.speed = MIN_SPEED;
+    this.starved = 0;
+    // Full resolution when what's ahead is already here (the opening loop, a replay); otherwise start a
+    // zoom coarser rather than stall on tiles the archive is still drawing.
+    const first = Math.floor(this.pos + 1e-6) + 1;
+    let here = true;
+    for (let q = first; q < first + RESUME_FRAMES && q <= this.maxQ; q++) here &&= this.frames.ready(q * STEP_H);
+    this.frames.setDraft(!this.loopWindow && !here);
+    this.frames.setPlaying(true);
     this.playing = true;
     this.drawPlay();
     this.last = performance.now();
@@ -163,10 +215,75 @@ export class TimelineBar {
     this.loopWindow = null;
     if (!this.playing) return;
     this.playing = false;
-    // Settle on a whole frame. Playback only advances toward loaded frames, so it's ready.
-    this.pos = Math.round(this.pos);
-    this.apply();
+    this.frames.setPlaying(false);
+    this.frames.setDraft(false);
+    // Settle on the nearest whole frame. Playback only advances toward loaded frames, so it's ready.
+    this.settle(Math.round(this.pos));
     this.drawPlay();
+  }
+
+  /** Glide to whole frame `q` (it's here). */
+  private settle(q: number): void {
+    if (Math.abs(q - this.pos) < 1e-3) {
+      this.pos = q;
+      this.apply();
+      return;
+    }
+    this.snap = { from: this.pos, to: q, t: 0 };
+    this.loop();
+  }
+
+  /** The thumb moved (drag, or a tap on the track): stop playing and show the moment under it. */
+  private scrub(valueH: number): void {
+    this.loopWindow = null;
+    if (this.playing) {
+      this.playing = false;
+      this.drawPlay();
+    }
+    this.frames.setPlaying(false);
+    this.frames.setDraft(false);
+    this.pending = null;
+    this.snap = null;
+    this.scrubAt = Math.max(this.minQ, Math.min(this.maxQ, valueH / STEP_H));
+    this.frames.prefetchAround(this.scrubAt * STEP_H, SCRUB_AROUND);
+    if (!this.showScrub()) this.loop();
+  }
+
+  /**
+   * Show the moment under the thumb, gliding between its two frames. Until they're here, the nearest
+   * frame that is (within half an hour) stands in, labelled as loading. True once it's exact.
+   */
+  private showScrub(): boolean {
+    const p = this.scrubAt!;
+    const a = Math.floor(p + 1e-6);
+    const f = p - a;
+    if (this.frames.showable(a * STEP_H) && (f < 1e-3 || a + 1 > this.maxQ || this.frames.showable((a + 1) * STEP_H))) {
+      this.pos = p;
+      this.apply(false);
+      return true;
+    }
+    const q = Math.round(p);
+    const d = [0, 1, -1, 2, -2].find((k) => q + k >= this.minQ && q + k <= this.maxQ && this.frames.showable((q + k) * STEP_H));
+    if (d != null && this.pos !== q + d) {
+      this.pos = q + d;
+      this.apply(false);
+    }
+    if (d !== 0) {
+      this.label(q, true);
+      this.shownQ = Number.NaN; // the label doesn't match the frame on screen
+    }
+    return false;
+  }
+
+  /** The thumb was let go: settle on the nearest whole frame. */
+  private release(): void {
+    if (this.scrubAt == null) return;
+    const q = Math.round(this.scrubAt);
+    this.scrubAt = null;
+    this.frames.prefetchAround(q * STEP_H, SCRUB_AROUND);
+    // Showing (near) it already: glide the last bit; otherwise wait for it like a jump.
+    if (Math.abs(q - this.pos) <= 1 && this.frames.showable(q * STEP_H)) this.settle(q);
+    else this.goTo(q);
   }
 
   /** Step one hour (keyboard). */
@@ -222,11 +339,13 @@ export class TimelineBar {
     this.label(Math.round(this.pos), false);
   }
 
-  /** Jump to a frame; the current frame stays on screen until the new one has loaded. */
+  /** Jump to a frame; the current frame stays on screen until the new one (or its preview) is here. */
   private goTo(q: number): void {
     q = Math.max(this.minQ, Math.min(this.maxQ, q));
-    this.frames.prefetch(q * STEP_H, 1, 2);
-    if (this.frames.ready(q * STEP_H)) {
+    this.snap = null;
+    this.scrubAt = null;
+    this.frames.prefetchAround(q * STEP_H, SCRUB_AROUND);
+    if (this.frames.showable(q * STEP_H)) {
       this.pending = null;
       this.pos = q;
       this.apply();
@@ -250,8 +369,26 @@ export class TimelineBar {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
 
+    if (this.snap) {
+      this.snap.t = Math.min(1, this.snap.t + dt / SNAP_S);
+      const e = 1 - (1 - this.snap.t) ** 3;
+      this.pos = this.snap.from + (this.snap.to - this.snap.from) * e;
+      if (this.snap.t >= 1) {
+        this.pos = this.snap.to;
+        this.snap = null;
+      } else {
+        this.loop();
+      }
+      this.apply();
+      return;
+    }
+    if (this.scrubAt != null) {
+      // Still loading what's under the thumb: keep checking.
+      if (!this.showScrub()) this.loop();
+      return;
+    }
     if (this.pending != null) {
-      if (this.frames.ready(this.pending * STEP_H) || now - this.pendingSince > SCRUB_WAIT_MS) {
+      if (this.frames.showable(this.pending * STEP_H) || now - this.pendingSince > SCRUB_WAIT_MS) {
         this.pos = this.pending;
         this.pending = null;
         this.apply();
@@ -285,34 +422,46 @@ export class TimelineBar {
     // autoplay's short loop all of it, so none of its frames is dropped and fetched again every lap.
     const count = this.loopWindow ? Math.min(LOOP_PREFETCH_MAX, Math.max(PREFETCH, end - this.loopFrom + 1)) : PREFETCH;
     this.frames.prefetch(next * STEP_H, 1, count, { from: this.loopFrom * STEP_H, to: end * STEP_H });
-    if (!this.loadedAhead(next, this.waited > 0 ? RESUME_FRAMES : 1) && this.waited < MAX_WAIT_S) {
-      // Wait for the network rather than fade into a half-loaded frame.
+    // How far ahead has loaded (up to the end of what plays).
+    const room = Math.min(BUFFER_FULL, end - next + 1);
+    let ahead = 0;
+    while (ahead < room && this.frames.ready((next + ahead) * STEP_H)) ahead++;
+    // Running short for a while: go a zoom coarser until playback stops (not autoplay's loop, which stays loaded).
+    this.starved = ahead < room ? this.starved + dt : Math.max(0, this.starved - dt);
+    if (!this.loopWindow && this.starved > DRAFT_AFTER_S) this.frames.setDraft(true);
+    if (ahead < (this.buffering ? Math.min(RESUME_FRAMES, room) : 1)) {
+      // Wait for the network rather than fade into a half-loaded frame. After a moment, play on slowly
+      // with what's here (a frame, or a preview: soft for a beat, sharpening as its tiles land) rather
+      // than stand still.
       this.waited += dt;
-      if (this.waited > BUFFER_NOTE_S) $('#tl-kind').textContent = this.state.radarOn ? 'Loading radar' : 'Loading';
-      return;
+      const goOn = this.waited > STALL_PREVIEW_S && (ahead > 0 || this.frames.showable(next * STEP_H));
+      if (!goOn && this.waited < MAX_WAIT_S) {
+        if (ahead === 0) this.buffering = true;
+        this.speed = Math.min(this.speed, MIN_SPEED);
+        if (this.waited > BUFFER_NOTE_S) $('#tl-kind').textContent = this.state.radarOn ? 'Loading radar' : 'Loading';
+        return;
+      }
     }
     if (this.waited > BUFFER_NOTE_S) this.shownQ = Number.NaN; // restore the label
     this.waited = 0;
+    if (ahead >= Math.min(RESUME_FRAMES, room)) this.buffering = false;
+    // Ease the speed toward how much has loaded: a thinning buffer slows playback down smoothly.
+    const target = Math.max(MIN_SPEED, ahead / room);
+    this.speed += (target - this.speed) * Math.min(1, dt * SPEED_EASE);
     // Run on past a frame into the next when it's loaded, keeping the time left over (stopping on
     // every frame would cost a sliver of motion four times a second: a faint, steady hitch).
-    let pos = this.pos + dt * (this.loopWindow ? AUTO_FRAMES_PER_SECOND : FRAMES_PER_SECOND);
+    let pos = this.pos + dt * (this.loopWindow ? AUTO_FRAMES_PER_SECOND : FRAMES_PER_SECOND) * this.speed;
     if (pos > next && !(next + 1 <= end && this.frames.ready((next + 1) * STEP_H))) pos = next;
     this.pos = Math.min(pos, next + 1);
     this.apply();
   };
 
-  /** The `count` frames from `q` (stopping at the end) have loaded. */
-  private loadedAhead(q: number, count: number): boolean {
-    for (let k = q; k < q + count && k <= this.maxQ; k++) if (!this.frames.ready(k * STEP_H)) return false;
-    return true;
-  }
-
-  /** Push the playhead to the map (crossfade), the slider, and the label. */
-  private apply(): void {
+  /** Push the playhead to the map (crossfade), the slider (not while it's being dragged), and the label. */
+  private apply(slider = true): void {
     const a = Math.floor(this.pos + 1e-6);
     const f = this.pos - a;
     this.frames.blend(a * STEP_H, (a + 1) * STEP_H, f < 1e-3 ? 0 : f);
-    this.range.value = String(this.pos * STEP_H);
+    if (slider) this.range.value = String(this.pos * STEP_H);
     this.onPlayhead?.(this.pos * STEP_H);
     const q = Math.round(this.pos);
     if (q !== this.shownQ) {

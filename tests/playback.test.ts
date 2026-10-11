@@ -3,7 +3,7 @@ import { framesBetween, frameSource, makeTimeline, SUB_STEP_MS, tilePalette } fr
 import { createStore } from '../src/state';
 import { alertUntil } from '../src/ui/areaCard';
 import type { AlertAreaProps } from '../src/data/warnings';
-import { prefetchPlan, viewXf } from '../src/map/radarLayer';
+import { hostOf, prefetchPlan, viewXf } from '../src/map/radarLayer';
 
 const at = (iso: string) => Date.parse(iso);
 
@@ -144,5 +144,15 @@ describe('loading ahead around a loop', () => {
     expect(plan).toHaveLength(9);
     expect(new Set(plan.map((p) => p.o)).size).toBe(9);
     expect(plan.map((p) => p.o).sort((a, b) => a - b)).toEqual([-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1]);
+  });
+});
+
+describe('requests per host', () => {
+  it('counts IEM by the mirror a tile goes to, other hosts by name', () => {
+    const iem = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-202610111200/{z}/{x}/{y}.png';
+    expect(hostOf(iem, 3, 4)).toBe('mesonet3');
+    expect(hostOf(iem, 2, 2)).toBe('mesonet0');
+    expect(hostOf('https://realearth.ssec.wisc.edu/api/image?products=x&x={x}&y={y}&z={z}', 1, 1)).toBe('realearth.ssec.wisc.edu');
+    expect(hostOf('https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows?bbox={bbox-epsg-3857}', 0, 0)).toBe('opengeo.ncep.noaa.gov');
   });
 });
