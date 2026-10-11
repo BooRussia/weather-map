@@ -1,6 +1,7 @@
 import type { ColorMode } from '../config';
 import { offsetTime, relativeLabel, STEP_H, type Timeline } from '../data/timeline';
 import { PTYPE_LEGEND, RADAR_LEGEND, VELOCITY_LEGEND, type PrecipType } from '../map/radarPalette';
+import type { Loop } from '../map/radarLayer';
 import { $, h, svg } from './dom';
 import { pauseIcon, playIcon } from './icons';
 
@@ -10,6 +11,8 @@ const FRAMES_PER_SECOND = 4;
 const AUTO_FRAMES_PER_SECOND = 2;
 /** Frames requested ahead of the playhead. */
 const PREFETCH = 8;
+/** A short loop (autoplay's two hours) is kept loaded whole, up to this many frames. */
+const LOOP_PREFETCH_MAX = 16;
 /** After a stall, resume once this many frames ahead have loaded, so playback doesn't stutter. */
 const RESUME_FRAMES = 3;
 /** Stop waiting on a frame after this long (a hung tile) and show what has loaded, seconds. */
@@ -24,7 +27,8 @@ const SCRUB_WAIT_MS = 2500;
 /** What the bar needs from the map: readiness, preloading, and a crossfade. */
 export interface Frames {
   ready(offset: number): boolean;
-  prefetch(offset: number, direction: 1 | -1, count: number): void;
+  /** Load `count` frames from `offset`; while a loop plays, wrapping from its end to its start. */
+  prefetch(offset: number, direction: 1 | -1, count: number, loop?: Loop | null): void;
   blend(a: number, b: number, f: number): void;
 }
 
@@ -277,7 +281,10 @@ export class TimelineBar {
       this.hold = HOLD_S;
       return;
     }
-    this.frames.prefetch(next * STEP_H, 1, PREFETCH);
+    // Ahead through the loop and around to its start, so the frames shown after the wrap stay loaded;
+    // autoplay's short loop all of it, so none of its frames is dropped and fetched again every lap.
+    const count = this.loopWindow ? Math.min(LOOP_PREFETCH_MAX, Math.max(PREFETCH, end - this.loopFrom + 1)) : PREFETCH;
+    this.frames.prefetch(next * STEP_H, 1, count, { from: this.loopFrom * STEP_H, to: end * STEP_H });
     if (!this.loadedAhead(next, this.waited > 0 ? RESUME_FRAMES : 1) && this.waited < MAX_WAIT_S) {
       // Wait for the network rather than fade into a half-loaded frame.
       this.waited += dt;

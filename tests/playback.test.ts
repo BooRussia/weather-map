@@ -3,7 +3,7 @@ import { framesBetween, frameSource, makeTimeline, SUB_STEP_MS, tilePalette } fr
 import { createStore } from '../src/state';
 import { alertUntil } from '../src/ui/areaCard';
 import type { AlertAreaProps } from '../src/data/warnings';
-import { viewXf } from '../src/map/radarLayer';
+import { prefetchPlan, viewXf } from '../src/map/radarLayer';
 
 const at = (iso: string) => Date.parse(iso);
 
@@ -121,5 +121,28 @@ describe('radar motion kept through a zoom or pan', () => {
     }
     // Zoomed in 2×: a motion of 0.01 there spans 0.02 here.
     expect(0.01 / sx).toBeCloseTo(0.02, 9);
+  });
+});
+
+describe('loading ahead around a loop', () => {
+  const range = { minOffset: -24, maxOffset: 16 };
+  const q = (plan: { o: number; glide: boolean }[]) => plan.map((p) => `${p.o}${p.glide ? '' : '!'}`);
+
+  it('runs straight ahead outside a loop, gliding in from the frame before', () => {
+    expect(q(prefetchPlan(0, 1, 3, range))).toEqual(['0', '0.25', '0.5']);
+    expect(q(prefetchPlan(-24, 1, 2, range))).toEqual(['-24!', '-23.75']);
+    expect(q(prefetchPlan(15.75, 1, 4, range))).toEqual(['15.75', '16']);
+  });
+
+  it('wraps from the loop’s end to its start (a jump, not a glide), never past the end', () => {
+    // Autoplay: −1 h … +1 h; the playhead is about to reach +0.75 h.
+    expect(q(prefetchPlan(0.75, 1, 4, range, { from: -1, to: 1 }))).toEqual(['0.75', '1', '-1!', '-0.75']);
+  });
+
+  it('keeps a short loop whole without repeating a frame', () => {
+    const plan = prefetchPlan(0.5, 1, 16, range, { from: -1, to: 1 });
+    expect(plan).toHaveLength(9);
+    expect(new Set(plan.map((p) => p.o)).size).toBe(9);
+    expect(plan.map((p) => p.o).sort((a, b) => a - b)).toEqual([-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1]);
   });
 });

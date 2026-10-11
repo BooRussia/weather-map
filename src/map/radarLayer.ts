@@ -20,8 +20,13 @@ const PTYPE_MAX_Z = 6;
 const PTYPE_SPREAD_KM = 12;
 /** MapLibre's in-tile coordinate range. */
 const EXTENT = 8192;
-/** Decoded tiles kept on the GPU (128 KB each: strength and echo): enough for the opening loop with its 5-minute frames and the margin. */
+/**
+ * Decoded tiles kept on the GPU (128 KB each: strength and echo): enough for the opening loop with its
+ * 5-minute frames on a phone. A big screen's loop needs more: the cache then grows to what's wanted
+ * plus WANT_HEADROOM, so a looping playback never drops the frames it's about to show again.
+ */
 const MAX_TILES = 480;
+const WANT_HEADROOM = 1.25;
 const MAX_INFLIGHT = 20;
 /** Failed tiles (e.g. a 503) are retried after this long, ms. */
 const RETRY_MS = 30_000;
@@ -30,10 +35,11 @@ const DECODES_PER_FRAME = 6;
 /** Cap on the smoothing buffer's size, pixels (the screen and its margin). */
 const MAX_FIELD_PX = 2_000_000;
 /**
- * The field reaches past the screen by this share of its longer side on every edge, so rain carried
- * along its motion near an edge comes from real radar instead of the edge's last row stretched out.
+ * The field reaches this far past every screen edge, CSS px, so rain carried along its motion near an
+ * edge comes from real radar instead of the edge's last row stretched out. Fixed, not a share of the
+ * screen: motion on screen doesn't grow with it, and a big screen's margin cost a loop's worth of tiles.
  */
-const FIELD_MARGIN = 0.08;
+const FIELD_MARGIN_PX = 72;
 /**
  * Smoothing radius (Gaussian sigma), CSS pixels, and its share of a tile pixel when zoomed past the data.
  * Light, with tiles a zoom finer than the map: smooth edges that keep a storm's fine structure.
@@ -100,6 +106,46 @@ export function viewXf(now: FieldView, at: FieldView | null): [number, number, n
 const lonToX = (lon: number) => (lon + 180) / 360;
 const latToY = (lat: number) => 0.5 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI);
 const tileKey = (frame: string, z: number, x: number, y: number) => `${frame}|${z}/${x}/${y}`;
+
+/** A loop playback runs (hours from now): after `to` it starts over at `from`. */
+export interface Loop {
+  from: number;
+  to: number;
+}
+
+/**
+ * The frames to load ahead, in playback order: `count` of them from `offset` (hours), each marked with
+ * whether playback glides into it from the frame before (then the 5-minute frames between are needed
+ * too). In a loop, past its end it wraps to the start, a jump rather than a glide: a looping playback
+ * keeps the frames it shows next loaded, instead of fetching ones past the loop it never reaches while
+ * the loop's first frames fall out of the cache.
+ */
+export function prefetchPlan(
+  offset: number,
+  direction: 1 | -1,
+  count: number,
+  range: { minOffset: number; maxOffset: number },
+  loop?: Loop | null,
+): { o: number; glide: boolean }[] {
+  const inRange = (o: number) => o >= range.minOffset - 1e-9 && o <= range.maxOffset + 1e-9;
+  const out: { o: number; glide: boolean }[] = [];
+  const seen = new Set<number>();
+  let o = offset;
+  let glide = inRange(offset - STEP_H * direction);
+  for (let k = 0; k < count; k++) {
+    if (loop && direction > 0 && o > loop.to + 1e-9) {
+      o = loop.from;
+      glide = false;
+    }
+    const q = Math.round(o / STEP_H);
+    if (!inRange(o) || seen.has(q)) break;
+    seen.add(q);
+    out.push({ o, glide });
+    glide = true;
+    o += STEP_H * direction;
+  }
+  return out;
+}
 
 /** Half the Web Mercator world's width, m. */
 const WORLD = 20037508.342789244;
@@ -592,24 +638,19 @@ export class RadarLayer implements CustomLayerInterface {
     return this.coverage.ready && this.product === 'reflectivity';
   }
 
-  /** Start loading the next `count` frames from `offset`. */
-  prefetch(offset: number, direction: 1 | -1, count: number): void {
+  /** Start loading the next `count` frames from `offset` (wrapping around `loop` while one plays). */
+  prefetch(offset: number, direction: 1 | -1, count: number, loop?: Loop | null): void {
     const ahead: FrameSource[] = [];
     const offsets: number[] = [];
-    // From the frame before: playback reaches the first one through the 5-minute frames leading into it.
-    const before = offset - STEP_H * direction;
-    let prev: FrameSource | null = before >= this.timeline.minOffset && before <= this.timeline.maxOffset ? this.sourceAt(before) : null;
-    for (let k = 0; k < count; k++) {
-      const o = offset + k * STEP_H * direction;
-      if (o < this.timeline.minOffset || o > this.timeline.maxOffset) break;
+    for (const { o, glide } of prefetchPlan(offset, direction, count, this.timeline, loop)) {
       const src = this.sourceAt(o);
-      if (prev) {
-        const subs = direction > 0 ? framesBetween(this.timeline, prev, src) : framesBetween(this.timeline, src, prev).reverse();
-        ahead.push(...subs);
+      // Gliding in from the frame before passes through the 5-minute frames between them.
+      if (glide) {
+        const prev = this.sourceAt(o - STEP_H * direction);
+        ahead.push(...(direction > 0 ? framesBetween(this.timeline, prev, src) : framesBetween(this.timeline, src, prev).reverse()));
       }
       ahead.push(src);
       offsets.push(o);
-      prev = src;
     }
     this.ahead = ahead;
     this.aheadOffsets = offsets;
@@ -653,8 +694,7 @@ export class RadarLayer implements CustomLayerInterface {
 
   /** The field's margin past each screen edge, CSS px. */
   private marginPx(): number {
-    const el = this.map.getContainer();
-    return Math.round(FIELD_MARGIN * Math.max(el.clientWidth, el.clientHeight));
+    return FIELD_MARGIN_PX;
   }
 
   /** Where the field (the screen and its margin) lies on the map now. */
@@ -928,12 +968,13 @@ export class RadarLayer implements CustomLayerInterface {
   }
 
   private evict(gl: WebGL2RenderingContext): void {
-    if (this.tiles.size <= MAX_TILES) return;
+    const cap = Math.max(MAX_TILES, Math.ceil(this.wantSet.size * WANT_HEADROOM));
+    if (this.tiles.size <= cap) return;
     const old = [...this.tiles.entries()]
       .filter(([k, t]) => t.state !== 'loading' && t.state !== 'decode' && !this.wantSet.has(k))
       .sort((a, b) => a[1].used - b[1].used);
     for (const [k, t] of old) {
-      if (this.tiles.size <= MAX_TILES * 0.85) break;
+      if (this.tiles.size <= cap * 0.85) break;
       if (t.tex) gl.deleteTexture(t.tex);
       this.tiles.delete(k);
       this.bump(k.slice(0, k.indexOf('|')));
