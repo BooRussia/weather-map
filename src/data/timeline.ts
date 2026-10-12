@@ -74,12 +74,13 @@ const SAT_MAX_AGE_MS = 75 * 60_000;
  * How a frame's tiles are colored, so they decode right: IEM's NEXRAD palette, NCEP's MRMS palette,
  * the satellite rain-rate bins, or IEM's velocity.
  */
-export type TilePalette = 'n0q' | 'mrms' | 'sat' | 'velocity' | 'ptype';
+export type TilePalette = 'n0q' | 'lcref' | 'mrms' | 'sat' | 'velocity' | 'ptype';
 
 export function tilePalette(url: string): TilePalette {
   if (url.startsWith(MRMS_WMS_URL)) return 'mrms';
   if (url.includes('hrrr::REFP-')) return 'ptype';
   if (url.includes(`products=${SAT_RAIN_PRODUCT}_`)) return 'sat';
+  if (url.includes('mrms::lcref-')) return 'lcref';
   return url.includes('-N0S-') ? 'velocity' : 'n0q';
 }
 
@@ -180,7 +181,9 @@ export function frameSource(t: Timeline, offset: number): FrameSource {
   if (o < 0) {
     const frame = nearestFrame(t.radar, at, MRMS_TOLERANCE_MS);
     if (frame != null) return { kind: 'past', url: mrmsTiles(frame), at: frame, sat: sat(at), ptype: ptypeTiles(t, at) };
-    return { kind: 'past', url: PAST_RADAR_TILE_URL.replace('{stamp}', utcStamp(at)), at, sat: sat(at), ptype: ptypeTiles(t, at) };
+    // IEM's MRMS archive has even minutes only: a quarter past or to the hour is a minute early.
+    const even = at - (at % (2 * 60_000));
+    return { kind: 'past', url: PAST_RADAR_TILE_URL.replace('{stamp}', utcStamp(even)), at: even, sat: sat(at), ptype: ptypeTiles(t, at) };
   }
   if (t.init == null) return live;
   const minutes = Math.round((at - t.init) / 60_000);

@@ -4,7 +4,7 @@ import { frameSource, framesBetween, satTiles, STEP_H, tileMirrors, tilePalette,
 import { compile, GAUSS9_FS, QUAD_VS, target, texture2d, type Program } from './gl';
 import { RadarFlow } from './radarFlow';
 import { COVERAGE_SIZE, RadarCoverage } from './radarCoverage';
-import { buildLut, buildMrmsLut, buildPtypeLut, buildSatLut, buildTypeRamps, buildVelocityLut, buildVelocityRamp, LUT_BITS, LUT_SIZE } from './radarPalette';
+import { buildLcrefLut, buildLut, buildMrmsLut, buildPtypeLut, buildSatLut, buildTypeRamps, buildVelocityLut, buildVelocityRamp, LUT_BITS, LUT_SIZE } from './radarPalette';
 
 /** What the tiles on screen are: reflectivity (composite, site N0B, HRRR) or a site's storm-relative velocity. */
 export type RadarProduct = 'reflectivity' | 'velocity';
@@ -1056,7 +1056,7 @@ export class RadarLayer implements CustomLayerInterface {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    const data = { mrms: buildMrmsLut, sat: buildSatLut, velocity: buildVelocityLut, n0q: buildLut, ptype: buildPtypeLut }[palette]();
+    const data = { mrms: buildMrmsLut, lcref: buildLcrefLut, sat: buildSatLut, velocity: buildVelocityLut, n0q: buildLut, ptype: buildPtypeLut }[palette]();
     gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, LUT_SIZE, LUT_SIZE, LUT_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, data);
     r.luts[palette] = tex;
     return tex;

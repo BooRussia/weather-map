@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLut, buildRamp, dbzOf, entryOf, LUT_BITS, LUT_SIZE } from '../src/map/radarPalette';
+import { buildLcrefLut, buildLut, buildRamp, dbzOf, entryOf, LUT_BITS, LUT_SIZE } from '../src/map/radarPalette';
 
 /** Look a tile color up the way the decode shader does. */
 function decode(lut: Uint8Array, r: number, g: number, b: number): number {
@@ -49,5 +49,26 @@ describe('radar palette', () => {
     const i = entryOf(40) * 4;
     expect(ramp[i]).toBe(ramp[i + 1]);
     expect(Math.abs(ramp[i] - ramp[i + 2])).toBeLessThan(6);
+  });
+});
+
+describe('IEM MRMS archive palette', () => {
+  const lut = buildLcrefLut();
+  const at = (r: number, g: number, b: number) => {
+    const s = 8 - LUT_BITS;
+    return lut[((b >> s) * LUT_SIZE + (g >> s)) * LUT_SIZE + (r >> s)];
+  };
+
+  it('reads its colors back to the same entries as N0Q (i / 2 − 32 dBZ)', () => {
+    // Colors seen in its tiles: lilac at 11 dBZ, green 38, orange 48, dark red 58.
+    expect(dbzOf(at(164, 164, 255))).toBe(11);
+    expect(dbzOf(at(0, 166, 0))).toBe(38);
+    expect(dbzOf(at(255, 166, 0))).toBe(48);
+    expect(dbzOf(at(189, 0, 0))).toBe(58);
+  });
+
+  it('leaves black (no echo) empty and reads the shared top gray as its lowest entry', () => {
+    expect(at(0, 0, 0)).toBe(0);
+    expect(dbzOf(at(128, 128, 128))).toBe(81);
   });
 });

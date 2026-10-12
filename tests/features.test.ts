@@ -261,10 +261,11 @@ describe('MRMS radar', () => {
     const past = frameSource(t, -0.25);
     expect(past.at).toBe(at('2026-10-09T11:00:16Z'));
     expect(tilePalette(past.url)).toBe('mrms');
-    // Older than MRMS keeps: the IEM archive.
+    // Older than MRMS keeps: IEM's archive of MRMS (quality-controlled: no birds), on an even minute.
     const old = frameSource(t, -3);
-    expect(old.url).toContain('ridge::USCOMP-N0Q-202610090815');
-    expect(tilePalette(old.url)).toBe('n0q');
+    expect(old.url).toContain('mrms::lcref-202610090814/');
+    expect(old.at).toBe(at('2026-10-09T08:14:00Z'));
+    expect(tilePalette(old.url)).toBe('lcref');
     expect(frameSource(t, 1).url).toContain('hrrr::REFD');
     // Satellite rain rides along with every observed frame (the newest one it has), never the forecast.
     expect(live.sat).toContain('products=NESDIS-GHE-HourlyRainfall_20261009_104500');

@@ -19,6 +19,23 @@ const N0Q_PALETTE =
   'BK6wBK2wBJ6gBJ2gBJygA46QA42QA4yQA36AA32AA29wA25wA21wAl9gAl5gAk9QAk5QAk1QAj9AAj5AAj1AATAwAS8wASAgAR8gAR4gOme1Oma1' +
   'OmW1OmS1OmO1OmK1';
 
+/**
+ * The table IEM paints its MRMS archive tiles with (lowest-level composite reflectivity), read from the
+ * PLTE chunk of its lcref PNG. Same entries as N0Q (i / 2 − 32 dBZ), different colors: lilac from 11 dBZ,
+ * blues, greens, yellow-orange, reds; black below 11 (left out), gray from 81 dBZ up (never seen).
+ */
+const LCREF_PALETTE =
+  'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+  'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+  'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+  'AAAAAAAApKT/oaH8np75mpr2l5fylJTvkZHsjo7piormh4fjhITggYHcfn7ZenrWd3fTdHTQcXHNbm7JamrGZ2fDQID/Pn35PXryO3bsOnPmOHDf' +
+  'Nm3ZNWrTM2bMMmPGMGDALl25LVqzK1asKlOmKFCgJk2ZJUqTI0aNIkOGIECAAPkAAPIAAOwAAOYAAN8AANkAANMAAMwAAMYAAMAAALkAALMAAKwA' +
+  'AKYAAKAAAJkAAJMAAI0AAIYAAIAA//kA//IA/+wA/+YA/98A/9kA/9MA/8wA/8YA/8AA/7kA/7MA/6wA/6YA/6AA/5kA/5MA/40A/4YA/wAA+gAA' +
+  '9QAA8QAA7AAA5wAA4wAA3gAA2QAA1AAAzwAAywAAxgAAwQAAvQAAuAAAswAArgAAqgAApQAA/wD/+QD58gDy7ADs5gDm3wDf2QDZ0wDTzADMxgDG' +
+  'wADAuQC5swCzrACspgCmoACgmQCZkwCTjQCNhgCG////+fn58vLy7Ozs5ubm39/f2dnZ09PTzMzMxsbGwMDAubm5s7OzrKyspqamoKCgmZmZk5OT' +
+  'jY2NhoaGgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA' +
+  'gICAgICAgICAgICA';
+
 /** Bits per channel in the color → entry lookup (128³ cells; neighbors differ by at most 0.5 dBZ). */
 export const LUT_BITS = 7;
 export const LUT_SIZE = 1 << LUT_BITS;
@@ -28,8 +45,8 @@ export const dbzOf = (i: number) => i / 2 - 32;
 /** Palette entry for a reflectivity. */
 export const entryOf = (dbz: number) => Math.round((dbz + 32) * 2);
 
-function palette(): Uint8Array {
-  const bin = atob(N0Q_PALETTE);
+function palette(b64 = N0Q_PALETTE): Uint8Array {
+  const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
@@ -48,6 +65,18 @@ export function buildLut(): Uint8Array {
     const g = p[i * 3 + 1] >> shift;
     const b = p[i * 3 + 2] >> shift;
     lut[(b * LUT_SIZE + g) * LUT_SIZE + r] = i;
+  }
+  return lut;
+}
+
+/** Color → entry for IEM's MRMS archive tiles: exact palette colors (black is no echo; gray, shared by the top entries, reads as the lowest). */
+export function buildLcrefLut(): Uint8Array {
+  const p = palette(LCREF_PALETTE);
+  const shift = 8 - LUT_BITS;
+  const lut = new Uint8Array(LUT_SIZE ** 3);
+  for (let i = 255; i >= 1; i--) {
+    if (!p[i * 3] && !p[i * 3 + 1] && !p[i * 3 + 2]) continue;
+    lut[((p[i * 3 + 2] >> shift) * LUT_SIZE + (p[i * 3 + 1] >> shift)) * LUT_SIZE + (p[i * 3] >> shift)] = i;
   }
   return lut;
 }

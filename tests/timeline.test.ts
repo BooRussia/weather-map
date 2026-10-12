@@ -26,7 +26,8 @@ describe('radar timeline', () => {
 
     const past = frameSource(t, -0.25);
     expect(past.kind).toBe('past');
-    expect(past.url).toContain('ridge::USCOMP-N0Q-202610052215/');
+    // IEM's MRMS archive (no birds or clutter), on the even minute before the mark.
+    expect(past.url).toContain('mrms::lcref-202610052214/');
 
     const future = frameSource(t, 2);
     // 22:30 + 2 h = 00:30, 4.5 hours after the 20Z init.

@@ -51,9 +51,13 @@ export const TIMELINE_PAST_HOURS = 24;
 /** HRRR forecasts run 18 hours from each hourly init. */
 export const HRRR_MAX_MINUTES = 18 * 60;
 
-/** NEXRAD composite (IEM), every 5 minutes. `{stamp}` = UTC YYYYMMDDHHMM; the latest is also "now". */
-export const PAST_RADAR_TILE_URL =
-  'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-{stamp}/{z}/{x}/{y}.png';
+/**
+ * The past beyond MRMS's own 2 hours: IEM's archive of MRMS's lowest-level composite reflectivity, every
+ * 2 minutes on even minutes. Quality-controlled like the live MRMS (owner, 2026-10-11): the raw NEXRAD
+ * composite it replaces kept birds, insects, and clutter, which bloom around every radar after sunset
+ * into a green sheet over the land. `{stamp}` = UTC YYYYMMDDHHMM, an even minute.
+ */
+export const PAST_RADAR_TILE_URL = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/mrms::lcref-{stamp}/{z}/{x}/{y}.png';
 /**
  * One NEXRAD site's own scans (IEM RIDGE, Level III): `{site}` = 3-letter id, `{product}` = N0B (super-res
  * reflectivity) or N0S (storm-relative velocity), `{stamp}` = a listed scan's UTC YYYYMMDDHHMM. The /c/ path
