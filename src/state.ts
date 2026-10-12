@@ -59,7 +59,8 @@ export interface AppState {
   /** `clouds`: satellite clouds, cut out of live GOES imagery. `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
   /** `outlook`: SPC severe-storm or WPC flash-flood outlook areas (`outlookKind`, `outlookDay`). */
   /** `cells`: strong storm cells and where they're headed (radar storm tracking). */
-  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean; tropics: boolean; outlook: boolean; cells: boolean };
+  /** `cams`: state DOTs' traffic cameras (off on first load; the camera button). */
+  layers: { wind: boolean; rain: boolean; thunder: boolean; clouds: boolean; tropics: boolean; outlook: boolean; cells: boolean; cams: boolean };
   tempUnit: TempUnit;
   windUnit: WindUnit;
   sound: boolean;
@@ -172,7 +173,7 @@ export function createStore(selected: LatLon, gps: boolean) {
   // Hurricane choices saved under the old everything-on defaults start over from the new ones.
   const tropicsCurrent = prefs.tropicsV === TROPICS_PREFS_V;
   let state: AppState = {
-    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false, cells: true },
+    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false, cells: true, cams: false },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,

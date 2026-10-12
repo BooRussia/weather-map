@@ -33,6 +33,12 @@ export class Sheet {
   current: string | null = null;
 
   open(name: string, title: string, content: Node, opener: HTMLElement | null, onClose?: () => void): void {
+    // Another panel takes the sheet: the one it replaces lets go first (a camera stops its stream).
+    if (this.isOpen && this.current !== name) {
+      const before = this.onCloseCb;
+      this.onCloseCb = null;
+      before?.();
+    }
     this.current = name;
     this.title.textContent = title;
     this.body.replaceChildren(content);

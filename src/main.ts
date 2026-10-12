@@ -26,6 +26,9 @@ import { StormLayer, type StormHit } from './map/stormLayer';
 import { LightningLayer } from './map/lightningLayer';
 import { RadarSitesLayer } from './map/radarSitesLayer';
 import { TagsLayer } from './map/tagsLayer';
+import { CamerasLayer } from './map/camerasLayer';
+import { getCameras, type CameraData } from './data/cameras';
+import { cameraViewer, type CameraViewer } from './ui/camera';
 import { addTag, removeTag, renameTag, tagAt, tagName, type Tag } from './data/tags';
 import { tagCard } from './ui/tagCard';
 import { getRadarSites, getSiteScans, siteCall, type RadarSite, type SiteFrames, type SiteProduct } from './data/radarSites';
@@ -54,7 +57,7 @@ import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, h, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule } from './ui/capsule';
-import { alertMark, boltMark, hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
+import { alertMark, boltMark, cameraIcon, hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
 import { LayersMenu } from './ui/layersMenu';
 import { alertDetail, alertsList, alertsOfType, type AlertsHooks } from './ui/alertsPanel';
 import { getAlert, type Alert } from './data/nws';
@@ -363,6 +366,57 @@ async function main(): Promise<void> {
 
   const sitesLayer = new RadarSitesLayer(map, token('--accent') || '#0a84ff');
   const tagsLayer = new TagsLayer(map, token('--accent') || '#0a84ff');
+
+  /* ---------- traffic cameras ---------- */
+
+  // The camera button shows state DOTs' cameras on the map; tapping one opens it in the sheet, live where
+  // the DOT streams openly, else its snapshot as often as the DOT renews it.
+  const camerasLayer = new CamerasLayer(map, token('--accent') || '#0a84ff');
+  const camsBtn = $<HTMLButtonElement>('#cams-btn');
+  camsBtn.append(svg(cameraIcon));
+  let cameraData: CameraData | null = null;
+  let viewer: CameraViewer | null = null;
+  const renderCamsBtn = () => {
+    const on = store.get().layers.cams;
+    camsBtn.setAttribute('aria-pressed', String(on));
+    camsBtn.setAttribute('aria-label', on ? 'Hide traffic cameras' : 'Traffic cameras');
+  };
+  renderCamsBtn();
+  const closeViewer = () => {
+    viewer?.dispose();
+    viewer = null;
+    camerasLayer.pick(null);
+  };
+  const openCamera = (i: number) => {
+    if (!cameraData) return;
+    viewer?.dispose();
+    viewer = cameraViewer(cameraData, i, { km: store.get().windUnit === 'kmh', open: openCamera });
+    camerasLayer.pick(i);
+    if (sheet.current === 'camera') sheet.update(viewer.camera.title, viewer.el);
+    else sheet.open('camera', viewer.camera.title, viewer.el, camsBtn, closeViewer);
+  };
+  /** Show or hide the cameras, loading the list the first time. */
+  const showCameras = async (on: boolean) => {
+    if (!on) {
+      camerasLayer.setVisible(false);
+      if (sheet.current === 'camera') sheet.close();
+      return;
+    }
+    if (!map.isStyleLoaded()) await new Promise((r) => map.once('load', r));
+    camerasLayer.install(map.getLayer('tag-pins') ? 'tag-pins' : undefined);
+    if (!cameraData) {
+      try {
+        cameraData = await getCameras();
+        camerasLayer.setData(cameraData);
+      } catch {
+        showNote('Traffic cameras couldn’t load. Check your connection.');
+        store.set({ layers: { ...store.get().layers, cams: false } });
+        return;
+      }
+    }
+    camerasLayer.setVisible(store.get().layers.cams);
+  };
+  camsBtn.addEventListener('click', () => store.toggleLayer('cams'));
   const renderSite = () =>
     renderSiteBar(chosenSite, siteFrames?.product ?? 'N0B', {
       product: (p) => void chooseSite(chosenSite, p),
@@ -571,6 +625,13 @@ async function main(): Promise<void> {
     const tag = tagsLayer.hit(e.point);
     if (tag) {
       goToTag(tag);
+      return;
+    }
+    // A traffic camera opens it; a group of them zooms in until they come apart.
+    const cam = camerasLayer.hit(e.point);
+    if (cam) {
+      if ('cam' in cam) openCamera(cam.cam);
+      else void camerasLayer.openCluster(cam.cluster, cam.lng, cam.lat);
       return;
     }
     if (stopTip.pinned) {
@@ -908,7 +969,7 @@ async function main(): Promise<void> {
   if (matchMedia('(hover: hover)').matches) {
     map.on('mousemove', (e) => {
       const i = tripLayer ? tripLayer.hit(e.point, 8) : null;
-      const cursor = i != null || tagsLayer.hit(e.point) ? 'pointer' : '';
+      const cursor = i != null || tagsLayer.hit(e.point) || camerasLayer.hit(e.point) ? 'pointer' : '';
       if (map.getCanvas().style.cursor !== cursor) map.getCanvas().style.cursor = cursor;
       if (!tripLayer) return;
       if (i !== hoverStop) hoverStop = i;
@@ -1073,6 +1134,7 @@ async function main(): Promise<void> {
     !s.layers.tropics &&
     !s.layers.outlook &&
     !s.layers.cells &&
+    !s.layers.cams &&
     !s.alertAreas &&
     s.weatherMap === 'none';
   const renderBoltBtn = () => {
@@ -1092,7 +1154,7 @@ async function main(): Promise<void> {
     beforeBolt = { layers: s.layers, alertAreas: s.alertAreas, weatherMap: s.weatherMap };
     if (sheet.current === 'storm') sheet.close();
     store.set({
-      layers: { ...s.layers, rain: true, thunder: true, wind: false, clouds: false, tropics: false, outlook: false, cells: false },
+      layers: { ...s.layers, rain: true, thunder: true, wind: false, clouds: false, tropics: false, outlook: false, cells: false, cams: false },
       alertAreas: false,
       weatherMap: 'none',
     });
@@ -1268,6 +1330,10 @@ async function main(): Promise<void> {
       alertAreas.setVisible(s.alertAreas);
       renderAlertsBadge();
     }
+    if (s.layers.cams !== prev.layers.cams) {
+      renderCamsBtn();
+      void showCameras(s.layers.cams);
+    }
     if (s.layers.tropics !== prev.layers.tropics) {
       tropical.setVisible(s.layers.tropics);
       renderStormPill();
@@ -1319,6 +1385,7 @@ async function main(): Promise<void> {
       palette.rain = token('--muted');
       tripLayer?.setColors(tripColors());
       tagsLayer.setAccent(token('--accent'));
+      camerasLayer.setAccent(token('--accent'));
     }
     if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme) {
       renderAll();
@@ -1377,6 +1444,7 @@ function renderCredits(s: AppState): void {
   $('[data-credit="mrms"]').hidden = !s.layers.rain;
   $('[data-credit="ghe"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
+  $('[data-credit="cams"]').hidden = !s.layers.cams;
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="glm"]').hidden = !s.layers.thunder;
   $('[data-credit="gibs"]').hidden = !((s.layers.tropics && s.tropics.sst) || s.weatherMap === 'infrared');

@@ -89,6 +89,9 @@ export const GLYPHS: Record<string, string> = {
   ),
 };
 
+/** Traffic cameras: a video camera (body and lens). */
+export const cameraIcon = `${open('i-camera')}<rect x="2.5" y="7" width="13.5" height="10" rx="2.4" /><path d="m16 10.6 5.2-2.9v8.6L16 13.4z" /></svg>`;
+
 /** Corners out: show only the map. */
 export const expandIcon = `${open('i-expand')}<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>`;
 

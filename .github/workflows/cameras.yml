@@ -1,0 +1,41 @@
+name: Traffic cameras
+
+# State DOTs' camera lists can't be read from a browser (no CORS) and change
+# slowly, so this job collects them once a day and publishes one compact JSON
+# to the `cameras` branch, which the app reads from raw.githubusercontent.com.
+# (Its own branch: the tropical job replaces the `data` branch every run.)
+on:
+  schedule:
+    - cron: '23 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: camera-data
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Build cameras.json
+        run: node scripts/cameras.mjs out/cameras.json
+      - name: Publish to the cameras branch
+        run: |
+          cd out
+          git init -q -b cameras
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cameras.json
+          git commit -q -m "Traffic cameras $(date -u +%Y-%m-%dT%H:%MZ)"
+          # One commit, replaced each run: the branch never grows.
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" cameras

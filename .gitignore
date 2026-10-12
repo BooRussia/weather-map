@@ -6,5 +6,6 @@ dist
 .DS_Store
 .netlify
 
-# Local hurricane data for dev (scripts/tropical.mjs)
+# Local hurricane and camera data for dev (scripts/tropical.mjs, scripts/cameras.mjs)
 public/tropical.dev.json
+public/cameras.dev.json
