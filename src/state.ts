@@ -173,7 +173,7 @@ export function createStore(selected: LatLon, gps: boolean) {
   // Hurricane choices saved under the old everything-on defaults start over from the new ones.
   const tropicsCurrent = prefs.tropicsV === TROPICS_PREFS_V;
   let state: AppState = {
-    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false, cells: true, cams: false },
+    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false, cells: false, cams: false },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,

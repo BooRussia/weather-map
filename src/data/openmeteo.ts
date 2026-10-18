@@ -35,6 +35,16 @@ export interface HourlyPoint {
   isDay: boolean;
 }
 
+/** An hour with everything the day-detail panel charts. */
+export interface HourDetail extends HourlyPoint {
+  feelsF: number;
+  uv: number;
+  humidity: number;
+  dewF: number;
+  visibilityM: number;
+  pressureHpa: number;
+}
+
 export interface DailyPoint {
   /** Local date, YYYY-MM-DD. */
   date: string;
@@ -57,7 +67,10 @@ export interface MinutelyPoint {
 
 export interface PointForecast {
   current: PointCurrent;
+  /** Next 24 hours from the current hour. */
   hourly: HourlyPoint[];
+  /** Every hour of the 7 days, from midnight today (local), for the day-detail panel. */
+  week: HourDetail[];
   daily: DailyPoint[];
   /** Next 2 hours in 15-minute slots. */
   minutely: MinutelyPoint[];
@@ -93,6 +106,12 @@ interface PointResponse {
     wind_direction_10m: number[];
     wind_gusts_10m: number[];
     is_day: number[];
+    apparent_temperature: number[];
+    uv_index: (number | null)[];
+    relative_humidity_2m: number[];
+    dew_point_2m: number[];
+    visibility: (number | null)[];
+    pressure_msl: number[];
   };
   daily: {
     time: string[];
@@ -108,8 +127,8 @@ interface PointResponse {
 }
 
 /**
- * Point forecast for the HUD and detail sheet: the URL from the brief, trimmed
- * to the next 24 hours, plus 7 days, the next 2 hours in 15-minute slots, and
+ * Point forecast for the HUD and detail sheet: every hour of 7 days (the next
+ * 24 make the hourly strip, all of them the day-detail panel), plus 7 days, the next 2 hours in 15-minute slots, and
  * the current details (feels like, humidity, pressure…). One request.
  */
 export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSignal): Promise<PointForecast> {
@@ -117,7 +136,8 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
     latitude: c4(lat),
     longitude: c4(wrapLon(lon)),
     hourly:
-      'temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day',
+      'temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day,' +
+      'apparent_temperature,uv_index,relative_humidity_2m,dew_point_2m,visibility,pressure_msl',
     current:
       'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,' +
       'apparent_temperature,relative_humidity_2m,dew_point_2m,pressure_msl,visibility,uv_index,is_day',
@@ -127,7 +147,6 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
     temperature_unit: 'fahrenheit',
     wind_speed_unit: 'mph',
     timezone: 'auto',
-    forecast_hours: '24',
     forecast_days: '7',
   });
   const r = await fetchJson<PointResponse>(`${OPEN_METEO_FORECAST}?${q}`, { signal });
@@ -135,6 +154,26 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
   const h = r.hourly;
   const d = r.daily;
   const m = r.minutely_15;
+  const week: HourDetail[] = h.time.map((time, i) => ({
+    time,
+    tempF: h.temperature_2m[i],
+    precipitation: h.precipitation[i],
+    precipProbability: h.precipitation_probability[i] ?? 0,
+    weatherCode: h.weather_code[i],
+    windMph: h.wind_speed_10m[i],
+    windFromDeg: h.wind_direction_10m[i],
+    gustMph: h.wind_gusts_10m[i],
+    isDay: h.is_day[i] === 1,
+    feelsF: h.apparent_temperature?.[i] ?? h.temperature_2m[i],
+    uv: h.uv_index?.[i] ?? 0,
+    humidity: h.relative_humidity_2m?.[i] ?? 0,
+    dewF: h.dew_point_2m?.[i] ?? h.temperature_2m[i],
+    visibilityM: h.visibility?.[i] ?? 0,
+    pressureHpa: h.pressure_msl?.[i] ?? 0,
+  }));
+  // The hourly strip starts at the current hour (local times sort as strings).
+  const hourNow = c.time.slice(0, 13);
+  const nowIdx = Math.max(0, week.findIndex((x) => x.time.slice(0, 13) >= hourNow));
   return {
     utcOffsetSeconds: r.utc_offset_seconds,
     current: {
@@ -154,17 +193,8 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
       uv: c.uv_index,
       isDay: c.is_day === 1,
     },
-    hourly: h.time.map((time, i) => ({
-      time,
-      tempF: h.temperature_2m[i],
-      precipitation: h.precipitation[i],
-      precipProbability: h.precipitation_probability[i] ?? 0,
-      weatherCode: h.weather_code[i],
-      windMph: h.wind_speed_10m[i],
-      windFromDeg: h.wind_direction_10m[i],
-      gustMph: h.wind_gusts_10m[i],
-      isDay: h.is_day[i] === 1,
-    })),
+    hourly: week.slice(nowIdx, nowIdx + 24),
+    week,
     daily: d.time.map((date, i) => ({
       date,
       hiF: d.temperature_2m_max[i],

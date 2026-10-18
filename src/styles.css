@@ -3535,6 +3535,420 @@ button.tip-row:hover {
   color: var(--muted);
 }
 
+/* ---------- day detail (tap a card, tile, or day) ---------- */
+
+/* Cards that open the detail: a press, and a ring for the keyboard. */
+#page-body [data-detail] {
+  cursor: pointer;
+  transition:
+    transform var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+#page-body [data-detail]:active {
+  transform: scale(0.985);
+}
+
+#page-body [data-detail]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#page-body .day[data-detail] {
+  margin: 0 -8px;
+  padding: 0 8px;
+  border-radius: var(--r-inner);
+}
+
+@media (hover: hover) {
+  #page-body .day[data-detail]:hover {
+    background: var(--group-fill);
+  }
+}
+
+/* Floats over the map beside the docked page; a sheet over the page on phones. */
+.detail {
+  --glass-thick: rgba(22, 22, 26, 0.86);
+  position: fixed;
+  z-index: 9;
+  top: calc(var(--safe-t) + var(--edge));
+  /* Left of the map's control column (46px), so its buttons stay usable. */
+  right: calc(var(--safe-r) + 2 * var(--edge) + var(--pad-right) + 46px);
+  width: min(392px, calc(100vw - 2 * var(--edge)));
+  max-height: calc(100% - var(--safe-t) - var(--safe-b) - 2 * var(--edge));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 16px calc(var(--safe-b) + 20px);
+  color: var(--fg);
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+  transition:
+    opacity var(--dur-sheet) var(--ease-sheet),
+    transform var(--dur-sheet) var(--ease-sheet);
+}
+
+.detail.open {
+  opacity: 1;
+  transform: none;
+}
+
+@media (max-width: 1099px) {
+  .detail {
+    inset: calc(var(--safe-t) + 10px) 0 0;
+    width: auto;
+    max-height: none;
+    border-radius: var(--r-card) var(--r-card) 0 0;
+    opacity: 1;
+    transform: translateY(100%);
+  }
+
+  .detail::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 36px;
+    height: 5px;
+    margin-left: -18px;
+    border-radius: 3px;
+    background: var(--faint);
+  }
+
+  /* Tablets: keep the content phone-width, centered. */
+  .detail {
+    padding-left: max(16px, calc((100% - 560px) / 2));
+    padding-right: max(16px, calc((100% - 560px) / 2));
+  }
+}
+
+.dd-head {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  margin: 4px 0 10px;
+}
+
+.dd-close {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--r-btn);
+  color: var(--fg);
+}
+
+.dd-close .icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.2;
+}
+
+.dd-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.dd-title .icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.9;
+}
+
+.dd-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.dd-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dd-dow {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dd-num {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur) var(--ease);
+}
+
+.dd-day[aria-pressed='true'] .dd-num {
+  background: var(--accent);
+  color: var(--accent-on);
+  font-weight: 600;
+}
+
+@media (hover: hover) {
+  .dd-day:hover .dd-num {
+    background: var(--group-fill);
+  }
+
+  .dd-day[aria-pressed='true']:hover .dd-num {
+    background: var(--accent);
+  }
+}
+
+.dd-date {
+  margin: 6px 0 12px;
+  text-align: center;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.dd-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+
+.dd-read p {
+  margin: 0;
+}
+
+.dd-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dd-value-glyph .glyph {
+  width: 28px;
+  height: 28px;
+}
+
+.dd-sub {
+  margin-top: 2px;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The metric picker: a pill with the metric's icon; the native menu does the choosing. */
+.dd-pick {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  border-radius: var(--r-btn);
+  color: var(--fg);
+}
+
+.dd-pick .icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.9;
+}
+
+.dd-pick .icon:last-of-type {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.4;
+  transform: rotate(90deg);
+}
+
+.dd-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.dd-pick:has(.dd-select:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dd-icons {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  margin: 12px calc(100% * 34 / 340) 0 0;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 6px;
+}
+
+.dd-icons > span {
+  display: grid;
+  place-items: center;
+}
+
+.dd-icons .glyph {
+  width: 20px;
+  height: 20px;
+}
+
+.dd-arrow {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The chart: drag across it (or hover) to read any hour. */
+.dd-plot {
+  margin-top: 6px;
+  touch-action: pan-y;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dd-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.dd-grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.dd-tick {
+  fill: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.dd-line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dd-line.is-past {
+  stroke: var(--muted);
+  stroke-width: 2.5;
+  stroke-dasharray: 5 4;
+}
+
+.dd-line.is-dotted {
+  stroke-width: 2;
+  stroke-dasharray: 0.1 5;
+  opacity: 0.7;
+}
+
+.dd-area-past {
+  fill: rgba(255, 255, 255, 0.07);
+}
+
+.dd-bar.is-past {
+  opacity: 0.4;
+}
+
+.dd-now {
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1;
+}
+
+.dd-now-dot,
+.dd-mark {
+  fill: #1c1c1e;
+  stroke: var(--fg);
+  stroke-width: 2;
+}
+
+.dd-mark-label {
+  fill: var(--fg);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dd-cursor line {
+  stroke: var(--fg);
+  stroke-width: 1.5;
+}
+
+.dd-cursor circle {
+  fill: var(--fg);
+  stroke: #1c1c1e;
+  stroke-width: 2;
+}
+
+.detail .seg {
+  margin-top: 12px;
+}
+
+.detail .seg button {
+  flex: 1;
+  color: var(--fg);
+}
+
+.dd-about {
+  margin: 8px 0 0;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.dd-sec {
+  margin-top: 22px;
+}
+
+.dd-sec-title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
+.dd-muted {
+  margin: 2px 0 0;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.dd-text {
+  margin: 8px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--r-inner);
+  background: var(--group-fill);
+  font-size: var(--fs-callout);
+  line-height: 1.45;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

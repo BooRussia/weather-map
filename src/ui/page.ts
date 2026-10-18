@@ -1,4 +1,5 @@
 import type { Conditions } from '../data/conditions';
+import type { Metric } from '../data/dayDetail';
 import type { Alert } from '../data/nws';
 import type { PointForecast } from '../data/openmeteo';
 import { clockLabel, hourlyCells, nextRain, uvWord, weekRows } from '../data/outlook';
@@ -22,6 +23,7 @@ import {
   warningIcon,
   windIcon,
 } from './icons';
+import { DayDetail } from './dayDetail';
 import { sceneFor, SkyRenderer } from './sky';
 
 const DOCK_KEY = 'weather-map:page-docked';
@@ -63,8 +65,22 @@ export class WeatherPage {
   private readonly wide = matchMedia('(min-width: 1100px)');
   private isOpen = false;
   private opener: HTMLElement | null = null;
+  /** Tap a card, tile, or day: that day's detail, hour by hour. */
+  private readonly detail = new DayDetail();
 
   constructor(private readonly onLayout: (docked: boolean) => void) {
+    const body = $('#page-body');
+    const openDetail = (e: Event) => {
+      const t = (e.target as Element).closest<HTMLElement>('[data-detail]');
+      if (t) this.detail.open(t.dataset.detail as Metric, t.dataset.day ?? null, t, t.dataset.feels === '1');
+    };
+    body.addEventListener('click', openDetail);
+    body.addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && (e.target as Element).matches('[data-detail]')) {
+        e.preventDefault();
+        openDetail(e);
+      }
+    });
     $('#page-close').append(svg(closeIcon));
     $('#page-close').addEventListener('click', () => this.setOpen(false));
     document.addEventListener('keydown', (e) => {
@@ -104,6 +120,7 @@ export class WeatherPage {
         if (!this.docked) $('#page-close').focus({ preventScroll: true });
       });
     } else {
+      this.detail.close();
       this.el.classList.remove('open');
       this.sky.stop();
       const done = () => {
@@ -151,6 +168,7 @@ export class WeatherPage {
       sources(c),
     );
     this.scroller.scrollTop = keep;
+    this.detail.update(c, s);
   }
 
   private layout(): void {
@@ -210,6 +228,16 @@ function card(head: { icon: string; label: string } | null, ...children: (Node |
   );
 }
 
+/** Make a card, tile, or row open the day-detail panel. */
+function opens<T extends HTMLElement>(node: T, metric: Metric, opts: { day?: string; feels?: boolean } = {}): T {
+  node.dataset.detail = metric;
+  if (opts.day) node.dataset.day = opts.day;
+  if (opts.feels) node.dataset.feels = '1';
+  node.tabIndex = 0;
+  node.setAttribute('role', 'button');
+  return node;
+}
+
 function loadingCard(): HTMLElement {
   return card(null, h('p', { class: 'card-text' }, 'Loading the forecast'));
 }
@@ -238,7 +266,7 @@ function nextRainCard(om: PointForecast, s: AppState): HTMLElement {
   const r = nextRain(om.minutely);
   const wet = r.levels.some((l) => l > 0);
   const title = h('p', { class: 'card-title' }, r.sentence);
-  if (!wet) return card({ icon: umbrellaIcon, label: 'Next 2 hours' }, title);
+  if (!wet) return opens(card({ icon: umbrellaIcon, label: 'Next 2 hours' }, title), 'precip');
   const bars = h('div', { class: 'rain-bars', 'aria-hidden': 'true' });
   r.levels.forEach((lv, i) => {
     const bar = h('span', { class: 'rain-bar', title: `${clockLabel(om.minutely[i].time)}: ${rateText(r.rates[i], s)}` });
@@ -251,12 +279,15 @@ function nextRainCard(om: PointForecast, s: AppState): HTMLElement {
     h('caption', {}, 'Rain rate, next 2 hours'),
     ...om.minutely.map((m, i) => h('tr', {}, h('th', {}, clockLabel(m.time)), h('td', {}, rateText(r.rates[i], s)))),
   );
-  return card(
-    { icon: umbrellaIcon, label: 'Next 2 hours' },
-    title,
-    bars,
-    h('div', { class: 'rain-axis', 'aria-hidden': 'true' }, ...['Now', '30m', '1h', '1h 30m', '2h'].map((t) => h('span', {}, t))),
-    table,
+  return opens(
+    card(
+      { icon: umbrellaIcon, label: 'Next 2 hours' },
+      title,
+      bars,
+      h('div', { class: 'rain-axis', 'aria-hidden': 'true' }, ...['Now', '30m', '1h', '1h 30m', '2h'].map((t) => h('span', {}, t))),
+      table,
+    ),
+    'precip',
   );
 }
 
@@ -285,13 +316,13 @@ function hourlyCard(c: Conditions, om: PointForecast, s: AppState): HTMLElement 
           ),
     );
   }
-  return card({ icon: clockIcon, label: 'Hourly forecast' }, summary, strip);
+  return opens(card({ icon: clockIcon, label: 'Hourly forecast' }, summary, strip), 'conditions');
 }
 
 function weekCard(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
   const classic = s.theme === 'classic';
   const list = h('ol', { class: 'days' });
-  for (const d of weekRows(om.daily, c.tempF)) {
+  weekRows(om.daily, c.tempF).forEach((d, i) => {
     const range = h('span', { class: 'range', 'aria-hidden': 'true' });
     const seg = h('span', { class: 'range-seg' });
     seg.style.left = `${(d.left * 100).toFixed(1)}%`;
@@ -306,27 +337,31 @@ function weekCard(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
       range.append(dot);
     }
     list.append(
-      h(
-        'li',
-        {
-          class: 'day',
-          'aria-label': `${d.label}: low ${formatTemp(d.loF, s.tempUnit)}, high ${formatTemp(d.hiF, s.tempUnit)}, ${d.pop}% chance of rain`,
-        },
-        h('span', {}, d.label),
-        h('span', { class: 'day-icon' }, svg(GLYPHS[d.glyph]), d.pop >= 20 ? h('span', { class: 'pop' }, `${d.pop}%`) : null),
-        h('span', { class: 'day-lo' }, formatTemp(d.loF, s.tempUnit)),
-        range,
-        h('span', { class: 'day-hi' }, formatTemp(d.hiF, s.tempUnit)),
+      opens(
+        h(
+          'li',
+          {
+            class: 'day',
+            'aria-label': `${d.label}: low ${formatTemp(d.loF, s.tempUnit)}, high ${formatTemp(d.hiF, s.tempUnit)}, ${d.pop}% chance of rain`,
+          },
+          h('span', {}, d.label),
+          h('span', { class: 'day-icon' }, svg(GLYPHS[d.glyph]), d.pop >= 20 ? h('span', { class: 'pop' }, `${d.pop}%`) : null),
+          h('span', { class: 'day-lo' }, formatTemp(d.loF, s.tempUnit)),
+          range,
+          h('span', { class: 'day-hi' }, formatTemp(d.hiF, s.tempUnit)),
+        ),
+        'conditions',
+        { day: om.daily[i].date },
       ),
     );
-  }
+  });
   return card({ icon: calendarIcon, label: '7-day forecast' }, list);
 }
 
 /* ---------- detail tiles ---------- */
 
 function tile(icon: string, label: string, ...children: (Node | null)[]): HTMLElement {
-  return h('section', { class: 'card glass tile' }, h('h3', { class: 'card-head' }, svg(icon), label), ...children);
+  return h('section', { class: 'card glass tile', 'aria-label': `${label} details` }, h('h3', { class: 'card-head' }, svg(icon), label), ...children);
 }
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>): SVGElementTagNameMap[K] {
@@ -488,43 +523,45 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
   return h(
     'div',
     { class: 'tiles' },
-    tile(thermoIcon, 'Feels like', h('div', { class: 'tile-value' }, formatTemp(cur.feelsF, s.tempUnit)), h('p', { class: 'tile-note' }, feelsNote)),
-    tile(
+    opens(tile(thermoIcon, 'Feels like', h('div', { class: 'tile-value' }, formatTemp(cur.feelsF, s.tempUnit)), h('p', { class: 'tile-note' }, feelsNote)), 'conditions', {
+      feels: true,
+    }),
+    opens(tile(
       sunMark,
       'UV index',
       h('div', { class: 'tile-value' }, String(uv)),
       h('div', { class: 'tile-sub' }, uvWord(cur.uv)),
       uvBar,
       today ? h('p', { class: 'tile-note' }, `Max today: ${Math.round(today.uvMax)}`) : null,
-    ),
-    tile(
+    ), 'uv'),
+    opens(tile(
       windIcon,
       'Wind',
       compass(cur.windFromDeg, String(windVal), s.windUnit === 'kmh' ? 'km/h' : 'mph'),
       h('p', { class: 'tile-note' }, `Gusts ${formatWind(cur.gustMph, s.windUnit)} · from ${compass8(cur.windFromDeg)}`),
-    ),
-    tile(
+    ), 'wind'),
+    opens(tile(
       dropIcon,
       'Humidity',
       h('div', { class: 'tile-value' }, `${Math.round(cur.humidity)}%`),
       h('p', { class: 'tile-note' }, `The dew point is ${formatTemp(cur.dewF, s.tempUnit)} right now.`),
-    ),
-    tile(
+    ), 'humidity'),
+    opens(tile(
       sunsetIcon,
       nextLabel,
       h('div', { class: 'tile-value' }, nextTime ? clockLabel(nextTime) : '--'),
       sunArc(set > rise ? (nowMin - rise) / (set - rise) : -1),
       otherTime ? h('p', { class: 'tile-note' }, `${otherLabel}: ${clockLabel(otherTime)}`) : null,
-    ),
-    tile(eyeIcon, 'Visibility', h('div', { class: 'tile-value' }, visibilityText(cur.visibilityM, s)), h('p', { class: 'tile-note' }, visNote)),
-    tile(gaugeIcon, 'Pressure', gauge(cur.pressureHpa, pressure.value, pressure.unit)),
-    tile(
+    ), 'uv'),
+    opens(tile(eyeIcon, 'Visibility', h('div', { class: 'tile-value' }, visibilityText(cur.visibilityM, s)), h('p', { class: 'tile-note' }, visNote)), 'visibility'),
+    opens(tile(gaugeIcon, 'Pressure', gauge(cur.pressureHpa, pressure.value, pressure.unit)), 'pressure'),
+    opens(tile(
       umbrellaIcon,
       'Precipitation',
       h('div', { class: 'tile-value' }, amountText(rain24, s)),
       h('div', { class: 'tile-sub' }, 'Next 24 hours'),
       h('p', { class: 'tile-note' }, nextRain(om.minutely).sentence),
-    ),
+    ), 'precip'),
   );
 }
 
