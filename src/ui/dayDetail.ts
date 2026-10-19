@@ -14,8 +14,12 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const W = 340;
 const PR = 34;
 const PW = W - PR;
-const PT = 12;
+const PAD_T = 12;
 const PB = 22;
+/** Room above the plot for the sunrise and sunset marks. */
+const PT_SUN = 28;
+/** How bright the line stays at night (1 in daylight). */
+const NIGHT = 0.42;
 
 const ICONS: Record<Metric, string> = {
   conditions: cloudMark,
@@ -166,6 +170,10 @@ interface ChartOpts {
   /** Now, in hours from midnight; earlier hours are drawn dimmed and dashed. */
   now: number | null;
   hiLo?: boolean;
+  /** Sunrise and sunset, in hours from midnight (null when the sun doesn't rise or set that day). */
+  sun?: { rise: number | null; set: number | null; riseAt: string; setAt: string } | null;
+  /** Mark sunrise and sunset with a sun and the time above the plot. */
+  sunLabels?: boolean;
   height: number;
   label: string;
 }
@@ -178,6 +186,7 @@ interface Chart {
 
 function chart(o: ChartOpts): Chart {
   const H = o.height;
+  const PT = o.sun && o.sunLabels ? PT_SUN : PAD_T;
   const PH = H - PT - PB;
   const bottom = PT + PH;
   const span = o.scale.max - o.scale.min || 1;
@@ -202,6 +211,33 @@ function chart(o: ChartOpts): Chart {
   defs.append(grad, fade, mask, past, future);
   s.append(defs);
 
+  // Daylight: the line is bright between sunrise and sunset and dims at night, easing over
+  // an hour at dawn and dusk. A mask, so it keeps whatever color the value gives it.
+  const rise = o.sun?.rise ?? null;
+  const set = o.sun?.set ?? null;
+  const daylit = rise != null || set != null;
+  const sunMask = daylit ? `url(#${id}s)` : null;
+  if (daylit) {
+    const lum = el('linearGradient', { id: `${id}d`, x1: 0, y1: 0, x2: PW, y2: 0, gradientUnits: 'userSpaceOnUse' });
+    const r = rise ?? -1;
+    const st = set ?? 25;
+    for (const [hr, a] of [
+      [r - 0.5, NIGHT],
+      [r + 0.5, 1],
+      [st - 0.5, 1],
+      [st + 0.5, NIGHT],
+    ]) {
+      lum.append(el('stop', { offset: Math.min(1, Math.max(0, hr / 24)), 'stop-color': '#fff', 'stop-opacity': a }));
+    }
+    const m = el('mask', { id: `${id}s`, maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: W, height: H });
+    m.append(el('rect', { x: 0, y: 0, width: W, height: H, fill: `url(#${id}d)` }));
+    defs.append(lum, m);
+    // A faint warm band behind the daylight hours.
+    const a = x(Math.max(0, rise ?? 0));
+    const b = x(Math.min(24, set ?? 24));
+    if (b > a) s.append(el('rect', { x: f1(a), y: PT, width: f1(b - a), height: PH, class: 'dd-daylight' }));
+  }
+
   // Grid: the scale on the right, every 6 hours across.
   for (let k = 0; o.scale.min + k * o.scale.step <= o.scale.max + 1e-9; k++) {
     const v = +(o.scale.min + k * o.scale.step).toPrecision(12);
@@ -219,13 +255,33 @@ function chart(o: ChartOpts): Chart {
     }
   }
 
+  for (const [hr, at, kind] of [
+    [rise, o.sun?.riseAt, 'Sunrise'],
+    [set, o.sun?.setAt, 'Sunset'],
+  ] as const) {
+    if (hr == null || !at) continue;
+    const sx = x(hr);
+    s.append(el('line', { x1: f1(sx), x2: f1(sx), y1: o.sunLabels ? PT - 6 : PT, y2: bottom, class: 'dd-sunline' }));
+    if (!o.sunLabels) continue;
+    const g = svg(GLYPHS[kind]) as SVGSVGElement;
+    for (const [k, v] of Object.entries({ x: f1(sx - 8), y: 1, width: 16, height: 16, class: 'glyph dd-sun' })) g.setAttribute(k, String(v));
+    s.append(g);
+    // The time beside the sun, on whichever side has room.
+    const right = sx + 52 <= W;
+    const t = el('text', { x: f1(right ? sx + 10 : sx - 10), y: 13, 'text-anchor': right ? 'start' : 'end', class: 'dd-sun-time' });
+    t.textContent = clockLabel(at);
+    s.append(t);
+  }
+
   const fill = `url(#${id}g)`;
   if (o.bars) {
     const bw = PW / 24;
+    const bars = el('g', sunMask ? { mask: sunMask } : {});
+    s.append(bars);
     o.values.slice(0, o.own).forEach((v, i) => {
       if (v <= 0) return;
       const top = Math.min(y(v), bottom - 1.5);
-      s.append(
+      bars.append(
         el('rect', {
           x: f1(x(i) + 1.5),
           y: f1(top),
@@ -241,7 +297,7 @@ function chart(o: ChartOpts): Chart {
     const pts = o.values.map((v, i) => [x(i), y(v)] as [number, number]);
     const line = smooth(pts, PT, bottom);
     const area = `${line}L${f1(pts[pts.length - 1][0])} ${bottom}L0 ${bottom}Z`;
-    const ahead = el('g', { 'clip-path': `url(#${id}n)` });
+    const ahead = el('g', { 'clip-path': `url(#${id}n)`, ...(sunMask ? { mask: sunMask } : {}) });
     ahead.append(
       el('path', { d: area, fill, mask: `url(#${id}m)` }),
       el('path', { d: line, stroke: fill, class: 'dd-line' }),
@@ -253,7 +309,9 @@ function chart(o: ChartOpts): Chart {
       s.append(before);
     }
     if (o.dotted) {
-      s.append(el('path', { d: smooth(o.dotted.map((v, i) => [x(i), y(v)]), PT, bottom), stroke: fill, class: 'dd-line is-dotted' }));
+      const gusts = el('path', { d: smooth(o.dotted.map((v, i) => [x(i), y(v)]), PT, bottom), stroke: fill, class: 'dd-line is-dotted' });
+      if (sunMask) gusts.setAttribute('mask', sunMask);
+      s.append(gusts);
     }
     if (o.hiLo) {
       const e = extremes(o.values.slice(0, o.own));
@@ -420,6 +478,13 @@ export class DayDetail {
     const now = isToday ? hourOfDay(om.current.time, date) : null;
     const dotted = this.metric === 'wind' ? hours.map((x) => (s.windUnit === 'kmh' ? mphToKmh(x.gustMph) : x.gustMph)) : undefined;
     const scale = spec.scale(e.lo, Math.max(e.hi, ...(dotted?.slice(0, own) ?? [])));
+    const daily = om.daily.find((d) => d.date === date);
+    const sun = daily
+      ? { rise: hourOfDay(daily.sunrise, date), set: hourOfDay(daily.sunset, date), riseAt: daily.sunrise, setAt: daily.sunset }
+      : null;
+    const sunWords = sun
+      ? [sun.rise != null ? `sunrise ${clockLabel(sun.riseAt)}` : null, sun.set != null ? `sunset ${clockLabel(sun.setAt)}` : null].filter(Boolean).join(', ')
+      : '';
 
     const main = chart({
       values,
@@ -431,8 +496,10 @@ export class DayDetail {
       dotted,
       now,
       hiLo: this.metric === 'conditions',
-      height: 200,
-      label: `${METRICS.find((m) => m.id === this.metric)!.label}, ${weekday(date)}, by the hour`,
+      sun,
+      sunLabels: true,
+      height: 216,
+      label: `${METRICS.find((m) => m.id === this.metric)!.label}, ${weekday(date)}, by the hour${sunWords ? `; ${sunWords}` : ''}`,
     });
     const charts = [main];
 
@@ -516,6 +583,7 @@ export class DayDetail {
         tick: (v) => `${v}%`,
         color: () => (s.theme === 'classic' ? '#f0f0fa' : '#64d2ff'),
         now,
+        sun,
         height: 150,
         label: `Chance of precipitation, ${weekday(date)}, by the hour`,
       });
