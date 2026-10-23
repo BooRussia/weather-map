@@ -90,7 +90,11 @@ export class WeatherPage {
     });
     this.wide.addEventListener('change', () => this.layout());
     this.swipeToClose();
-    window.addEventListener('resize', () => this.isOpen && this.sky.resize());
+    window.addEventListener('resize', () => {
+      if (!this.isOpen) return;
+      this.sky.resize();
+      if (this.drawer && !this.dragging) this.hang(this.span(), false);
+    });
     // Desktop opens docked unless you closed it last time.
     if (this.wide.matches && readFlag(DOCK_KEY, true)) this.setOpen(true);
     else this.layout();
@@ -108,35 +112,99 @@ export class WeatherPage {
     this.setOpen(!this.isOpen, opener);
   }
 
-  /**
-   * Phones: the page follows a pull down on the banner's handle, sliding down from the top with the
-   * finger (`px` pulled so far); `settle` then lets it finish opening or go back up (owner, 2026-10-23).
-   */
-  peek(px: number): void {
-    if (this.isOpen) return;
-    // The live sky comes down with it, not a blank page that lights up once it lands.
-    if (!this.el.classList.contains('pulling')) this.sky.start();
-    this.el.hidden = false;
-    this.el.classList.add('from-top', 'pulling');
-    this.el.style.transform = `translateY(calc(-100% + ${Math.max(0, Math.round(px))}px))`;
+  /* ---------- phones: the banner is the page's foot; the two come down as one drawer ---------- */
+
+  /** How far the drawer is down, px: 0 closed (the banner at the top), span() open. */
+  private pulled = 0;
+  /** Where it was when the finger went down. */
+  private from = 0;
+  private dragging = false;
+
+  private get drawer(): boolean {
+    return document.body.classList.contains('phone');
   }
 
-  settle(open: boolean, opener?: HTMLElement): void {
-    if (this.isOpen || !this.el.classList.contains('pulling')) return;
-    this.el.classList.remove('pulling');
-    if (open) {
-      // On from where the finger left it: the open position applies in the same frame the pull lets go.
-      this.el.classList.add('open');
-      this.el.style.transform = '';
-      this.setOpen(true, opener);
-      return;
+  private head(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('.phone-head');
+  }
+
+  /** The banner's bottom edge when closed (layout, so a transform in flight doesn't count). */
+  private foot(): number {
+    const head = this.head();
+    return head ? head.offsetTop + head.offsetHeight : 0;
+  }
+
+  /** How far the banner travels to open: down to where the bottom panel ends. */
+  private span(): number {
+    const end = document.querySelector('.dock')?.getBoundingClientRect().bottom ?? innerHeight;
+    return Math.max(0, end - this.foot());
+  }
+
+  /**
+   * Hang the drawer `px` down: the banner by exactly that, the page above it in step, so the page's
+   * bottom rides on the banner and reaches the full screen as the banner reaches the bottom.
+   */
+  private hang(px: number, animate: boolean): void {
+    const head = this.head();
+    const foot = this.foot();
+    const span = this.span();
+    this.pulled = Math.min(span, Math.max(0, px));
+    const p = span ? this.pulled / span : 1;
+    const t = animate ? '' : 'none';
+    this.el.style.transition = t;
+    this.el.style.transform = `translateY(${((1 - p) * (foot - innerHeight)).toFixed(1)}px)`;
+    if (head) {
+      head.style.transition = t;
+      head.style.transform = this.pulled ? `translateY(${this.pulled.toFixed(1)}px)` : '';
+      // The page's last cards scroll clear of the banner lying over its foot.
+      document.documentElement.style.setProperty('--head-h', `${head.offsetHeight}px`);
     }
-    this.el.style.transform = '';
+  }
+
+  /** The handle moved `dy` px (down is +) since the finger went down: the drawer follows it. */
+  drag(dy: number): void {
+    if (!this.drawer) return;
+    if (!this.dragging) {
+      this.dragging = true;
+      this.from = this.isOpen ? this.span() : 0;
+      if (!this.isOpen) {
+        this.el.hidden = false;
+        document.body.classList.add('drawer-on');
+        // The live sky comes down with it, not a blank page that lights up once it lands.
+        this.sky.start();
+      }
+    }
+    this.hang(this.from + dy, false);
+  }
+
+  /** Let go: open or closed by how far it went and which way it was moving (px/ms, down +). */
+  release(dy: number, speed: number, opener?: HTMLElement): void {
+    if (!this.dragging) return;
+    this.dragging = false;
+    const span = this.span();
+    const open = this.from === 0 ? dy > span * 0.25 || speed > 0.5 : !(-dy > span * 0.25 || speed < -0.5);
+    if (open) {
+      if (this.isOpen) this.hang(span, true);
+      else this.setOpen(true, opener);
+    } else if (this.isOpen) {
+      this.setOpen(false);
+    } else {
+      this.shut();
+    }
+  }
+
+  /** Up and away: the drawer closes, then the page hides and the banner lets go of its transform. */
+  private shut(): void {
+    this.hang(0, true);
     this.sky.stop();
     const done = () => {
-      if (this.isOpen) return;
+      if (this.isOpen || this.dragging) return;
       this.el.hidden = true;
-      this.el.classList.remove('from-top');
+      this.el.style.transform = '';
+      this.el.style.transition = '';
+      const head = this.head();
+      if (head) head.style.transition = '';
+      document.body.classList.remove('drawer-on');
     };
     this.el.addEventListener('transitionend', done, { once: true });
     setTimeout(done, 600);
@@ -150,27 +218,40 @@ export class WeatherPage {
       // The page takes over from a chart hanging under the banner.
       if (this.detail.bannerMetric) this.detail.close();
       this.opener = opener ?? null;
-      // Phones: down from the banner at the top, like a shade; elsewhere up from the bottom.
-      if (document.body.classList.contains('phone')) this.el.classList.add('from-top');
       this.el.hidden = false;
-      // Next frame, so the slide-in transition runs from the off-screen position.
-      requestAnimationFrame(() => {
+      if (this.drawer) {
+        // Phones: down from the top with the banner as its foot, from wherever a pull left it.
+        document.body.classList.add('drawer-on');
+        if (!this.pulled) {
+          this.hang(0, false);
+          void this.el.offsetHeight;
+        }
         this.el.classList.add('open');
+        this.hang(this.span(), true);
         this.sky.start();
-        if (!this.docked) $('#page-close').focus({ preventScroll: true });
-      });
+        $('#page-close').focus({ preventScroll: true });
+      } else {
+        // Next frame, so the slide-in transition runs from the off-screen position.
+        requestAnimationFrame(() => {
+          this.el.classList.add('open');
+          this.sky.start();
+          if (!this.docked) $('#page-close').focus({ preventScroll: true });
+        });
+      }
     } else {
       this.detail.close();
       this.el.classList.remove('open');
-      this.sky.stop();
-      const done = () => {
-        if (this.isOpen) return;
-        this.el.hidden = true;
-        this.el.classList.remove('from-top');
-      };
-      this.el.addEventListener('transitionend', done, { once: true });
-      // Reduced motion has no transition; hide right away.
-      setTimeout(done, 600);
+      if (this.drawer || this.pulled) {
+        this.shut();
+      } else {
+        this.sky.stop();
+        const done = () => {
+          if (!this.isOpen) this.el.hidden = true;
+        };
+        this.el.addEventListener('transitionend', done, { once: true });
+        // Reduced motion has no transition; hide right away.
+        setTimeout(done, 600);
+      }
       this.opener?.focus({ preventScroll: true });
     }
     this.layout();
@@ -236,19 +317,14 @@ export class WeatherPage {
     this.onLayout(docked);
   }
 
-  /**
-   * Phones: send the page back the way it came. Down from the top (the banner): push up from the end
-   * of the page. Up from the bottom: pull down from the top of it.
-   */
+  /** Tablets: pull down from the top of the page to close it. (Phones push the banner at its foot back up.) */
   private swipeToClose(): void {
     let startY = 0;
     let tracking = false;
-    const fromTop = () => this.el.classList.contains('from-top');
     this.scroller.addEventListener(
       'touchstart',
       (e) => {
-        const s = this.scroller;
-        tracking = !this.docked && (fromTop() ? s.scrollTop + s.clientHeight >= s.scrollHeight - 2 : s.scrollTop <= 0);
+        tracking = !this.docked && !this.drawer && this.scroller.scrollTop <= 0;
         startY = e.touches[0].clientY;
       },
       { passive: true },
@@ -256,8 +332,7 @@ export class WeatherPage {
     this.scroller.addEventListener(
       'touchmove',
       (e) => {
-        const dy = e.touches[0].clientY - startY;
-        if (tracking && (fromTop() ? -dy : dy) > 110) {
+        if (tracking && e.touches[0].clientY - startY > 110) {
           tracking = false;
           this.setOpen(false);
         }

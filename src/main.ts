@@ -1446,19 +1446,19 @@ async function main(): Promise<void> {
     chip.addEventListener('click', () => page.toggleDetail(metric, chip, capWrap));
   }
   // Phones: the banner's handle (pull down from full size for the whole weather), and its alert triangle.
-  let pagePull = false;
+  let pageDrag = false;
   bannerHandle({
-    pull: (px) => {
-      if (page.open) return;
-      if (!pagePull) page.render(conditions, store.get());
-      pagePull = true;
-      page.peek(px);
+    isOpen: () => page.open,
+    drag: (dy) => {
+      if (!pageDrag && !page.open) page.render(conditions, store.get());
+      pageDrag = true;
+      page.drag(dy);
     },
-    release: (open) => {
-      if (!pagePull) return;
-      pagePull = false;
-      page.settle(open, capsule);
+    release: (dy, speed) => {
+      pageDrag = false;
+      page.release(dy, speed, capsule);
     },
+    close: () => page.setOpen(false),
   });
   $('#cap-alerts').addEventListener('click', () => $('#alert-pill').click());
   // Phones: the little graphs along the banner's foot do the same, one per metric.

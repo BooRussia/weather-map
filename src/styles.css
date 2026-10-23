@@ -1604,13 +1604,20 @@ button {
   transform: none;
 }
 
-/* Phones: down from the top, like a shade, following the pull on the banner's handle (page.ts). */
-.page.from-top:not(.open) {
-  transform: translateY(-100%);
+/*
+ * Phones: the banner is the page's foot, and the two come down from the top as one drawer, following
+ * the handle (page.ts sets both transforms). While the page is out, the banner rides over it.
+ */
+body.phone .phone-head {
+  transition: transform var(--dur-sheet) var(--ease-sheet);
 }
 
-.page.pulling {
-  transition: none;
+body.phone.drawer-on .phone-head {
+  z-index: 9;
+}
+
+body.phone .page-scroll {
+  padding-bottom: calc(var(--head-h, 0px) + var(--safe-b) + 28px);
 }
 
 .sky {

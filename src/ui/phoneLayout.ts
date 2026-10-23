@@ -67,10 +67,16 @@ const COMPACT_KEY = 'weather-map:banner-compact';
 /**
  * The phone banner's handle (owner, 2026-10-23). Push it up: the banner tightens to the place, the
  * temperature, the day's peaks as small numbers, and a triangle with the alert count, to show more
- * map. Pull it down from there: back to the full banner. Pull it down again: the full weather, as if
- * you'd tapped the weather. A tap switches between the two sizes. The size is remembered.
+ * map. Pull it down from there: back to the full banner. Pull it down again: the whole weather comes
+ * down with it, the banner as the page's foot, one drawer following the finger; with it open, push the
+ * banner back up (or tap the handle) to close it. A tap otherwise switches sizes, which are remembered.
  */
-export function bannerHandle(weather: { pull: (px: number) => void; release: (open: boolean) => void }): void {
+export function bannerHandle(weather: {
+  isOpen: () => boolean;
+  drag: (dy: number) => void;
+  release: (dy: number, speed: number) => void;
+  close: () => void;
+}): void {
   const cap = $('.cap-wrap');
   const handle = $('#cap-handle');
   let compact = false;
@@ -123,14 +129,14 @@ export function bannerHandle(weather: { pull: (px: number) => void; release: (op
     lastY = e.clientY;
     lastT = e.timeStamp;
     if (Math.abs(dy) > 6) moved = true;
-    // From the full banner, pulling down brings the whole weather down from the top with the finger.
-    if (!compact && dy > 6) {
+    // With the weather out, the banner is its foot: it all moves with the finger, either way. From the
+    // full banner, pulling down brings it all down from the top.
+    if (pullingPage || weather.isOpen() || (!compact && dy > 6)) {
       pullingPage = true;
       cap.style.transform = '';
-      weather.pull((dy - 6) * 1.6);
+      weather.drag(weather.isOpen() ? dy : Math.max(0, dy - 6));
       return;
     }
-    if (pullingPage) weather.pull(0);
     // Otherwise the banner follows the finger a little, so the pull feels connected.
     cap.style.transform = `translateY(${Math.max(-36, Math.min(36, dy * 0.35)).toFixed(1)}px)`;
   });
@@ -141,8 +147,8 @@ export function bannerHandle(weather: { pull: (px: number) => void; release: (op
     cap.style.transform = '';
     if (pullingPage) {
       pullingPage = false;
-      // Far enough, or let go moving down: it opens; otherwise it goes back up.
-      weather.release(act && dy > 6 && (dy > 90 || speed > 0.5));
+      // Opens or closes by how far it went and which way it was moving (a cancel puts it back).
+      weather.release(act ? dy : 0, act ? speed : 0);
       return;
     }
     if (!act || !moved) return;
@@ -160,6 +166,7 @@ export function bannerHandle(weather: { pull: (px: number) => void; release: (op
       moved = false;
       return;
     }
-    set(!compact);
+    if (weather.isOpen()) weather.close();
+    else set(!compact);
   });
 }
