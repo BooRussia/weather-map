@@ -160,8 +160,6 @@ body {
 body {
   position: fixed;
   inset: 0;
-  /* iPhone home-screen app: reach over the strip WebKit leaves under the page (phoneLayout.ts). */
-  bottom: calc(-1 * var(--app-gap, 0px));
 }
 
 button,
@@ -1222,8 +1220,8 @@ button {
   z-index: 4;
   left: calc(var(--safe-l) + var(--edge));
   right: calc(var(--safe-r) + var(--edge) + var(--pad-right));
-  /* On the screen's real bottom (see body), or on the keyboard while it's up. */
-  bottom: max(calc(var(--safe-b) + 8px - var(--app-gap, 0px)), calc(var(--kb, 0px) + 8px));
+  /* Above the home indicator, or on the keyboard while it's up (phoneLayout.ts). */
+  bottom: max(calc(var(--safe-b) + 8px), calc(var(--kb, 0px) + 8px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3041,6 +3039,7 @@ body.trip-open .left-stack {
 /* Map only: the controls go; the map, its layers, and the credits stay. */
 body.map-only .top,
 body.map-only .left-stack,
+body.map-only .phone-head,
 body.map-only .controls,
 body.map-only .drawer,
 body.map-only .trip,
@@ -4098,7 +4097,9 @@ body.phone .controls {
   flex-direction: row;
   justify-content: space-between;
   width: auto;
-  margin: 0 -6px 2px;
+  margin: 0 -6px 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--hairline);
   border-radius: 0;
   background: none;
   box-shadow: none;
@@ -4116,24 +4117,35 @@ body.phone .ctrl {
   height: 40px;
 }
 
+/* The header (owner, 2026-10-23: the footer was too crammed): the place and today's weather on glass,
+   alerts and storms just under it. */
+.phone-head {
+  position: fixed;
+  z-index: 4;
+  top: calc(var(--safe-t) + 8px);
+  left: calc(var(--safe-l) + 8px);
+  right: calc(var(--safe-r) + 8px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.phone-head > * {
+  pointer-events: auto;
+}
+
 /* The temperature and the place on one line; today's wind and rain, and the pin, on the next. */
 body.phone .cap-wrap {
+  align-self: stretch;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px 8px;
-  margin: 0 0 8px;
-  padding: 8px 0 10px;
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  padding: 10px 14px 12px;
 }
 
-body.phone .cap-wrap::before,
 body.phone .cap-kicker,
 body.phone .cap-cond,
 body.phone .cap-hilo,
@@ -4201,7 +4213,7 @@ body.phone .search-results {
   right: 0;
   bottom: calc(100% + 8px);
   margin: 0;
-  max-height: max(160px, calc(var(--vvh, 100dvh) - 420px));
+  max-height: max(160px, calc(var(--vvh, 100dvh) - 360px));
   background: rgba(28, 28, 32, 0.97);
 }
 
@@ -4216,8 +4228,8 @@ body.phone .trip.folded {
   top: calc(var(--safe-t) + 10px);
 }
 
-/* Alerts and storms ride just above the panel. */
-.dock-pills {
+/* Alerts and storms, under the header. */
+.head-pills {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
