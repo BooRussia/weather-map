@@ -68,7 +68,7 @@ import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
 import { WeatherPage } from './ui/page';
-import { phoneLayout } from './ui/phoneLayout';
+import { bannerHandle, phoneLayout } from './ui/phoneLayout';
 import { PIN, SearchBox } from './ui/search';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
@@ -1445,6 +1445,13 @@ async function main(): Promise<void> {
   for (const [metric, chip] of Object.entries(chips) as [keyof typeof chips, HTMLElement][]) {
     chip.addEventListener('click', () => page.toggleDetail(metric, chip, capWrap));
   }
+  // Phones: the banner's handle (pull down from full size for the whole weather), and its alert triangle.
+  bannerHandle(() => {
+    if (page.open) return;
+    page.setOpen(true, capsule);
+    page.render(conditions, store.get());
+  });
+  $('#cap-alerts').addEventListener('click', () => $('#alert-pill').click());
   // Phones: the little graphs along the banner's foot do the same, one per metric.
   $('#cap-sparks').addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-metric]');

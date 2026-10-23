@@ -4312,6 +4312,135 @@ body.phone .cap-wrap .alert-pill::before {
   display: none;
 }
 
+/* The handle along the banner's foot: push up to tighten, pull down to open it back up (phoneLayout.ts). */
+.cap-handle,
+.cap-alerts {
+  display: none;
+}
+
+body.phone .cap-wrap {
+  transition: transform var(--dur-sheet) var(--ease-sheet);
+}
+
+body.phone .cap-handle {
+  grid-column: 1 / -1;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 18px;
+  margin: 4px 0 -6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+body.phone .cap-handle::before {
+  content: '';
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+body.phone .cap-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  border-radius: 9px;
+}
+
+/* Small banner: the place and the temperature, the day's peaks as small numbers, the alert count. */
+body.phone .cap-wrap.is-compact {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding-top: 8px;
+}
+
+body.phone .cap-wrap.is-compact .cap-cond,
+body.phone .cap-wrap.is-compact .cap-hilo,
+body.phone .cap-wrap.is-compact .head-pills,
+body.phone .cap-wrap.is-compact .spark-label,
+body.phone .cap-wrap.is-compact .spark-line {
+  display: none;
+}
+
+body.phone .cap-wrap.is-compact .capsule {
+  grid-template-areas: 'place place temp';
+}
+
+body.phone .cap-wrap.is-compact .cap-place {
+  font-size: var(--fs-body);
+}
+
+body.phone .cap-wrap.is-compact .cap-temp {
+  font-size: 34px;
+}
+
+body.phone .cap-wrap.is-compact .cap-pin {
+  grid-column: 3;
+  align-self: center;
+}
+
+body.phone .cap-wrap.is-compact .cap-alerts:not([hidden]) {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.cap-alerts svg {
+  width: 28px;
+  height: 25px;
+}
+
+.cap-alerts path {
+  fill: var(--c-alert);
+}
+
+.cap-alerts text {
+  fill: #000000;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font);
+}
+
+body.phone .cap-wrap.is-compact .cap-sparks:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 2px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+body.phone .cap-wrap.is-compact .spark {
+  margin: -3px -5px;
+  padding: 3px 5px;
+}
+
+body.phone .cap-wrap.is-compact .spark-value {
+  font-size: var(--fs-foot);
+}
+
+.spark-value .icon {
+  display: none;
+  width: 13px;
+  height: 13px;
+  margin-right: 3px;
+  vertical-align: -2px;
+  stroke-width: 2.2;
+}
+
+body.phone .cap-wrap.is-compact .spark-value .icon {
+  display: inline-block;
+}
+
 /* Search under the timeline; its results open upward, over the map. */
 body.phone .top {
   position: relative;

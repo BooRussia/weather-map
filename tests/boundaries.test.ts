@@ -8,7 +8,7 @@ const geometries = [
 ];
 
 describe('state and county lines', () => {
-  it('keeps only the borders two shapes share, once', () => {
+  it('draws every border once, shared or outer, or just the shared ones', () => {
     const topo = {
       arcs: [
         [
@@ -30,12 +30,14 @@ describe('state and county lines', () => {
       ] as [number, number][][],
       objects: { states: { geometries } },
     };
-    expect(meshLines(topo, 'states').coordinates).toEqual([
+    expect(meshLines(topo, 'states', false).coordinates).toEqual([
       [
         [1, 0],
         [1, 1],
       ],
     ]);
+    // With the outer edges: the shared edge plus the rest of each square, each once.
+    expect(meshLines(topo, 'states').coordinates).toHaveLength(3);
   });
 
   it('decodes quantized, delta-encoded arcs', () => {
@@ -51,7 +53,7 @@ describe('state and county lines', () => {
       ] as [number, number][][],
       objects: { counties: { geometries } },
     };
-    expect(meshLines(topo, 'counties').coordinates).toEqual([
+    expect(meshLines(topo, 'counties', false).coordinates).toEqual([
       [
         [11, 20],
         [11, 21],

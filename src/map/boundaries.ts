@@ -22,10 +22,11 @@ function arcsOf(nested: unknown, out: number[]): number[] {
 }
 
 /**
- * The borders shared by two shapes of a TopoJSON object (topojson's mesh with a !== b): each line
- * once, without coastlines or the national border, which the base map draws already.
+ * Every border of a TopoJSON object's shapes, each line once (topojson's mesh): the ones two shapes
+ * share, and with `outer` the coastlines and national borders too, so every state is outlined all the
+ * way around (owner, 2026-10-23: Florida, Louisiana, and Texas had open coasts).
  */
-export function meshLines(topo: Topology, object: string): MultiLineString {
+export function meshLines(topo: Topology, object: string, outer = true): MultiLineString {
   const users = new Map<number, Set<number>>();
   topo.objects[object].geometries.forEach((g, gi) => {
     for (const a of arcsOf(g.arcs, [])) {
@@ -38,7 +39,7 @@ export function meshLines(topo: Topology, object: string): MultiLineString {
   const [tx, ty] = topo.transform?.translate ?? [0, 0];
   const lines: [number, number][][] = [];
   for (const [a, set] of users) {
-    if (set.size < 2) continue;
+    if (set.size < 2 && !outer) continue;
     // Quantized arcs are delta-encoded: each point is the sum of the ones before.
     let x = 0;
     let y = 0;

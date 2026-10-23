@@ -5,7 +5,7 @@ import type { AppState } from '../state';
 import { formatTemp, formatWind, fToC, mphToKmh } from '../util/units';
 import { $, h, svg } from './dom';
 import { conditionLine, conditionWord, hiLoLine } from './format';
-import { umbrellaIcon, windIcon } from './icons';
+import { dropIcon, thermoIcon, umbrellaIcon, windIcon } from './icons';
 import { tempColor } from './page';
 
 /**
@@ -47,6 +47,7 @@ export function renderCapsule(c: Conditions | null, s: AppState): void {
 /** The alert pill: the most severe alert's name, plus a count when there are more. */
 export function renderAlertPill(alerts: Alert[]): void {
   const pill = $<HTMLButtonElement>('#alert-pill');
+  renderAlertCount(alerts);
   if (!alerts.length) {
     pill.hidden = true;
     return;
@@ -148,9 +149,10 @@ function renderSparks(c: Conditions | null, s: AppState): void {
   const wind = (mph: number) => (s.windUnit === 'kmh' ? mphToKmh(mph) : mph);
   const maxWind = Math.max(...day.map((x) => x.windMph));
   const maxHumid = Math.max(...day.map((x) => x.humidity));
-  const cells: { metric: Metric; label: string; value: string; color: string; line: SVGSVGElement; say: string }[] = [
+  const cells: { metric: Metric; label: string; icon: string; value: string; color: string; line: SVGSVGElement; say: string }[] = [
     {
       metric: 'conditions',
+      icon: thermoIcon,
       label: 'High',
       value: formatTemp(today.hiF, s.tempUnit),
       color: ink(tempColor(today.hiF)),
@@ -164,6 +166,7 @@ function renderSparks(c: Conditions | null, s: AppState): void {
     {
       metric: 'wind',
       label: 'Wind',
+      icon: windIcon,
       value: formatWind(maxWind, s.windUnit),
       color: ink('#64d2ff'),
       line: sparkline(day.map((x) => wind(x.windMph)), now, ink('#64d2ff'), [0, Math.max(wind(maxWind), wind(10))]),
@@ -172,6 +175,7 @@ function renderSparks(c: Conditions | null, s: AppState): void {
     {
       metric: 'precip',
       label: 'Rain',
+      icon: umbrellaIcon,
       value: `${Math.round(today.precipProbability)}%`,
       color: ink('#7d7aff'),
       line: sparkline(day.map((x) => x.precipProbability), now, ink('#7d7aff'), [0, 100]),
@@ -180,6 +184,7 @@ function renderSparks(c: Conditions | null, s: AppState): void {
     {
       metric: 'humidity',
       label: 'Humidity',
+      icon: dropIcon,
       value: `${Math.round(maxHumid)}%`,
       color: ink('#30d158'),
       line: sparkline(day.map((x) => x.humidity), now, ink('#30d158'), [0, 100]),
@@ -192,11 +197,26 @@ function renderSparks(c: Conditions | null, s: AppState): void {
         'button',
         { type: 'button', class: 'spark', 'data-metric': k.metric, 'aria-pressed': String(sparkOpen === k.metric), 'aria-label': `${k.say}. Show the chart.` },
         h('span', { class: 'spark-label' }, k.label),
-        h('span', { class: 'spark-value' }, k.value),
+        // The icon tells the numbers apart in the small banner, where the labels and lines go.
+        h('span', { class: 'spark-value' }, svg(k.icon), k.value),
         k.line,
       );
       (b.querySelector('.spark-value') as HTMLElement).style.color = k.color;
       return b;
     }),
   );
+}
+
+/** The small banner's alert mark (phones): a triangle with how many alerts are in effect inside it. */
+function renderAlertCount(alerts: Alert[]): void {
+  const b = $('#cap-alerts');
+  b.hidden = !alerts.length;
+  if (!alerts.length) return;
+  const n = alerts.length > 9 ? '9+' : String(alerts.length);
+  const tri = document.createElementNS(SVG_NS, 'svg');
+  tri.setAttribute('viewBox', '0 0 28 25');
+  tri.setAttribute('aria-hidden', 'true');
+  tri.innerHTML = `<path d="M12.3 2.9a2 2 0 0 1 3.4 0l10.6 18.6a2 2 0 0 1-1.7 3H3.4a2 2 0 0 1-1.7-3z" /><text x="14" y="20.5" text-anchor="middle">${n}</text>`;
+  b.replaceChildren(tri);
+  b.setAttribute('aria-label', `${alerts.length} active alert${alerts.length > 1 ? 's' : ''}: ${alerts[0].event}. Open details.`);
 }
