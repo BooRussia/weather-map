@@ -54,6 +54,8 @@ export const DEFAULT_MODEL_GROUPS: ModelGroup[] = ['official', 'consensus', 'hur
 
 /** Saved hurricane choices from before this version give way to the defaults above, once. */
 const TROPICS_PREFS_V = 2;
+/** Saved state/county line choices from when they were off by default give way to on, once. */
+const LINES_PREFS_V = 1;
 
 export interface AppState {
   /** `clouds`: satellite clouds, cut out of live GOES imagery. `tropics`: hurricanes (NHC forecasts and model tracks), shown only while storms are active. */
@@ -70,7 +72,7 @@ export interface AppState {
   stateLines: boolean;
   /** County borders over the map, once zoomed in to about a state (COUNTY_MIN_ZOOM). */
   countyLines: boolean;
-  /** Live traffic speeds on the roads (TomTom); reset each visit like the other layers. */
+  /** Live traffic speeds on the roads (TomTom; with a key); on at each visit, like the other layers' first state. */
   traffic: boolean;
   /** Imagery colors: grayscale (default) or real colors on radar and aerial imagery. */
   colorMode: ColorMode;
@@ -117,6 +119,8 @@ interface Prefs {
   basemap?: Basemap;
   stateLines?: boolean;
   countyLines?: boolean;
+  /** Which border defaults stateLines and countyLines were saved under (LINES_PREFS_V). */
+  linesV?: number;
   colorMode?: ColorMode;
   rainStreaks?: boolean;
   precipType?: boolean;
@@ -156,6 +160,7 @@ function writePrefs(s: AppState): void {
       basemap: s.basemap,
       stateLines: s.stateLines,
       countyLines: s.countyLines,
+      linesV: LINES_PREFS_V,
       colorMode: s.colorMode,
       rainStreaks: s.rainStreaks,
       precipType: s.precipType,
@@ -182,15 +187,17 @@ export function createStore(selected: LatLon, gps: boolean) {
   const prefs = readPrefs();
   // Hurricane choices saved under the old everything-on defaults start over from the new ones.
   const tropicsCurrent = prefs.tropicsV === TROPICS_PREFS_V;
+  const linesCurrent = prefs.linesV === LINES_PREFS_V;
   let state: AppState = {
     layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false, cells: false, cams: false },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
     basemap: prefs.basemap === 'dark' || prefs.basemap === 'standard' ? prefs.basemap : 'satellite',
-    stateLines: prefs.stateLines ?? false,
-    countyLines: prefs.countyLines ?? false,
-    traffic: false,
+    // On by default (owner, 2026-10-23); choices saved under the old off defaults start over, once.
+    stateLines: (linesCurrent ? prefs.stateLines : undefined) ?? true,
+    countyLines: (linesCurrent ? prefs.countyLines : undefined) ?? true,
+    traffic: true,
     colorMode: prefs.colorMode === 'mono' ? 'mono' : 'color',
     rainStreaks: prefs.rainStreaks ?? false,
     precipType: prefs.precipType ?? true,

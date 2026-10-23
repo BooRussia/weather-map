@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createStore } from '../src/state';
 import { latFromMercY, mercY, uvToWind, windToUV, wrapLon } from '../src/util/geo';
 import { countWords, limitWords, sentenceCase, formatCoord } from '../src/util/text';
 import { compass16, compass8, formatTemp, formatWind } from '../src/util/units';
@@ -333,5 +334,27 @@ describe('lightning geometry', () => {
       for (let k = 1; k < s.bolt.length; k += 2) top = Math.min(top, s.bolt[k]);
       expect(-top).toBeLessThan(70);
     }
+  });
+});
+
+describe('map feature defaults', () => {
+  it('starts with state lines, county lines, and traffic on, and turns saved off-by-default lines on once', () => {
+    const mem = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k),
+    });
+    const fresh = createStore({ lat: 28, lon: -82 }, false).get();
+    expect([fresh.stateLines, fresh.countyLines, fresh.traffic]).toEqual([true, true, true]);
+    // Saved before the new defaults (no linesV): back on.
+    mem.set('weather-map:prefs:v2', JSON.stringify({ stateLines: false, countyLines: false }));
+    const old = createStore({ lat: 28, lon: -82 }, false).get();
+    expect([old.stateLines, old.countyLines]).toEqual([true, true]);
+    // Switched off since: stays off.
+    mem.set('weather-map:prefs:v2', JSON.stringify({ stateLines: false, countyLines: true, linesV: 1 }));
+    const chosen = createStore({ lat: 28, lon: -82 }, false).get();
+    expect([chosen.stateLines, chosen.countyLines]).toEqual([false, true]);
+    vi.unstubAllGlobals();
   });
 });

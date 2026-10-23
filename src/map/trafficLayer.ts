@@ -23,8 +23,8 @@ const FLOW_COLOR = [
 /**
  * Live traffic from TomTom over the radar, so you can see how the weather is slowing things down:
  * thin freeway lines colored by speed when zoomed out (vector tiles), TomTom's own all-roads tiles
- * from city level in. Under the state and county lines and the labels. Off until switched on, and
- * only with a key.
+ * from city level in. Under the state and county lines and the labels. On by default (owner,
+ * 2026-10-23), and only with a key.
  */
 export class TrafficLayer {
   private light: boolean | null = null;
