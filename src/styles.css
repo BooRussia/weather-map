@@ -4136,54 +4136,180 @@ body.phone .ctrl {
   pointer-events: auto;
 }
 
-/* The temperature and the place on one line; today's wind and rain, and the pin, on the next. */
+/*
+ * The forehead (owner, 2026-10-23): the place and its condition on the left, the temperature large on
+ * the right; under them the day as four little graphs, then any alerts and storms.
+ */
 body.phone .cap-wrap {
   align-self: stretch;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px 8px;
-  padding: 10px 14px 12px;
+  align-items: start;
+  column-gap: 8px;
+  padding: 12px 12px 10px 16px;
 }
 
 body.phone .cap-kicker,
-body.phone .cap-cond,
-body.phone .cap-hilo,
+body.phone .cap-chips,
 body.phone .cap-pin::after {
   display: none;
 }
 
 body.phone .capsule {
-  grid-column: 1 / -1;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'place place temp'
+    'cond hilo temp';
   align-items: center;
-  gap: 10px;
+  column-gap: 12px;
   min-width: 0;
   padding: 0;
 }
 
-body.phone .cap-temp {
-  order: -1;
-  flex: none;
-  margin: 0;
-  font-size: 36px;
-}
-
 body.phone .cap-place-row {
+  grid-area: place;
   min-width: 0;
 }
 
 body.phone .cap-place {
-  font-size: var(--fs-callout);
+  font-size: var(--fs-title);
+  font-weight: 600;
 }
 
-body.phone .cap-chips {
+body.phone .cap-temp {
+  grid-area: temp;
   margin: 0;
-  padding: 0;
+  font-size: 50px;
+  line-height: 1;
 }
 
+body.phone .cap-cond,
+body.phone .cap-hilo {
+  max-width: none;
+  padding: 0;
+  font-size: var(--fs-callout);
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.phone .cap-cond {
+  grid-area: cond;
+  column-gap: 0;
+}
+
+body.phone .cap-cond:not(:empty)::after {
+  content: ' ·';
+}
+
+body.phone .cap-hilo {
+  grid-area: hilo;
+  margin-left: -8px;
+}
+
+body.phone .capsule {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+/* The pin, small, in the top corner beside the temperature. */
 body.phone .cap-pin {
   position: static;
+  grid-column: 2;
+  grid-row: 1;
+  width: 26px;
+  height: 26px;
+}
+
+/* The day in four little graphs: the peak in its color over a line of the hours, no boxes. */
+.cap-sparks {
+  display: none;
+}
+
+body.phone .cap-sparks:not([hidden]) {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.spark {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  margin: -4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg);
+  text-align: left;
+  transition: background-color var(--dur) var(--ease);
+}
+
+.spark[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.spark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.spark-label {
+  font-size: 10px;
+  font-weight: var(--cap-weight);
+  letter-spacing: var(--cap-track);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.spark-value {
+  font-size: var(--fs-callout);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.spark-line {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin-top: 4px;
+  overflow: visible;
+}
+
+/* Alerts and storms along the banner's foot, when there are any. */
+body.phone .cap-wrap .head-pills {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+body.phone .cap-wrap .head-pills:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+body.phone .cap-wrap .alert-pill {
+  height: 30px;
+  padding: 0 10px 0 8px;
+  font-size: var(--fs-foot);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+body.phone .cap-wrap .alert-pill::before {
+  display: none;
 }
 
 /* Search under the timeline; its results open upward, over the map. */

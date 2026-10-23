@@ -58,7 +58,8 @@ import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, h, svg } from './ui/dom';
-import { renderAlertPill, renderCapsule } from './ui/capsule';
+import { renderAlertPill, renderCapsule, setSparkOpen } from './ui/capsule';
+import type { Metric } from './data/dayDetail';
 import { alertMark, boltMark, cameraIcon, hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
 import { LayersMenu } from './ui/layersMenu';
 import { alertDetail, alertsList, alertsOfType, type AlertsHooks } from './ui/alertsPanel';
@@ -1444,8 +1445,14 @@ async function main(): Promise<void> {
   for (const [metric, chip] of Object.entries(chips) as [keyof typeof chips, HTMLElement][]) {
     chip.addEventListener('click', () => page.toggleDetail(metric, chip, capWrap));
   }
+  // Phones: the little graphs along the banner's foot do the same, one per metric.
+  $('#cap-sparks').addEventListener('click', (e) => {
+    const b = (e.target as Element).closest<HTMLElement>('[data-metric]');
+    if (b) page.toggleDetail(b.dataset.metric as Metric, b, capWrap);
+  });
   page.onDetailToggle = (open) => {
     for (const [metric, chip] of Object.entries(chips)) chip.setAttribute('aria-pressed', String(open === metric));
+    setSparkOpen(open);
   };
   $('#alert-pill').addEventListener('click', () => {
     if (!page.open) page.setOpen(true, $('#alert-pill'));
