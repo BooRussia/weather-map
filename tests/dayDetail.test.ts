@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cloudWord, dayHours, dayOutlook, extremes, hourOfDay, meanDirection, niceScale } from '../src/data/dayDetail';
 import { moonPhase } from '../src/data/moon';
+import { watchLabels } from '../src/map/alertAreas';
 import type { HourDetail } from '../src/data/openmeteo';
 
 const hour = (time: string, tempF = 60): HourDetail => ({
@@ -82,5 +83,19 @@ describe('banner and new tiles', () => {
     expect(q.name).toBe('Waxing gibbous');
     expect(q.daysToFull).toBe(4);
     expect(q.illumination).toBeGreaterThan(0.6);
+  });
+});
+
+describe('watch labels', () => {
+  it('names each watch once, in the middle of its area, and leaves warnings and tropical alerts alone', () => {
+    const item = (sig: 'W' | 'A', phenom: string, prod: string) => ({
+      id: prod,
+      props: { prod_type: prod, sig, phenom, url: '', expiration: '', ends: '', wfo: 'KTBW', cap_id: prod } as never,
+      box: { west: -84, east: -82, south: 28, north: 30 },
+    });
+    const fc = watchLabels([item('A', 'TO', 'Tornado Watch'), item('W', 'TO', 'Tornado Warning'), item('A', 'TR', 'Tropical Storm Watch')]);
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0].geometry).toEqual({ type: 'Point', coordinates: [-83, 29] });
+    expect(fc.features[0].properties?.prod_type).toBe('Tornado Watch');
   });
 });

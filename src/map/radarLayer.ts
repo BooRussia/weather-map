@@ -131,6 +131,24 @@ const lonToX = (lon: number) => (lon + 180) / 360;
 const latToY = (lat: number) => 0.5 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI);
 const tileKey = (frame: string, z: number, x: number, y: number) => `${frame}|${z}/${x}/${y}`;
 
+/**
+ * The lower 48 at z4 (eight tiles a frame), kept loaded for the frames on screen and coming up, so
+ * zooming out shows the whole country at once, and zooming or panning anywhere in it has radar to
+ * stretch over the gap while the sharp tiles come in (owner, 2026-10-22: storms vanished on zoom-out
+ * until you zoomed back in). z4 sits within the draw's fallbacks from every tile zoom, z3 to z7.
+ */
+const BASE_Z = 4;
+const BASE: Cover = (() => {
+  const n = 2 ** BASE_Z;
+  return {
+    z: BASE_Z,
+    x0: Math.floor(lonToX(-125) * n),
+    x1: Math.floor(lonToX(-66.5) * n),
+    y0: Math.floor(latToY(49.5) * n),
+    y1: Math.floor(latToY(24) * n),
+  };
+})();
+
 /** A loop playback runs (hours from now): after `to` it starts over at `from`. */
 export interface Loop {
   from: number;
@@ -870,6 +888,12 @@ export class RadarLayer implements CustomLayerInterface {
       for (const [x, y] of radarCells) want.add(tileKey(f.url, c.z, x, y));
       if (f.sat) for (const [x, y] of satCells) want.add(tileKey(f.sat, cs.z, x, y));
       if (f.ptype) for (const [x, y] of typeCells) want.add(tileKey(f.ptype, ct.z, x, y));
+    }
+    // Then the whole lower 48, coarse, for the same frames (not for one radar's own scans).
+    if (!this.timeline.site) {
+      for (const f of sources) {
+        for (let x = BASE.x0; x <= BASE.x1; x++) for (let y = BASE.y0; y <= BASE.y1; y++) want.add(tileKey(f.url, BASE.z, x, y));
+      }
     }
     // Last, whatever's left of the whole timeline's preview, nearest now first.
     for (const k of preview) want.add(k);

@@ -308,10 +308,10 @@ async function main(): Promise<void> {
     });
   };
   renderBar();
-  // Open on motion: loop the last hour into the next until the timeline is touched.
-  // Not for people who've asked their device to reduce motion.
+  // Open on motion: from 30 minutes ago to the end of the forecast, then again from 30 minutes ago
+  // (owner, 2026-10-22), until the timeline is touched. Not when the device asks to reduce motion.
   map.once('load', () => {
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) bar.autoplay(-1, 1);
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) bar.autoplay(-0.5, Infinity);
   });
 
   const refreshTimeline = () => {

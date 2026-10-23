@@ -7,6 +7,8 @@ import { getAlertAreas, type AlertAreaProps } from '../data/warnings';
 const SOURCE = 'nws-alert-areas';
 const FILL = 'nws-alert-areas-fill';
 const LINE = 'nws-alert-areas-line';
+const LABELS = 'nws-alert-labels';
+const LABEL = 'nws-alert-labels-text';
 const STALE_MS = 5 * 60_000;
 const SETTLE_MS = 800;
 
@@ -64,7 +66,9 @@ export const TROPICAL_PHENOMENA = ['HU', 'TR', 'SS', 'TY'];
  * severe thunderstorm warning…): warnings outlined over a light fill,
  * watches and tropical-cyclone alerts a fill only (zone shapes would draw
  * every county line). Fills lie under the radar, so rain keeps its true
- * colors inside a warning; outlines lie over it.
+ * colors inside a warning; outlines lie over it. Each watch is named in its
+ * color in the middle of its area, so a tint never goes unexplained (owner,
+ * 2026-10-22: a tornado watch's faint yellow read as a glitch).
  */
 export class AlertAreas {
   private covered: Bounds | null = null;
@@ -120,12 +124,30 @@ export class AlertAreas {
       },
       firstSymbol,
     );
+    map.addSource(LABELS, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    // The fallback style has no glyphs: no names then.
+    if (map.getStyle().glyphs) map.addLayer({
+      id: LABEL,
+      type: 'symbol',
+      source: LABELS,
+      minzoom: 4,
+      layout: {
+        visibility: vis,
+        'text-field': ['get', 'prod_type'],
+        'text-font': ['Montserrat Medium', 'Open Sans Bold', 'Noto Sans Regular'],
+        'text-size': 12,
+        'text-transform': 'uppercase',
+        'text-letter-spacing': 0.06,
+        'text-padding': 24,
+      },
+      paint: { 'text-color': color, 'text-halo-color': 'rgba(0, 0, 0, 0.85)', 'text-halo-width': 1.4 },
+    });
     if (this.visible) void this.update(true);
   }
 
   setVisible(on: boolean): void {
     this.visible = on;
-    for (const id of [FILL, LINE]) {
+    for (const id of [FILL, LINE, LABEL]) {
       if (this.map.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
     }
     if (on) void this.update();
@@ -199,6 +221,7 @@ export class AlertAreas {
       if (ctrl.signal.aborted) return;
       (this.map.getSource(SOURCE) as GeoJSONSource).setData(fc);
       this.items = groupAlerts(fc.features);
+      (this.map.getSource(LABELS) as GeoJSONSource | undefined)?.setData(watchLabels(this.items));
       this.covered = area;
       this.zoom = z;
       this.fetchedAt = Date.now();
@@ -207,4 +230,18 @@ export class AlertAreas {
       // Alerts on the map are a bonus; the HUD tag still comes from the point lookup.
     }
   }
+}
+
+/** A label point in the middle of each watch (tropical alerts are named by the hurricane layer). */
+export function watchLabels(items: AlertItem[]): FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: items
+      .filter((a) => a.props.sig === 'A' && !TROPICAL_PHENOMENA.includes(a.props.phenom))
+      .map((a) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [(a.box.west + a.box.east) / 2, (a.box.south + a.box.north) / 2] },
+        properties: a.props,
+      })),
+  };
 }

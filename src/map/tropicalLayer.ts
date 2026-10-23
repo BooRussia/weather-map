@@ -140,7 +140,10 @@ export class TropicalLayer {
     add({ id: SST, type: 'raster', source: SST, paint: { 'raster-opacity': 0.55 } }, this.under);
 
     const risk = ['match', ['get', 'risk7day'], 'High', '#ff453a', 'Medium', '#ff9f0a', '#ffd60a'];
-    add({ id: `${S.outlook}-fill`, type: 'fill', source: S.outlook, paint: { 'fill-color': risk as never, 'fill-opacity': 0.14 } }, this.under);
+    // Hatched like NHC's own outlook map, not a flat wash (owner, 2026-10-22: the yellow tint looked like a glitch).
+    for (const [name, color] of Object.entries(HATCH)) if (!m.hasImage(name)) m.addImage(name, hatchImage(color), { pixelRatio: 2 });
+    const hatch = ['match', ['get', 'risk7day'], 'High', 'outlook-hatch-high', 'Medium', 'outlook-hatch-medium', 'outlook-hatch-low'];
+    add({ id: `${S.outlook}-fill`, type: 'fill', source: S.outlook, paint: { 'fill-pattern': hatch as never } }, this.under);
     add({ id: `${S.outlook}-line`, type: 'line', source: S.outlook, paint: { 'line-color': risk as never, 'line-width': 1.5, 'line-dasharray': [3, 2] } });
     add({
       id: S.outlookPts,
@@ -391,6 +394,34 @@ export class TropicalLayer {
 }
 
 /** The storm marker's symbol: two curved arms around an eye, white with a dark outline (the disc beneath carries the color). */
+/** The 7-day outlook's hatch images, by chance of formation. */
+const HATCH: Record<string, string> = {
+  'outlook-hatch-low': '#ffd60a',
+  'outlook-hatch-medium': '#ff9f0a',
+  'outlook-hatch-high': '#ff453a',
+};
+
+/** Thin diagonal stripes on clear, tiling seamlessly (a 12 px cell, lines every 6 px). */
+function hatchImage(color: string): ImageData {
+  const ratio = 2;
+  const size = 12;
+  const c = document.createElement('canvas');
+  c.width = c.height = size * ratio;
+  const g = c.getContext('2d')!;
+  g.scale(ratio, ratio);
+  g.strokeStyle = color;
+  g.globalAlpha = 0.45;
+  g.lineWidth = 1.2;
+  g.beginPath();
+  // Each stripe drawn past the cell's corners so neighbouring cells join without seams.
+  for (let k = -size; k <= size; k += size / 2) {
+    g.moveTo(k, size);
+    g.lineTo(k + size, 0);
+  }
+  g.stroke();
+  return g.getImageData(0, 0, c.width, c.height);
+}
+
 function hurricaneIcon(): ImageData {
   const size = 64;
   const c = document.createElement('canvas');

@@ -7,11 +7,9 @@ import { pauseIcon, playIcon } from './icons';
 
 /** Playback speed in frames per second (15-minute frames: one hour per second). */
 const FRAMES_PER_SECOND = 4;
-/** The short autoplay loop runs at half speed, so two hours take four seconds, not two. */
-const AUTO_FRAMES_PER_SECOND = 2;
 /** Frames requested ahead of the playhead (3 s at full speed). */
 const PREFETCH = 12;
-/** A short loop (autoplay's two hours) is kept loaded whole, up to this many frames. */
+/** A loop is kept loaded whole when it's this many frames or fewer; a longer one, this far ahead. */
 const LOOP_PREFETCH_MAX = 16;
 /** Starting, and after a stall, play once this many frames ahead have loaded, so it doesn't stutter. */
 const RESUME_FRAMES = 3;
@@ -175,8 +173,8 @@ export class TimelineBar {
   }
 
   /**
-   * Loop from `fromH` to `toH` hours (the end clamps to the forecast available,
-   * and grows if more arrives) until the person uses the timeline.
+   * Loop from `fromH` to `toH` hours (the end clamps to the forecast available, and grows if more
+   * arrives; Infinity: the end of the timeline) until the person uses the timeline.
    */
   autoplay(fromH: number, toH: number): void {
     if (this.playing) return;
@@ -450,7 +448,7 @@ export class TimelineBar {
     this.speed += (target - this.speed) * Math.min(1, dt * SPEED_EASE);
     // Run on past a frame into the next when it's loaded, keeping the time left over (stopping on
     // every frame would cost a sliver of motion four times a second: a faint, steady hitch).
-    let pos = this.pos + dt * (this.loopWindow ? AUTO_FRAMES_PER_SECOND : FRAMES_PER_SECOND) * this.speed;
+    let pos = this.pos + dt * FRAMES_PER_SECOND * this.speed;
     if (pos > next && !(next + 1 <= end && this.frames.ready((next + 1) * STEP_H))) pos = next;
     this.pos = Math.min(pos, next + 1);
     this.apply();
