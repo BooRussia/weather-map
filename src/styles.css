@@ -162,6 +162,33 @@ body {
   inset: 0;
 }
 
+/*
+ * iPhone home-screen app with the see-through status bar: WebKit lays the page out a status bar short
+ * of the screen (WebKit bugs 236445, 301108), which left a black strip along the bottom. A page at least
+ * that much taller makes the fixed layers reach the bottom on their own (frappe-ui's fix for iOS 26).
+ */
+@media (display-mode: standalone) {
+  html {
+    min-height: min(100lvh, calc(100% + env(safe-area-inset-top, 0px)));
+  }
+}
+
+/* The status bar's strip: the map runs up under it, blurred so the clock and battery stay readable. */
+.status-blur {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--safe-t);
+  background: rgba(0, 0, 0, 0.16);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
+  mask-image: linear-gradient(to bottom, #000 65%, transparent);
+  pointer-events: none;
+}
+
 button,
 input {
   font: inherit;
