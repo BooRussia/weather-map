@@ -162,6 +162,12 @@ body {
   inset: 0;
 }
 
+/* Safari's strip under the status bar follows the page background, which follows the map (edgeTint.ts). */
+html,
+body {
+  transition: background-color 600ms ease;
+}
+
 /*
  * iPhone home-screen app with the see-through status bar: WebKit lays the page out a status bar short
  * of the screen (WebKit bugs 236445, 301108), which left a black strip along the bottom. A page at least

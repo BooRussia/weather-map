@@ -165,7 +165,8 @@ describe('hurricane choices are remembered', () => {
   it('first load shows only the essentials', () => {
     vi.stubGlobal('localStorage', storage({}));
     const s = createStore({ lat: 0, lon: 0 }, false).get();
-    expect(s.layers.tropics).toBe(true);
+    // Off on first load (the hurricane button turns them on), with these choices ready for when they are.
+    expect(s.layers.tropics).toBe(false);
     const on = Object.entries(s.tropics).filter(([, v]) => v === true).map(([k]) => k).sort();
     expect(on).toEqual(['cone', 'outlook', 'past', 'track', 'warnings']);
     expect(s.tropics.windProb).toBe(0);

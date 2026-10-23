@@ -23,6 +23,7 @@ import { addImagery, setBasemap, setColorMode } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
 import { Boundaries } from './map/boundaries';
 import { TempBubble } from './map/tempBubble';
+import { edgeTint } from './map/edgeTint';
 import { formatTemp } from './util/units';
 import { TrafficLayer } from './map/trafficLayer';
 import { OutlookLayer } from './map/outlookLayer';
@@ -142,6 +143,8 @@ async function main(): Promise<void> {
   const stormCells = new StormLayer(map);
   const lightning = new LightningLayer(map);
   const borders = new Boundaries(map);
+  // Safari on a phone: its strip under the status bar takes the map's color instead of black.
+  edgeTint(map);
   const traffic = new TrafficLayer(map);
   /** The style has loaded: layers can be added. */
   let styled = false;

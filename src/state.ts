@@ -189,7 +189,8 @@ export function createStore(selected: LatLon, gps: boolean) {
   const tropicsCurrent = prefs.tropicsV === TROPICS_PREFS_V;
   const linesCurrent = prefs.linesV === LINES_PREFS_V;
   let state: AppState = {
-    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: true, outlook: false, cells: false, cams: false },
+    // Hurricanes off on first load too (owner, 2026-10-23): the hurricane button turns them on.
+    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: false, outlook: false, cells: false, cams: false },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
