@@ -1604,6 +1604,15 @@ button {
   transform: none;
 }
 
+/* Phones: down from the top, like a shade, following the pull on the banner's handle (page.ts). */
+.page.from-top:not(.open) {
+  transform: translateY(-100%);
+}
+
+.page.pulling {
+  transition: none;
+}
+
 .sky {
   position: absolute;
   inset: 0;
