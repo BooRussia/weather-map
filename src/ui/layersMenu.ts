@@ -62,7 +62,7 @@ export function switchRow(opts: {
 function trafficSwitch(s: AppState, set: (on: boolean) => void): HTMLElement {
   const row = switchRow({
     label: 'Traffic',
-    sub: TrafficLayer.available ? 'Live road speeds: green moving, red jammed' : 'Needs a free TomTom key (VITE_TOMTOM_KEY)',
+    sub: TrafficLayer.available ? 'Live speeds: freeways zoomed out, every road up close' : 'Needs a free TomTom key (VITE_TOMTOM_KEY)',
     checked: s.traffic && TrafficLayer.available,
     onChange: set,
   });
@@ -89,6 +89,8 @@ export class LayersMenu {
   /** The data sources note is open. */
   private dataOpen = false;
   private cellsOpen = false;
+  /** Which part of the drawer shows (owner, 2026-10-23: one long list had too much going on). */
+  private tab: 'weather' | 'map' | 'settings' = 'weather';
 
   constructor(
     private readonly store: Store,
@@ -431,10 +433,34 @@ export class LayersMenu {
       this.btn.focus();
     });
     const head = h('div', { class: 'drawer-head' }, h('p', { class: 'pop-title' }, 'Map layers'), close);
+    const tabs = segmented(
+      'Show',
+      [
+        { value: 'weather', label: 'Weather' },
+        { value: 'map', label: 'Map' },
+        { value: 'settings', label: 'Settings' },
+      ],
+      this.tab,
+      (v) => {
+        this.tab = v;
+        this.render();
+        const b = this.el.querySelector('.popover-body');
+        if (b) b.scrollTop = 0;
+      },
+    );
+    tabs.classList.add('drawer-tabs');
     const body = h(
       'div',
       { class: 'popover-body' },
-      // What's happening now, then the storm hazards; hurricanes last, since its options run long.
+      ...(this.tab === 'weather' ? this.weatherTab(s) : this.tab === 'map' ? this.mapTab(s) : this.settingsRows().slice(1)),
+    );
+    this.el.replaceChildren(head, tabs, body);
+    body.scrollTop = scroll;
+  }
+
+  /** Weather: what's on the map now, the storm hazards (hurricanes last, its options run long), the weather map, and the radar's look. */
+  private weatherTab(s: AppState): HTMLElement[] {
+    return [
       h('p', { class: 'group-label' }, 'On the map'),
       h(
         'div',
@@ -461,33 +487,12 @@ export class LayersMenu {
       ),
       h('p', { class: 'group-label' }, 'Weather map'),
       this.mapTiles(),
-      h('p', { class: 'group-label' }, 'Map and radar'),
+      h('p', { class: 'group-label' }, 'Radar'),
       h(
         'div',
         { class: 'group' },
         segRow(
-          'Style',
-          segmented(
-            'Map style',
-            [
-              { value: 'satellite', label: 'Satellite' },
-              { value: 'standard', label: 'Standard' },
-              { value: 'dark', label: 'Dark' },
-            ],
-            s.basemap,
-            (v) => this.store.set({ basemap: v }),
-          ),
-        ),
-        switchRow({ label: 'State lines', checked: s.stateLines, onChange: (on) => this.store.set({ stateLines: on }) }),
-        switchRow({
-          label: 'County lines',
-          sub: 'Show once you zoom in to about a state',
-          checked: s.countyLines,
-          onChange: (on) => this.store.set({ countyLines: on }),
-        }),
-        trafficSwitch(s, (on) => this.store.set({ traffic: on })),
-        segRow(
-          'Radar colors',
+          'Colors',
           segmented('Radar colors', [{ value: 'color', label: 'Color' }, { value: 'mono', label: 'Mono' }], s.colorMode, (v) =>
             this.store.set({ colorMode: v }),
           ),
@@ -500,9 +505,43 @@ export class LayersMenu {
         }),
         switchRow({ label: 'Falling rain', checked: s.rainStreaks, onChange: (on) => this.store.set({ rainStreaks: on }) }),
       ),
-      ...this.settingsRows(),
-    );
-    this.el.replaceChildren(head, body);
-    body.scrollTop = scroll;
+    ];
+  }
+
+  /** Map: the base map's style, and what's drawn on it besides the weather (borders, traffic). */
+  private mapTab(s: AppState): HTMLElement[] {
+    return [
+      h('p', { class: 'group-label' }, 'Style'),
+      h(
+        'div',
+        { class: 'group' },
+        segRow(
+          'Map',
+          segmented(
+            'Map style',
+            [
+              { value: 'satellite', label: 'Satellite' },
+              { value: 'standard', label: 'Standard' },
+              { value: 'dark', label: 'Dark' },
+            ],
+            s.basemap,
+            (v) => this.store.set({ basemap: v }),
+          ),
+        ),
+      ),
+      h('p', { class: 'group-label' }, 'Map features'),
+      h(
+        'div',
+        { class: 'group' },
+        switchRow({ label: 'State lines', checked: s.stateLines, onChange: (on) => this.store.set({ stateLines: on }) }),
+        switchRow({
+          label: 'County lines',
+          sub: 'Show once you zoom in to about a state',
+          checked: s.countyLines,
+          onChange: (on) => this.store.set({ countyLines: on }),
+        }),
+        trafficSwitch(s, (on) => this.store.set({ traffic: on })),
+      ),
+    ];
   }
 }

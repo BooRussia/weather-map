@@ -1,16 +1,15 @@
-import type { Map as MlMap } from 'maplibre-gl';
-import { AERIAL_TILE_URL, STANDARD_TILE_URLS, type Basemap, type ColorMode } from '../config';
+import type { Map as MlMap, StyleSpecification } from 'maplibre-gl';
+import { AERIAL_TILE_URL, STANDARD_STYLE_URL, type Basemap, type ColorMode } from '../config';
+import { fetchJson } from '../util/http';
+import { desaturateStyle } from './style';
 
 /**
  * Raster imagery layers. Stack, bottom to top:
- *   Carto background → aerial (Satellite) or Voyager (Standard) → Carto fills/lines (Dark)
+ *   Carto background → aerial (Satellite) → Carto fills/lines (Standard, Dark)
  *   → satellite clouds (cloudCutout.ts) → weather map → radar (radarLayer.ts) → Carto labels.
  */
 const AERIAL = 'esri-aerial';
-const STANDARD = 'carto-voyager';
-const OWN = new Set([AERIAL, STANDARD]);
-/** The raster each style shows (Dark shows Carto's own vector fills instead). */
-const RASTER: Partial<Record<Basemap, string>> = { satellite: AERIAL, standard: STANDARD };
+const OWN = new Set([AERIAL]);
 
 interface RasterPaint {
   saturation: number;
@@ -30,16 +29,7 @@ const PAINT: Record<string, Record<ColorMode, RasterPaint>> = {
     mono: { saturation: -1, opacity: 1, brightnessMax: 0.6, contrast: 0 },
     color: { saturation: -0.1, opacity: 1, brightnessMax: 0.7, contrast: 0 },
   },
-  // A light street map: full brightness; Mono grays it like the rest.
-  [STANDARD]: {
-    mono: { saturation: -1, opacity: 1, brightnessMax: 1, contrast: 0 },
-    color: { saturation: 0, opacity: 1, brightnessMax: 1, contrast: 0 },
-  },
 };
-
-/** Carto's labels on the light Standard map: dark type on a white halo (the style's own are light on dark). */
-const LIGHT_LABELS = { 'text-color': '#3a3a3c', 'text-halo-color': 'rgba(255, 255, 255, 0.9)' } as const;
-const savedLabels = new Map<string, Record<string, unknown>>();
 
 export interface ImageryState {
   basemap: Basemap;
@@ -53,10 +43,8 @@ export function addImagery(map: MlMap, s: ImageryState): void {
 
   map.addSource(AERIAL, { type: 'raster', tiles: [AERIAL_TILE_URL], tileSize: 256, maxzoom: 19 });
   addRaster(map, AERIAL, s.basemap === 'satellite', s.colorMode, firstVector);
-  map.addSource(STANDARD, { type: 'raster', tiles: STANDARD_TILE_URLS, tileSize: 256, maxzoom: 20 });
-  addRaster(map, STANDARD, s.basemap === 'standard', s.colorMode, firstVector);
 
-  setBasemap(map, s.basemap);
+  setBasemap(map, s.basemap, s.colorMode);
 }
 
 function addRaster(map: MlMap, id: string, visible: boolean, mode: ColorMode, beforeId: string | undefined): void {
@@ -92,27 +80,73 @@ export function setColorMode(map: MlMap, mode: ColorMode): void {
   }
 }
 
+type Paints = Map<string, Record<string, unknown>>;
+
+/** The dark style's paint, as loaded (grayscale), to put back after Standard. */
+let darkPaints: Paints | null = null;
+/** Voyager's paint by layer id, fetched the first time Standard is picked. */
+let voyager: Promise<Paints> | null = null;
+/** The latest look asked for, so a slow Voyager fetch doesn't repaint after you've moved on. */
+let wanted = '';
+
+function voyagerPaints(): Promise<Paints> {
+  voyager ??= fetchJson<StyleSpecification>(STANDARD_STYLE_URL, { timeoutMs: 10_000 })
+    .then((style) => new Map(style.layers.map((l) => [l.id, ('paint' in l ? l.paint : undefined) ?? {}] as [string, Record<string, unknown>])))
+    .catch((e: unknown) => {
+      voyager = null;
+      throw e;
+    });
+  return voyager;
+}
+
+/** The base style's own layers (its vector tiles), not the app's (GeoJSON, rasters, custom). */
+function baseLayers(map: MlMap) {
+  return map.getStyle().layers.filter((l) => l.type === 'background' || ('source' in l && map.getSource(l.source as string)?.type === 'vector'));
+}
+
+function paint(map: MlMap, look: Paints, fallback: Paints | null): void {
+  for (const l of baseLayers(map)) {
+    const next = look.get(l.id) ?? {};
+    const keys = new Set([...Object.keys(next), ...Object.keys(fallback?.get(l.id) ?? {})]);
+    for (const k of keys) map.setPaintProperty(l.id, k as 'fill-color', next[k] as string | undefined);
+  }
+}
+
 /**
- * Satellite and Standard: show that raster and hide Carto's fills and lines, keeping labels and
- * boundaries on top (a "hybrid" view); Standard's labels turn dark for the light map. Dark: Carto's
- * own vector map.
+ * Satellite: aerial imagery, with Carto's fills and lines hidden and its labels and boundaries on top (a
+ * "hybrid" view). Standard: Carto's map in Voyager's colors (a light street map, labels dark on white).
+ * Dark: Carto's map as loaded. Mono grays Voyager like everything else.
  */
-export function setBasemap(map: MlMap, basemap: Basemap): void {
+export function setBasemap(map: MlMap, basemap: Basemap, mode: ColorMode): void {
   if (!map.getLayer(AERIAL)) return;
-  for (const id of OWN) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility(RASTER[basemap] === id));
-  const vector = basemap === 'dark';
-  for (const l of map.getStyle().layers) {
-    if (OWN.has(l.id) || /boundary/.test(l.id)) continue;
+  map.setLayoutProperty(AERIAL, 'visibility', visibility(basemap === 'satellite'));
+  const base = baseLayers(map);
+  darkPaints ??= new Map(base.map((l) => [l.id, { ...(('paint' in l ? l.paint : undefined) ?? {}) } as Record<string, unknown>]));
+  for (const l of base) {
+    if (/boundary/.test(l.id)) continue;
     if (l.type === 'fill' || l.type === 'line' || l.type === 'fill-extrusion') {
-      map.setLayoutProperty(l.id, 'visibility', visibility(vector));
-    }
-    // The base style's labels (its vector tiles; the app's own symbols use GeoJSON and draw their own colors).
-    if (l.type === 'symbol' && 'source' in l && map.getSource(l.source as string)?.type === 'vector') {
-      if (!savedLabels.has(l.id)) {
-        savedLabels.set(l.id, Object.fromEntries(Object.keys(LIGHT_LABELS).map((k) => [k, map.getPaintProperty(l.id, k as 'text-color')])));
-      }
-      const paint = basemap === 'standard' ? LIGHT_LABELS : savedLabels.get(l.id)!;
-      for (const [k, v] of Object.entries(paint)) map.setPaintProperty(l.id, k as 'text-color', (v ?? undefined) as string | undefined);
+      map.setLayoutProperty(l.id, 'visibility', visibility(basemap !== 'satellite'));
     }
   }
+  const key = `${basemap} ${mode}`;
+  wanted = key;
+  if (basemap !== 'standard') {
+    paint(map, darkPaints, darkPaints);
+    return;
+  }
+  void voyagerPaints()
+    .then((v) => {
+      if (wanted !== key) return;
+      const look = mode === 'mono' ? grayed(v) : v;
+      paint(map, look, darkPaints);
+    })
+    .catch(() => {
+      // No Voyager colors (offline): Standard stays the dark map until the next try.
+    });
+}
+
+function grayed(v: Paints): Paints {
+  const layers = [...v].map(([id, p]) => ({ id, paint: structuredClone(p) }));
+  desaturateStyle({ layers });
+  return new Map(layers.map((l) => [l.id, l.paint]));
 }

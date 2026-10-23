@@ -1332,6 +1332,7 @@ async function main(): Promise<void> {
     if (streaksOn(s) !== streaksOn(prev) || s.layers.thunder !== prev.layers.thunder || s.layers.wind !== prev.layers.wind) syncGrids();
     if (s.colorMode !== prev.colorMode) {
       setColorMode(map, s.colorMode);
+      if (s.basemap === 'standard') setBasemap(map, s.basemap, s.colorMode);
       radar.setColorMode(s.colorMode);
     }
     if (s.precipType !== prev.precipType) radar.setPrecipType(s.precipType);
@@ -1394,7 +1395,7 @@ async function main(): Promise<void> {
       renderPageTag();
     }
     if (s.basemap !== prev.basemap) {
-      setBasemap(map, s.basemap);
+      setBasemap(map, s.basemap, s.colorMode);
       setParticleInk(s);
     }
     if (s.weatherMap !== prev.weatherMap) showWeatherMap(s);

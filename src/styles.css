@@ -926,6 +926,16 @@ button {
   margin: 0;
 }
 
+/* Weather · Map · Settings: one short page each instead of one long list. */
+.drawer-tabs {
+  margin: 10px 14px 0 16px;
+}
+
+.drawer-tabs button {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Weather maps: thumbnails in three columns, the chosen one ringed in the accent. */
 .map-tiles {
   display: grid;
