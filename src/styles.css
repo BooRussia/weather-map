@@ -179,7 +179,21 @@ body {
   }
 }
 
-/* The status bar's strip: the map runs up under it, blurred so the clock and battery stay readable. */
+/*
+ * The status bar's strip in the home-screen app: the map runs up under it, blurred so the clock and
+ * battery stay readable. Gone entirely in a browser tab, where the browser paints that strip and might
+ * take its color from a layer up there (edgeTint.ts).
+ */
+.status-blur {
+  display: none;
+}
+
+@media (display-mode: standalone) {
+  .status-blur {
+    display: block;
+  }
+}
+
 .status-blur {
   position: fixed;
   /* Over the map, under every panel: it never blurs the banner below it (owner, 2026-10-23). */
@@ -2132,6 +2146,18 @@ body.phone.drawer-on .phone-head {
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
+}
+
+/* Closed, the scrim is gone, not just see-through: phone browsers color the strip under the status bar
+   from what's at the top edge, and an invisible black layer there turned it black. */
+.scrim:not(.open) {
+  display: none;
+}
+
+@starting-style {
+  .scrim.open {
+    opacity: 0;
+  }
 }
 
 .sheet {

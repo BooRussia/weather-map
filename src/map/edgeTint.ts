@@ -4,11 +4,11 @@ import type { Map as MlMap } from 'maplibre-gl';
 const STEP = 6;
 
 /**
- * Safari on an iPhone (a tab, not the home-screen app) won't draw the page under the status bar in
- * portrait: it paints that strip itself, in the page's background color, which was black (owner,
- * 2026-10-23). So the background takes the average color along the map's top edge, sampled once the
- * map settles after a move, and Safari's strip blends into the map instead of sitting over it as a bar.
- * (iOS 26 Safari ignores theme-color and tints from the page's background.)
+ * A phone browser (Safari, Arc, any other: not the home-screen app) won't let the page draw under the
+ * status bar: the browser paints that strip itself, and it was black (owner, 2026-10-23). Browsers take
+ * that color from the page in different ways, iOS 26 Safari from the page's background, others from
+ * the theme-color tag, so both take the average color along the map's top edge, sampled once the map
+ * settles after a move, and the strip blends into the map instead of sitting over it as a black bar.
  */
 export function edgeTint(map: MlMap): void {
   const nav = navigator as Navigator & { standalone?: boolean };
@@ -51,8 +51,10 @@ export function edgeTint(map: MlMap): void {
       n++;
     }
     if (!n) return;
-    const color = `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`;
+    const hex = (v: number) => Math.round(v / n).toString(16).padStart(2, '0');
+    const color = `#${hex(r)}${hex(g)}${hex(b)}`;
     document.documentElement.style.backgroundColor = color;
     document.body.style.backgroundColor = color;
+    for (const m of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) m.content = color;
   });
 }
