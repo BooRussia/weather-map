@@ -160,6 +160,8 @@ body {
 body {
   position: fixed;
   inset: 0;
+  /* iPhone home-screen app: reach over the strip WebKit leaves under the page (phoneLayout.ts). */
+  bottom: calc(-1 * var(--app-gap, 0px));
 }
 
 button,
@@ -1220,7 +1222,8 @@ button {
   z-index: 4;
   left: calc(var(--safe-l) + var(--edge));
   right: calc(var(--safe-r) + var(--edge) + var(--pad-right));
-  bottom: calc(var(--safe-b) + 8px);
+  /* On the screen's real bottom (see body), or on the keyboard while it's up. */
+  bottom: max(calc(var(--safe-b) + 8px - var(--app-gap, 0px)), calc(var(--kb, 0px) + 8px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1571,7 +1574,10 @@ button {
   transform: translateX(-80%);
 }
 
+/* The credits moved to Layers → Settings → Where the data comes from (owner, 2026-10-23); kept here,
+   hidden, as the live list that copies from. */
 .credits {
+  display: none;
   align-self: stretch;
   font-size: 10px;
   line-height: 1.45;
@@ -4072,6 +4078,175 @@ button.tip-row:hover {
   background: var(--group-fill);
   font-size: var(--fs-callout);
   line-height: 1.45;
+}
+
+/* ---------- phones: one panel at the bottom (owner, 2026-10-23; phoneLayout.ts moves the parts in) ---------- */
+
+body.phone .dock {
+  left: calc(var(--safe-l) + 8px);
+  right: calc(var(--safe-r) + 8px);
+}
+
+body.phone .timeline {
+  max-width: none;
+  padding: 4px 12px 12px;
+}
+
+/* The map buttons, in a row across the top of the panel. */
+body.phone .controls {
+  position: static;
+  flex-direction: row;
+  justify-content: space-between;
+  width: auto;
+  margin: 0 -6px 2px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+body.phone .controls::before,
+body.phone .ctrl-sep {
+  display: none;
+}
+
+body.phone .ctrl {
+  width: 40px;
+  height: 40px;
+}
+
+/* The temperature and the place on one line; today's wind and rain, and the pin, on the next. */
+body.phone .cap-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 8px;
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+body.phone .cap-wrap::before,
+body.phone .cap-kicker,
+body.phone .cap-cond,
+body.phone .cap-hilo,
+body.phone .cap-pin::after {
+  display: none;
+}
+
+body.phone .capsule {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+}
+
+body.phone .cap-temp {
+  order: -1;
+  flex: none;
+  margin: 0;
+  font-size: 36px;
+}
+
+body.phone .cap-place-row {
+  min-width: 0;
+}
+
+body.phone .cap-place {
+  font-size: var(--fs-callout);
+}
+
+body.phone .cap-chips {
+  margin: 0;
+  padding: 0;
+}
+
+body.phone .cap-pin {
+  position: static;
+}
+
+/* Search under the timeline; its results open upward, over the map. */
+body.phone .top {
+  position: relative;
+  z-index: auto;
+  inset: auto;
+  margin-top: 10px;
+}
+
+body.phone .search {
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+body.phone .search::before {
+  display: none;
+}
+
+body.phone .search-results {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  margin: 0;
+  max-height: max(160px, calc(var(--vvh, 100dvh) - 420px));
+  background: rgba(28, 28, 32, 0.97);
+}
+
+/* Over the light Standard map, thicker glass keeps white type readable (every screen size). */
+:root[data-theme='liquid'][data-basemap='standard'] {
+  --glass-fill: rgba(30, 30, 34, 0.74);
+  --glass-thick: rgba(30, 30, 34, 0.86);
+}
+
+/* Trip weather folds to the top on phones: search isn't up there any more. */
+body.phone .trip.folded {
+  top: calc(var(--safe-t) + 10px);
+}
+
+/* Alerts and storms ride just above the panel. */
+.dock-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: flex-start;
+}
+
+:root[data-theme='classic'] body.phone .search {
+  background: transparent;
+  border: 1px solid var(--hairline);
+}
+
+/* The chart from the chips opens above the panel on phones. */
+.detail.is-banner.is-above {
+  inset: auto auto var(--dd-bottom, 200px) var(--dd-left, 12px);
+  max-height: calc(100dvh - var(--dd-bottom, 200px) - var(--safe-t) - var(--edge));
+  transform: translateY(8px) scale(0.98);
+  transform-origin: bottom left;
+}
+
+.detail.is-banner.is-above.open {
+  transform: none;
+}
+
+.credits-now {
+  margin: 8px 0 0;
+}
+
+.credits-now a {
+  color: inherit;
 }
 
 @media (prefers-reduced-motion: reduce) {

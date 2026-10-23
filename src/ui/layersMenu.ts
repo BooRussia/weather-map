@@ -14,7 +14,8 @@ const DATA_NOTE =
   'Wind: Environment and Climate Change Canada (GeoMet, GDPS model). Weather maps: Environment and Climate Change Canada ' +
   '(GeoMet: GDPS, GDWPS, GIOPS models), NASA GIBS (GOES infrared), and Open-Meteo (CC BY 4.0), which also gives falling rain ' +
   'and point forecasts. Hurricanes: NHC. Search: Photon (OpenStreetMap). Satellite imagery: Esri, Vantor, Earthstar ' +
-  'Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors.';
+  'Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors (Standard in Carto’s Voyager ' +
+  'colors). State and county lines: U.S. Census Bureau via the us-atlas package. Traffic © TomTom.';
 
 type LayerKey = keyof AppState['layers'];
 
@@ -56,6 +57,18 @@ export function switchRow(opts: {
     h('span', { class: 'row-label' }, opts.label, opts.sub ? h('span', { class: 'row-sub' }, opts.sub) : null),
     input,
   );
+}
+
+/**
+ * The credits for what's on the map now, with their links: the list that used to run along the bottom
+ * of the screen (owner, 2026-10-23: it belongs here, not in the way).
+ */
+function creditsNow(): HTMLElement | null {
+  const live = document.querySelector('.credits');
+  if (!live) return null;
+  const copy = live.cloneNode(true) as HTMLElement;
+  copy.removeAttribute('class');
+  return h('p', { class: 'credits-now' }, h('strong', {}, 'On the map now: '), ...copy.childNodes);
 }
 
 /** Traffic needs a TomTom key; without one the switch says so and can't be turned on. */
@@ -418,7 +431,7 @@ export class LayersMenu {
         switchRow({ label: 'Thunder sound', checked: s.sound, onChange: (on) => this.store.set({ sound: on }) }),
         segRow('Look', theme),
         h('div', { class: 'row' }, h('span', { class: 'row-label' }, 'Where the data comes from'), more),
-        this.dataOpen ? h('p', { id: 'data-note', class: 'pop-note data-note' }, DATA_NOTE) : null,
+        this.dataOpen ? h('div', { id: 'data-note', class: 'pop-note data-note' }, h('p', {}, DATA_NOTE), creditsNow()) : null,
       ),
     ];
   }

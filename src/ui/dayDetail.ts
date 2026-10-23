@@ -489,11 +489,19 @@ export class DayDetail {
   /** Told when it opens or closes (the banner chips show which one is open). */
   onToggle: (() => void) | null = null;
 
-  /** Under the banner: just below it, lined up with its left edge. */
+  /**
+   * Under the banner: just below it, lined up with its left edge. On phones the banner is in the
+   * bottom panel, so the chart opens just above it instead.
+   */
   private place(): void {
     if (!this.anchor) return;
     const r = this.anchor.getBoundingClientRect();
+    const above = r.top > innerHeight / 2;
+    // Above the whole bottom panel (and the alert pills on it), not just the row the chips are in.
+    const top = above ? (this.anchor.closest('.dock')?.getBoundingClientRect().top ?? r.top) : r.top;
+    this.root.classList.toggle('is-above', above);
     this.root.style.setProperty('--dd-top', `${Math.round(r.bottom + 8)}px`);
+    this.root.style.setProperty('--dd-bottom', `${Math.round(innerHeight - top + 8)}px`);
     this.root.style.setProperty('--dd-left', `${Math.round(r.left)}px`);
   }
 

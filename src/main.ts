@@ -67,6 +67,7 @@ import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
 import { WeatherPage } from './ui/page';
+import { phoneLayout } from './ui/phoneLayout';
 import { PIN, SearchBox } from './ui/search';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
@@ -79,6 +80,8 @@ const LAYERS = ['wind', 'rain', 'thunder', 'clouds'] as const satisfies readonly
 const SETTLE_MS = 350;
 
 async function main(): Promise<void> {
+  // Phones: one panel at the bottom; before anything draws, so the first frame is already laid out.
+  phoneLayout();
   // The basemap style is on the path to the first frame: fetch it while everything else starts.
   const style = loadStyle();
   // Where to open, without waiting on a GPS fix: a shared link's view (#map=zoom/lat/lon),
@@ -108,6 +111,8 @@ async function main(): Promise<void> {
 
   const applyTheme = (s: AppState) => {
     document.documentElement.dataset.theme = s.theme;
+    // The light Standard map wants thicker glass so white type stays readable (styles.css).
+    document.documentElement.dataset.basemap = s.basemap;
   };
   applyTheme(store.get());
   const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -1395,6 +1400,7 @@ async function main(): Promise<void> {
       renderPageTag();
     }
     if (s.basemap !== prev.basemap) {
+      document.documentElement.dataset.basemap = s.basemap;
       setBasemap(map, s.basemap, s.colorMode);
       setParticleInk(s);
     }
