@@ -69,13 +69,16 @@ const COMPACT_KEY = 'weather-map:banner-compact';
  * temperature, the day's peaks as small numbers, and a triangle with the alert count, to show more
  * map. Pull it down from there: back to the full banner. Pull it down again: the whole weather comes
  * down with it, the banner as the page's foot, one drawer following the finger; with it open, push the
- * banner back up (or tap the handle) to close it. A tap otherwise switches sizes, which are remembered.
+ * banner back up (or tap the handle) to close it. Push up on the small banner and it slides away
+ * into map only, every control hidden (owner, 2026-10-23). A tap otherwise switches sizes, which are
+ * remembered.
  */
 export function bannerHandle(weather: {
   isOpen: () => boolean;
   drag: (dy: number) => void;
   release: (dy: number, speed: number) => void;
   close: () => void;
+  mapOnly: () => void;
 }): void {
   const cap = $('.cap-wrap');
   const handle = $('#cap-handle');
@@ -153,7 +156,19 @@ export function bannerHandle(weather: {
     }
     if (!act || !moved) return;
     if (dy < -24) {
-      if (!compact) set(true);
+      if (!compact) {
+        set(true);
+      } else {
+        // Already small: up and off the top, and the map takes the whole screen.
+        cap.style.transform = 'translateY(-160%)';
+        setTimeout(() => {
+          weather.mapOnly();
+          cap.style.transition = 'none';
+          cap.style.transform = '';
+          void cap.offsetHeight;
+          cap.style.transition = '';
+        }, 220);
+      }
     } else if (dy > 24 && compact) {
       set(false);
     }

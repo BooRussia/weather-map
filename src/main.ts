@@ -1459,6 +1459,7 @@ async function main(): Promise<void> {
       page.release(dy, speed, capsule);
     },
     close: () => page.setOpen(false),
+    mapOnly: () => $('#full-btn').click(),
   });
   $('#cap-alerts').addEventListener('click', () => $('#alert-pill').click());
   // Phones: the little graphs along the banner's foot do the same, one per metric.
