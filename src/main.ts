@@ -21,6 +21,8 @@ import { formatHashView, parseHashView, readLastFix, readLastView, saveLastFix, 
 import { CloudCutout } from './map/cloudCutout';
 import { addImagery, setBasemap, setColorMode } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
+import { Boundaries } from './map/boundaries';
+import { TrafficLayer } from './map/trafficLayer';
 import { OutlookLayer } from './map/outlookLayer';
 import { StormLayer, type StormHit } from './map/stormLayer';
 import { LightningLayer } from './map/lightningLayer';
@@ -131,6 +133,16 @@ async function main(): Promise<void> {
   const cloudCutout = new CloudCutout(map);
   const stormCells = new StormLayer(map);
   const lightning = new LightningLayer(map);
+  const borders = new Boundaries(map);
+  const traffic = new TrafficLayer(map);
+  /** The style has loaded: layers can be added. */
+  let styled = false;
+  const syncOverlays = (s: AppState) => {
+    if (!styled) return;
+    const light = s.basemap === 'standard';
+    traffic.set(s.traffic, light);
+    borders.set(s.stateLines, s.countyLines, light);
+  };
 
   // Radar: 24 h of history, now, and the HRRR forecast, smoothed (radarLayer.ts).
   let hrrrInit: number | null = null;
@@ -177,6 +189,9 @@ async function main(): Promise<void> {
     radar.install();
     stormOutlook.install();
     alertAreas.install();
+    // Traffic, then county and state lines, over the radar and alert areas, under the labels.
+    styled = true;
+    syncOverlays(s);
     stormOutlook.set(s.layers.outlook, s.outlookKind, s.outlookDay);
     showWeatherMap(s);
     // Storm cells over the radar; their data loads just after the first frame.
@@ -205,6 +220,13 @@ async function main(): Promise<void> {
     return { ...s.layers, rain: streaksOn(s) };
   };
   const palette = { wind: token('--fg') || '#ffffff', rain: token('--muted') || '#c8c8d0', lightning: token('--fg') || '#ffffff' };
+  // White wind and rain vanish on the light Standard map: dark ink there.
+  const setParticleInk = (s: AppState) => {
+    const light = s.basemap === 'standard';
+    palette.wind = light ? 'rgba(28, 28, 34, 0.85)' : token('--fg') || '#ffffff';
+    palette.rain = light ? 'rgba(40, 60, 90, 0.7)' : token('--muted') || '#c8c8d0';
+  };
+  setParticleInk(store.get());
   const animator = new Animator(map, $('#wind-canvas'), $('#fx-canvas'), flags, palette);
   animator.onStrike = () => {
     const s = store.get();
@@ -1371,12 +1393,18 @@ async function main(): Promise<void> {
       renderTags();
       renderPageTag();
     }
-    if (s.basemap !== prev.basemap) setBasemap(map, s.basemap);
+    if (s.basemap !== prev.basemap) {
+      setBasemap(map, s.basemap);
+      setParticleInk(s);
+    }
     if (s.weatherMap !== prev.weatherMap) showWeatherMap(s);
     if (s.weatherMap !== prev.weatherMap || s.selected !== prev.selected || s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit) {
       renderLegend();
     }
-    if (s.basemap !== prev.basemap || s.layers !== prev.layers || s.tropics !== prev.tropics || s.weatherMap !== prev.weatherMap) {
+    if (s.basemap !== prev.basemap || s.stateLines !== prev.stateLines || s.countyLines !== prev.countyLines || s.traffic !== prev.traffic) {
+      syncOverlays(s);
+    }
+    if (s.basemap !== prev.basemap || s.layers !== prev.layers || s.tropics !== prev.tropics || s.weatherMap !== prev.weatherMap || s.traffic !== prev.traffic) {
       renderCredits(s);
     }
     if (s.theme !== prev.theme) {
@@ -1384,6 +1412,7 @@ async function main(): Promise<void> {
       // Canvas and map colors don't read CSS; hand them the new tokens.
       palette.wind = palette.lightning = token('--fg');
       palette.rain = token('--muted');
+      setParticleInk(s);
       tripLayer?.setColors(tripColors());
       tagsLayer.setAccent(token('--accent'));
       camerasLayer.setAccent(token('--accent'));
@@ -1454,6 +1483,7 @@ function renderCredits(s: AppState): void {
   $('[data-credit="mrms"]').hidden = !s.layers.rain;
   $('[data-credit="ghe"]').hidden = !s.layers.rain;
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
+  $('[data-credit="tomtom"]').hidden = !s.traffic;
   $('[data-credit="cams"]').hidden = !s.layers.cams;
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="glm"]').hidden = !s.layers.thunder;

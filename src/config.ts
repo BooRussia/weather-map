@@ -6,8 +6,11 @@ export interface LatLon {
 /** Imagery colors: grayscale (DESIGN.md default) or real colors (NWS radar scale, true-color ground). */
 export type ColorMode = 'mono' | 'color';
 
-/** Base map: Carto Dark Matter vector, or Esri aerial imagery with the Carto labels on top. */
-export type Basemap = 'dark' | 'satellite';
+/**
+ * Base map: Esri aerial imagery, Carto's Voyager street map (Standard), or Carto Dark Matter, each
+ * with the Carto labels on top.
+ */
+export type Basemap = 'satellite' | 'standard' | 'dark';
 
 /** Used when geolocation is denied, unavailable, or slow. */
 export const DEFAULT_LOCATION: LatLon = { lat: 29.0491, lon: -82.4612 };
@@ -35,6 +38,23 @@ export const BASEMAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-g
 /** Aerial imagery. Credit: Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community. */
 export const AERIAL_TILE_URL =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+/** Standard map: Carto Voyager without its labels (the vector labels go on top). Credit: © CARTO © OpenStreetMap. */
+export const STANDARD_TILE_URLS = ['a', 'b', 'c', 'd'].map(
+  (s) => `https://${s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png`,
+);
+
+/** State and county shapes (Census, 1:10m), TopoJSON from the us-atlas package; fetched only when switched on. */
+export const US_STATES_TOPO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/states-10m.json';
+export const US_COUNTIES_TOPO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/counties-10m.json';
+
+/**
+ * Live traffic: TomTom's traffic-flow tiles (speed against free flow: green, orange, red). Needs a free
+ * TomTom key in VITE_TOMTOM_KEY; without one the Traffic switch says so and stays off.
+ */
+export const TOMTOM_KEY = (import.meta.env.VITE_TOMTOM_KEY as string | undefined)?.trim() || '';
+export const trafficTileUrl = (style: 'relative0' | 'relative0-dark') =>
+  `https://api.tomtom.com/traffic/map/4/tile/flow/${style}/{z}/{x}/{y}.png?key=${encodeURIComponent(TOMTOM_KEY)}&tileSize=256`;
 
 /** Open-Meteo grid: at most this many points per request (each point counts as one API call). */
 export const GRID_TARGET_POINTS = 140;

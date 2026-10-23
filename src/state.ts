@@ -64,8 +64,14 @@ export interface AppState {
   tempUnit: TempUnit;
   windUnit: WindUnit;
   sound: boolean;
-  /** Base map: dark vector (default) or aerial imagery. */
+  /** Base map: aerial imagery (default), a standard street map, or dark vector. */
   basemap: Basemap;
+  /** State borders over the map, at every zoom. */
+  stateLines: boolean;
+  /** County borders over the map, once zoomed in to about a state (COUNTY_MIN_ZOOM). */
+  countyLines: boolean;
+  /** Live traffic speeds on the roads (TomTom); reset each visit like the other layers. */
+  traffic: boolean;
   /** Imagery colors: grayscale (default) or real colors on radar and aerial imagery. */
   colorMode: ColorMode;
   /** Falling rain streaks on top of the radar. The Rain button still hides both. */
@@ -109,6 +115,8 @@ interface Prefs {
   windUnit?: WindUnit;
   sound?: boolean;
   basemap?: Basemap;
+  stateLines?: boolean;
+  countyLines?: boolean;
   colorMode?: ColorMode;
   rainStreaks?: boolean;
   precipType?: boolean;
@@ -146,6 +154,8 @@ function writePrefs(s: AppState): void {
       windUnit: s.windUnit,
       sound: s.sound,
       basemap: s.basemap,
+      stateLines: s.stateLines,
+      countyLines: s.countyLines,
       colorMode: s.colorMode,
       rainStreaks: s.rainStreaks,
       precipType: s.precipType,
@@ -177,7 +187,10 @@ export function createStore(selected: LatLon, gps: boolean) {
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
     sound: prefs.sound ?? true,
-    basemap: prefs.basemap === 'dark' ? 'dark' : 'satellite',
+    basemap: prefs.basemap === 'dark' || prefs.basemap === 'standard' ? prefs.basemap : 'satellite',
+    stateLines: prefs.stateLines ?? false,
+    countyLines: prefs.countyLines ?? false,
+    traffic: false,
     colorMode: prefs.colorMode === 'mono' ? 'mono' : 'color',
     rainStreaks: prefs.rainStreaks ?? false,
     precipType: prefs.precipType ?? true,
@@ -205,6 +218,8 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.tempUnit ||
         patch.windUnit ||
         patch.basemap ||
+        patch.stateLines !== undefined ||
+        patch.countyLines !== undefined ||
         patch.colorMode ||
         patch.sound !== undefined ||
         patch.rainStreaks !== undefined ||

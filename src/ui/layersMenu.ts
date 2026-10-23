@@ -1,3 +1,4 @@
+import { TrafficLayer } from '../map/trafficLayer';
 import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
@@ -55,6 +56,18 @@ export function switchRow(opts: {
     h('span', { class: 'row-label' }, opts.label, opts.sub ? h('span', { class: 'row-sub' }, opts.sub) : null),
     input,
   );
+}
+
+/** Traffic needs a TomTom key; without one the switch says so and can't be turned on. */
+function trafficSwitch(s: AppState, set: (on: boolean) => void): HTMLElement {
+  const row = switchRow({
+    label: 'Traffic',
+    sub: TrafficLayer.available ? 'Live road speeds: green moving, red jammed' : 'Needs a free TomTom key (VITE_TOMTOM_KEY)',
+    checked: s.traffic && TrafficLayer.available,
+    onChange: set,
+  });
+  if (!TrafficLayer.available) row.querySelector('input')!.disabled = true;
+  return row;
 }
 
 export function segRow(label: string, control: HTMLElement): HTMLElement {
@@ -454,10 +467,25 @@ export class LayersMenu {
         { class: 'group' },
         segRow(
           'Style',
-          segmented('Map style', [{ value: 'satellite', label: 'Satellite' }, { value: 'dark', label: 'Dark' }], s.basemap, (v) =>
-            this.store.set({ basemap: v }),
+          segmented(
+            'Map style',
+            [
+              { value: 'satellite', label: 'Satellite' },
+              { value: 'standard', label: 'Standard' },
+              { value: 'dark', label: 'Dark' },
+            ],
+            s.basemap,
+            (v) => this.store.set({ basemap: v }),
           ),
         ),
+        switchRow({ label: 'State lines', checked: s.stateLines, onChange: (on) => this.store.set({ stateLines: on }) }),
+        switchRow({
+          label: 'County lines',
+          sub: 'Show once you zoom in to about a state',
+          checked: s.countyLines,
+          onChange: (on) => this.store.set({ countyLines: on }),
+        }),
+        trafficSwitch(s, (on) => this.store.set({ traffic: on })),
         segRow(
           'Radar colors',
           segmented('Radar colors', [{ value: 'color', label: 'Color' }, { value: 'mono', label: 'Mono' }], s.colorMode, (v) =>

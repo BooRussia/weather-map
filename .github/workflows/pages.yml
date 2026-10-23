@@ -30,6 +30,8 @@ jobs:
           BASE_PATH: /${{ github.event.repository.name }}/
           # NWS asks for an app name plus a contact; the repo URL is a valid contact.
           VITE_NWS_USER_AGENT: WeatherMap/1.0 (https://github.com/${{ github.repository }})
+          # Live traffic (optional): a free TomTom key, saved as the repo secret TOMTOM_KEY.
+          VITE_TOMTOM_KEY: ${{ secrets.TOMTOM_KEY }}
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
