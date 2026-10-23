@@ -1,5 +1,6 @@
 import type { Conditions } from '../data/conditions';
-import type { Metric } from '../data/dayDetail';
+import { cloudWord, type Metric } from '../data/dayDetail';
+import { moonPhase } from '../data/moon';
 import type { Alert } from '../data/nws';
 import type { PointForecast } from '../data/openmeteo';
 import { clockLabel, hourlyCells, nextRain, uvWord, weekRows } from '../data/outlook';
@@ -12,6 +13,7 @@ import {
   calendarIcon,
   clockIcon,
   closeIcon,
+  cloudMark,
   dropIcon,
   eyeIcon,
   gaugeIcon,
@@ -111,6 +113,8 @@ export class WeatherPage {
     this.isOpen = open;
     if (this.wide.matches) writeFlag(DOCK_KEY, open);
     if (open) {
+      // The page takes over from a chart hanging under the banner.
+      if (this.detail.bannerMetric) this.detail.close();
       this.opener = opener ?? null;
       this.el.hidden = false;
       // Next frame, so the slide-in transition runs from the off-screen position.
@@ -132,6 +136,22 @@ export class WeatherPage {
       this.opener?.focus({ preventScroll: true });
     }
     this.layout();
+  }
+
+  /** The banner's chips: that metric's chart for today, dropped down under the banner; tap again to close. */
+  toggleDetail(metric: Metric, opener: HTMLElement, anchor: HTMLElement): void {
+    if (this.detail.bannerMetric === metric) this.detail.close();
+    else this.detail.open(metric, null, opener, false, anchor);
+  }
+
+  /** Keeps the chart current while the page is closed (the page's own render does it while open). */
+  feedDetail(c: Conditions | null, s: AppState): void {
+    this.detail.update(c, s);
+  }
+
+  /** Told when the chart under the banner opens, closes, or changes metric. */
+  set onDetailToggle(fn: (bannerMetric: Metric | null) => void) {
+    this.detail.onToggle = () => fn(this.detail.bannerMetric);
   }
 
   scrollToAlerts(): void {
@@ -466,6 +486,21 @@ function gauge(hpa: number, value: string, unit: string): SVGSVGElement {
   return s;
 }
 
+/** The moon as it looks tonight: the lit part over a dim disk (northern-hemisphere view). */
+function moonDisk(phase: number): SVGSVGElement {
+  const s = el('svg', { viewBox: '0 0 120 76', class: 'viz', 'aria-hidden': 'true' });
+  const [cx, cy, r] = [60, 38, 30];
+  s.append(el('circle', { cx, cy, r, class: 'moon-dark' }));
+  const k = Math.cos(2 * Math.PI * phase);
+  const rx = (r * Math.abs(k)).toFixed(2);
+  const waxing = phase < 0.5;
+  // Lit limb from top to bottom on the lit side, then the terminator back up.
+  const limb = waxing ? 1 : 0;
+  const term = waxing ? (k > 0 ? 0 : 1) : k > 0 ? 1 : 0;
+  s.append(el('path', { d: `M${cx} ${cy - r}A${r} ${r} 0 0 ${limb} ${cx} ${cy + r}A${rx} ${r} 0 0 ${term} ${cx} ${cy - r}Z`, class: 'moon-lit' }));
+  return s;
+}
+
 /** "07:25" style local times → minutes since midnight. */
 const minutesOf = (isoLocal: string) => Number(isoLocal.slice(11, 13)) * 60 + Number(isoLocal.slice(14, 16));
 
@@ -520,6 +555,12 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
 
   const rain24 = om.hourly.reduce((sum, hr) => sum + hr.precipitation, 0);
 
+  const next12 = om.hourly.slice(0, 12);
+  const cloudsNext12 = next12.reduce((sum, hr) => sum + hr.cloudCover, 0) / Math.max(1, next12.length);
+
+  const moon = moonPhase(new Date());
+  const fullOn = moon.nextFull.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
   return h(
     'div',
     { class: 'tiles' },
@@ -562,6 +603,26 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
       h('div', { class: 'tile-sub' }, 'Next 24 hours'),
       h('p', { class: 'tile-note' }, nextRain(om.minutely).sentence),
     ), 'precip'),
+    opens(
+      tile(
+        cloudMark,
+        'Cloud cover',
+        h('div', { class: 'tile-value' }, `${Math.round(cur.cloudCover)}%`),
+        h('div', { class: 'tile-sub' }, cloudWord(cur.cloudCover)),
+        h('p', { class: 'tile-note' }, `${cloudWord(cloudsNext12)} for the next 12 hours.`),
+      ),
+      'clouds',
+    ),
+    opens(
+      tile(
+        GLYPHS['clear-night'],
+        'Moon',
+        h('div', { class: 'tile-sub' }, moon.name),
+        moonDisk(moon.phase),
+        h('p', { class: 'tile-note' }, `${Math.round(moon.illumination * 100)}% lit · ${moon.daysToFull ? `Full ${fullOn}` : 'Full tonight'}`),
+      ),
+      'conditions',
+    ),
   );
 }
 

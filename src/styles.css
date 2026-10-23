@@ -577,7 +577,66 @@ button {
   align-items: flex-start;
   min-width: 156px;
   padding: 12px 16px 14px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
   text-align: left;
+}
+
+/* Today's highest wind and chance of rain, on the pin's line; each opens its chart under the banner. */
+.cap-chips {
+  display: flex;
+  gap: 6px;
+  margin-top: -4px;
+  padding: 0 46px 8px 14px;
+}
+
+.cap-chips[hidden] {
+  display: none;
+}
+
+.cap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+  font-size: var(--fs-foot);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition:
+    color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.cap-chip .icon {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
+}
+
+.cap-chip:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.cap-chip[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+.cap-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* With the chips showing, the H/L line no longer shares a line with the pin. */
+.cap-wrap:has(.cap-chips:not([hidden])) .cap-hilo {
+  padding-right: 0;
 }
 
 .cap-kicker {
@@ -3622,6 +3681,27 @@ button.tip-row:hover {
   }
 }
 
+/* From the banner's chips: drops down right under the banner, on every screen size. */
+.detail.is-banner {
+  inset: var(--dd-top, 200px) auto auto var(--dd-left, 12px);
+  width: min(380px, calc(100vw - var(--dd-left, 12px) - var(--edge) - var(--safe-r)));
+  max-height: calc(100dvh - var(--dd-top, 200px) - var(--edge) - var(--safe-b));
+  padding: 10px 16px 16px;
+  border-radius: var(--r-card);
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+  transform-origin: top left;
+}
+
+.detail.is-banner.open {
+  opacity: 1;
+  transform: none;
+}
+
+.detail.is-banner::after {
+  display: none;
+}
+
 .dd-head {
   display: grid;
   grid-template-columns: 40px 1fr 40px;
@@ -3896,6 +3976,20 @@ button.tip-row:hover {
   fill: var(--fg);
   font-size: 10px;
   font-weight: 700;
+}
+
+/* Moon tile */
+.moon-dark {
+  fill: rgba(255, 255, 255, 0.1);
+}
+
+.moon-lit {
+  fill: var(--c-moon);
+}
+
+:root[data-theme='classic'] .moon-dark {
+  fill: none;
+  stroke: var(--fg);
 }
 
 .dd-daylight {

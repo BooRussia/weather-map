@@ -60,14 +60,19 @@
 
     <!-- Readout for the selected point -->
     <div class="left-stack">
-    <div class="cap-wrap">
-    <button id="capsule" class="capsule glass" type="button">
+    <div class="cap-wrap glass">
+    <button id="capsule" class="capsule" type="button">
       <span id="cap-kicker" class="cap-kicker" hidden>My location</span>
       <span class="cap-place-row"><span id="cap-gps" class="cap-gps" hidden></span><span id="cap-place" class="cap-place">Locating</span></span>
       <span id="cap-temp" class="cap-temp">--°</span>
       <span id="cap-cond" class="cap-cond"></span>
       <span id="cap-hilo" class="cap-hilo"></span>
     </button>
+    <!-- Today's highest wind and chance of rain; each drops its chart down under the banner. -->
+    <div id="cap-chips" class="cap-chips" hidden>
+      <button id="cap-wind" class="cap-chip" type="button" aria-pressed="false"></button>
+      <button id="cap-rain" class="cap-chip" type="button" aria-pressed="false"></button>
+    </div>
     <button id="cap-pin" class="cap-pin" type="button" aria-pressed="false" aria-label="Pin the weather here" data-tip="Pin the weather here"></button>
     </div>
     <button id="alert-pill" class="alert-pill glass" type="button" hidden><span id="alert-pill-icon"></span><span id="alert-pill-text"></span></button>

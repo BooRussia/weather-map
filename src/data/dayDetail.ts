@@ -1,13 +1,14 @@
 import type { HourDetail } from './openmeteo';
 
 /** What the day-detail panel charts (Apple Weather's detail views). */
-export type Metric = 'conditions' | 'uv' | 'wind' | 'precip' | 'humidity' | 'visibility' | 'pressure';
+export type Metric = 'conditions' | 'uv' | 'wind' | 'precip' | 'clouds' | 'humidity' | 'visibility' | 'pressure';
 
 export const METRICS: { id: Metric; label: string }[] = [
   { id: 'conditions', label: 'Conditions' },
   { id: 'uv', label: 'UV Index' },
   { id: 'wind', label: 'Wind' },
   { id: 'precip', label: 'Precipitation' },
+  { id: 'clouds', label: 'Cloud Cover' },
   { id: 'humidity', label: 'Humidity' },
   { id: 'visibility', label: 'Visibility' },
   { id: 'pressure', label: 'Pressure' },
@@ -75,4 +76,21 @@ export function meanDirection(degs: number[]): number {
     y += Math.cos((d * Math.PI) / 180);
   }
   return ((Math.atan2(x, y) * 180) / Math.PI + 360) % 360;
+}
+
+/** Cloud cover in words (Apple's sky wording). */
+export function cloudWord(pct: number): string {
+  if (pct < 12) return 'Clear';
+  if (pct < 40) return 'Mostly clear';
+  if (pct < 70) return 'Partly cloudy';
+  if (pct < 90) return 'Mostly cloudy';
+  return 'Overcast';
+}
+
+/** The day's highest wind (mph) and chance of rain (%), for the banner; null before the forecast loads. */
+export function dayOutlook(week: HourDetail[], date: string, dailyPop: number): { maxWindMph: number; maxGustMph: number; pop: number } | null {
+  const { hours, own } = dayHours(week, date);
+  if (!own) return null;
+  const day = hours.slice(0, own);
+  return { maxWindMph: Math.max(...day.map((x) => x.windMph)), maxGustMph: Math.max(...day.map((x) => x.gustMph)), pop: dailyPop };
 }

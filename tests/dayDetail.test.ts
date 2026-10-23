@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dayHours, extremes, hourOfDay, meanDirection, niceScale } from '../src/data/dayDetail';
+import { cloudWord, dayHours, dayOutlook, extremes, hourOfDay, meanDirection, niceScale } from '../src/data/dayDetail';
+import { moonPhase } from '../src/data/moon';
 import type { HourDetail } from '../src/data/openmeteo';
 
 const hour = (time: string, tempF = 60): HourDetail => ({
@@ -18,6 +19,7 @@ const hour = (time: string, tempF = 60): HourDetail => ({
   dewF: 45,
   visibilityM: 16000,
   pressureHpa: 1015,
+  cloudCover: 30,
 });
 
 const week = ['2026-10-18', '2026-10-19'].flatMap((d) => Array.from({ length: 24 }, (_, i) => hour(`${d}T${String(i).padStart(2, '0')}:00`, 50 + i)));
@@ -56,5 +58,29 @@ describe('day detail', () => {
   it('averages wind directions across north', () => {
     expect(Math.round(meanDirection([350, 10]))).toBe(0);
     expect(Math.round(meanDirection([80, 100]))).toBe(90);
+  });
+});
+
+describe('banner and new tiles', () => {
+  it("gives the banner today's highest wind and gusts", () => {
+    const hours = week.map((x, i) => ({ ...x, windMph: i === 5 ? 18 : 6, gustMph: i === 5 ? 27 : 10 }));
+    expect(dayOutlook(hours, '2026-10-18', 40)).toEqual({ maxWindMph: 18, maxGustMph: 27, pop: 40 });
+    expect(dayOutlook(hours, '2026-10-30', 40)).toBeNull();
+  });
+
+  it('words cloud cover the way Apple does', () => {
+    expect(cloudWord(5)).toBe('Clear');
+    expect(cloudWord(55)).toBe('Partly cloudy');
+    expect(cloudWord(95)).toBe('Overcast');
+  });
+
+  it('knows the moon phase', () => {
+    // Full moon 2026-10-26 04:12 UTC; new moon 2026-10-10 15:50 UTC.
+    expect(moonPhase(new Date(Date.UTC(2026, 9, 26, 4))).name).toBe('Full moon');
+    expect(moonPhase(new Date(Date.UTC(2026, 9, 10, 16))).name).toBe('New moon');
+    const q = moonPhase(new Date(Date.UTC(2026, 9, 22, 12)));
+    expect(q.name).toBe('Waxing gibbous');
+    expect(q.daysToFull).toBe(4);
+    expect(q.illumination).toBeGreaterThan(0.6);
   });
 });

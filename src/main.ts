@@ -484,6 +484,7 @@ async function main(): Promise<void> {
     renderCapsule(conditions, s);
     renderAlertPill(conditions?.alerts ?? []);
     if (page.open) page.render(conditions, s);
+    else page.feedDetail(conditions, s);
   };
 
   /* ---------- conditions for the selected point ---------- */
@@ -1401,6 +1402,15 @@ async function main(): Promise<void> {
     page.toggle(capsule);
     if (page.open) page.render(conditions, store.get());
   });
+  // The banner's chips: just that chart, under the banner, without the page.
+  const capWrap = $('.cap-wrap');
+  const chips = { wind: $('#cap-wind'), precip: $('#cap-rain') } as const;
+  for (const [metric, chip] of Object.entries(chips) as [keyof typeof chips, HTMLElement][]) {
+    chip.addEventListener('click', () => page.toggleDetail(metric, chip, capWrap));
+  }
+  page.onDetailToggle = (open) => {
+    for (const [metric, chip] of Object.entries(chips)) chip.setAttribute('aria-pressed', String(open === metric));
+  };
   $('#alert-pill').addEventListener('click', () => {
     if (!page.open) page.setOpen(true, $('#alert-pill'));
     page.render(conditions, store.get());

@@ -20,6 +20,8 @@ export interface PointCurrent {
   pressureHpa: number;
   visibilityM: number;
   uv: number;
+  /** Percent of the sky covered. */
+  cloudCover: number;
   isDay: boolean;
 }
 
@@ -43,6 +45,7 @@ export interface HourDetail extends HourlyPoint {
   dewF: number;
   visibilityM: number;
   pressureHpa: number;
+  cloudCover: number;
 }
 
 export interface DailyPoint {
@@ -68,7 +71,7 @@ export interface MinutelyPoint {
 export interface PointForecast {
   current: PointCurrent;
   /** Next 24 hours from the current hour. */
-  hourly: HourlyPoint[];
+  hourly: HourDetail[];
   /** Every hour of the 7 days, from midnight today (local), for the day-detail panel. */
   week: HourDetail[];
   daily: DailyPoint[];
@@ -94,6 +97,7 @@ interface PointResponse {
     pressure_msl: number;
     visibility: number;
     uv_index: number;
+    cloud_cover: number;
     is_day: number;
   };
   hourly: {
@@ -112,6 +116,7 @@ interface PointResponse {
     dew_point_2m: number[];
     visibility: (number | null)[];
     pressure_msl: number[];
+    cloud_cover: (number | null)[];
   };
   daily: {
     time: string[];
@@ -137,10 +142,10 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
     longitude: c4(wrapLon(lon)),
     hourly:
       'temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day,' +
-      'apparent_temperature,uv_index,relative_humidity_2m,dew_point_2m,visibility,pressure_msl',
+      'apparent_temperature,uv_index,relative_humidity_2m,dew_point_2m,visibility,pressure_msl,cloud_cover',
     current:
       'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,' +
-      'apparent_temperature,relative_humidity_2m,dew_point_2m,pressure_msl,visibility,uv_index,is_day',
+      'apparent_temperature,relative_humidity_2m,dew_point_2m,pressure_msl,visibility,uv_index,cloud_cover,is_day',
     daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset,uv_index_max',
     minutely_15: 'precipitation',
     forecast_minutely_15: '8',
@@ -170,6 +175,7 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
     dewF: h.dew_point_2m?.[i] ?? h.temperature_2m[i],
     visibilityM: h.visibility?.[i] ?? 0,
     pressureHpa: h.pressure_msl?.[i] ?? 0,
+    cloudCover: h.cloud_cover?.[i] ?? 0,
   }));
   // The hourly strip starts at the current hour (local times sort as strings).
   const hourNow = c.time.slice(0, 13);
@@ -191,6 +197,7 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
       pressureHpa: c.pressure_msl,
       visibilityM: c.visibility,
       uv: c.uv_index,
+      cloudCover: c.cloud_cover ?? 0,
       isDay: c.is_day === 1,
     },
     hourly: week.slice(nowIdx, nowIdx + 24),

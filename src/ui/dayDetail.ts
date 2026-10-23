@@ -1,11 +1,11 @@
 import type { Conditions } from '../data/conditions';
-import { dayHours, extremes, hourOfDay, meanDirection, METRICS, niceScale, type Metric } from '../data/dayDetail';
+import { cloudWord, dayHours, extremes, hourOfDay, meanDirection, METRICS, niceScale, type Metric } from '../data/dayDetail';
 import type { HourDetail, PointForecast } from '../data/openmeteo';
 import { clockLabel, glyphFor, uvWord } from '../data/outlook';
 import type { AppState } from '../state';
 import { compass8, cToF, fToC, mphToKmh } from '../util/units';
 import { h, svg } from './dom';
-import { chevronIcon, closeIcon, cloudMark, dropIcon, eyeIcon, gaugeIcon, GLYPHS, sunMark, umbrellaIcon, windIcon } from './icons';
+import { chevronIcon, closeIcon, cloudMark, dropIcon, eyeIcon, gaugeIcon, GLYPHS, sunMark, thermoIcon, umbrellaIcon, windIcon } from './icons';
 import { segmented } from './layersMenu';
 import { tempColor } from './page';
 
@@ -22,10 +22,11 @@ const PT_SUN = 28;
 const NIGHT = 0.42;
 
 const ICONS: Record<Metric, string> = {
-  conditions: cloudMark,
+  conditions: thermoIcon,
   uv: sunMark,
   wind: windIcon,
   precip: umbrellaIcon,
+  clouds: cloudMark,
   humidity: dropIcon,
   visibility: eyeIcon,
   pressure: gaugeIcon,
@@ -90,13 +91,21 @@ function specFor(m: Metric, s: AppState, feels: boolean): Spec {
     }
     case 'precip':
       return {
-        value: (x) => (metric ? x.precipitation : x.precipitation / 25.4),
-        fmt: (v) => (metric ? `${v.toFixed(1)} mm` : `${v.toFixed(2)}″`),
-        tick: (v) => (metric ? String(+v.toFixed(1)) : `${+v.toFixed(2)}″`),
-        scale: (_lo, hi) => niceScale(0, Math.max(hi, metric ? 2 : 0.08)),
-        color: () => '#0a84ff',
-        bars: true,
-        about: 'Rain, or snow melted down to water, in each hour.',
+        value: (x) => x.precipProbability,
+        fmt: (v) => `${Math.round(v)}%`,
+        tick: (v) => `${v}%`,
+        scale: () => ({ min: 0, max: 100, step: 20 }),
+        color: () => '#64d2ff',
+        about: 'Chance of rain or snow in each hour; the bars below are how much.',
+      };
+    case 'clouds':
+      return {
+        value: (x) => x.cloudCover,
+        fmt: (v) => `${Math.round(v)}%`,
+        tick: (v) => `${v}%`,
+        scale: () => ({ min: 0, max: 100, step: 20 }),
+        color: () => '#c7d0dc',
+        about: 'How much of the sky is covered by cloud.',
       };
     case 'humidity':
       return {
@@ -126,6 +135,17 @@ function specFor(m: Metric, s: AppState, feels: boolean): Spec {
         about: 'Sea-level air pressure. Falling pressure often brings unsettled weather.',
       };
   }
+}
+
+/** Precipitation amounts per hour, in inches or millimeters. */
+function amountSpec(s: AppState) {
+  const metric = s.tempUnit === 'C';
+  return {
+    value: (x: HourDetail) => (metric ? x.precipitation : x.precipitation / 25.4),
+    fmt: (v: number) => (metric ? `${v.toFixed(1)} mm` : `${v.toFixed(2)}″`),
+    tick: (v: number) => (metric ? String(+v.toFixed(1)) : `${+v.toFixed(2)}″`),
+    scale: (hi: number) => niceScale(0, Math.max(hi, metric ? 2 : 0.08)),
+  };
 }
 
 /* ---------- chart ---------- */
@@ -360,11 +380,12 @@ const weekday = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateStri
 /** The hour readout uses the current conditions, not the model's hour, so it matches the page. */
 function nowHour(c: Conditions, om: PointForecast): HourDetail {
   const k = om.current;
+  const hour = om.week.find((x) => x.time.slice(0, 13) === k.time.slice(0, 13));
   return {
     time: k.time,
     tempF: c.tempF ?? k.tempF,
     precipitation: k.precipitation,
-    precipProbability: 0,
+    precipProbability: hour?.precipProbability ?? 0,
     weatherCode: k.weatherCode,
     windMph: k.windMph,
     windFromDeg: k.windFromDeg,
@@ -376,13 +397,15 @@ function nowHour(c: Conditions, om: PointForecast): HourDetail {
     dewF: k.dewF,
     visibilityM: k.visibilityM,
     pressureHpa: k.pressureHpa,
+    cloudCover: k.cloudCover,
   };
 }
 
 /**
  * Apple Weather's detail view for one day: a 24-hour chart of a metric you pick, with the hours
  * already gone dimmed, a readout you scrub with a finger or the pointer, and the day in a sentence.
- * Floats over the map beside the docked weather page; a sheet over the page on phones. Everything
+ * Floats over the map beside the docked weather page (a sheet over the page on phones), or, opened
+ * from the banner's wind and rain chips, drops down right under the banner on its own. Everything
  * comes from the point forecast the page already has, so opening it costs no requests.
  */
 export class DayDetail {
@@ -399,9 +422,12 @@ export class DayDetail {
   private c: Conditions | null = null;
   private s: AppState | null = null;
   private opener: HTMLElement | null = null;
+  /** Opened from the banner: shown under it instead of beside the page. */
+  private anchor: HTMLElement | null = null;
 
   constructor() {
     document.body.append(this.root);
+    window.addEventListener('resize', () => this.isOpen && this.place());
     // Escape closes this before the page under it.
     window.addEventListener(
       'keydown',
@@ -419,12 +445,23 @@ export class DayDetail {
     return !this.root.hidden;
   }
 
-  open(metric: Metric, date: string | null, opener: HTMLElement | null, feels = false): void {
+  /** Which metric is showing, when it hangs under the banner (for the chips' pressed state). */
+  get bannerMetric(): Metric | null {
+    return this.isOpen && this.anchor ? this.metric : null;
+  }
+
+  /**
+   * Show a metric for a day (null: today). `anchor`: drop down under that element (the banner)
+   * rather than beside the weather page.
+   */
+  open(metric: Metric, date: string | null, opener: HTMLElement | null, feels = false, anchor: HTMLElement | null = null): void {
     this.metric = metric;
     this.date = date;
     this.feels = feels;
+    this.anchor = anchor;
     const was = this.isOpen;
     if (!was) this.opener = opener;
+    this.root.classList.toggle('is-banner', !!anchor);
     this.root.hidden = false;
     this.render(true);
     if (!was) {
@@ -437,6 +474,8 @@ export class DayDetail {
 
   close(): void {
     if (!this.isOpen) return;
+    this.anchor = null;
+    this.onToggle?.();
     this.root.classList.remove('open');
     const done = () => {
       if (!this.root.classList.contains('open')) this.root.hidden = true;
@@ -447,6 +486,17 @@ export class DayDetail {
     this.opener = null;
   }
 
+  /** Told when it opens or closes (the banner chips show which one is open). */
+  onToggle: (() => void) | null = null;
+
+  /** Under the banner: just below it, lined up with its left edge. */
+  private place(): void {
+    if (!this.anchor) return;
+    const r = this.anchor.getBoundingClientRect();
+    this.root.style.setProperty('--dd-top', `${Math.round(r.bottom + 8)}px`);
+    this.root.style.setProperty('--dd-left', `${Math.round(r.left)}px`);
+  }
+
   /** New data for the place (or new units): redraw if open. */
   update(c: Conditions | null, s: AppState): void {
     this.c = c;
@@ -455,6 +505,8 @@ export class DayDetail {
   }
 
   private render(reset: boolean): void {
+    this.place();
+    this.onToggle?.();
     const c = this.c;
     const s = this.s;
     const om = c?.om;
@@ -507,7 +559,7 @@ export class DayDetail {
     const value = h('span', { class: 'dd-value-num' });
     const glyph = h('span', { class: 'dd-value-glyph' });
     const sub = h('p', { class: 'dd-sub' });
-    const dayRead = (): [string, string] => this.dayReadout(spec, hours, own, e, isToday ? nowHour(c, om) : null);
+    const dayRead = (): [string, string] => this.dayReadout(spec, hours, own, e, isToday ? nowHour(c, om) : null, daily?.precipProbability ?? e.hi);
     const show = (i: number | null) => {
       const [v, line] = i == null ? dayRead() : this.hourReadout(spec, hours[i]);
       value.textContent = v;
@@ -517,13 +569,13 @@ export class DayDetail {
       charts.forEach((ch) => ch.cursor(i));
     };
 
-    const plot = (ch: Chart) => {
+    const plot = (ch: Chart, bars = false) => {
       const wrap = h('div', { class: 'dd-plot' });
       wrap.append(ch.el);
       const at = (e: PointerEvent) => {
         const r = ch.el.getBoundingClientRect();
         const fx = ((e.clientX - r.left) / r.width) * W;
-        return Math.max(0, Math.min(own - 1, Math.round((fx / PW) * 24 - (spec.bars ? 0.5 : 0))));
+        return Math.max(0, Math.min(own - 1, Math.round((fx / PW) * 24 - (bars ? 0.5 : 0))));
       };
       wrap.addEventListener('pointerdown', (e) => {
         wrap.setPointerCapture(e.pointerId);
@@ -558,7 +610,7 @@ export class DayDetail {
         h('label', { class: 'dd-pick glass' }, svg(ICONS[this.metric]), svg(chevronIcon), picker),
       ),
       this.iconRow(hours, own),
-      plot(main),
+      plot(main, spec.bars),
     ];
 
     if (this.metric === 'conditions') {
@@ -574,7 +626,35 @@ export class DayDetail {
     }
     parts.push(h('p', { class: 'dd-about' }, spec.about));
 
-    if (this.metric === 'conditions' || this.metric === 'precip') {
+    if (this.metric === 'precip') {
+      const amt = amountSpec(s);
+      const vals = hours.map(amt.value);
+      const total = extremes(vals.slice(0, own)).sum;
+      const bars = chart({
+        values: vals,
+        own,
+        scale: amt.scale(Math.max(...vals.slice(0, own))),
+        tick: amt.tick,
+        color: () => (s.theme === 'classic' ? '#f0f0fa' : '#0a84ff'),
+        bars: true,
+        now,
+        sun,
+        height: 150,
+        label: `Precipitation amount, ${weekday(date)}, by the hour`,
+      });
+      charts.push(bars);
+      parts.push(
+        h(
+          'section',
+          { class: 'dd-sec' },
+          h('h3', { class: 'dd-sec-title' }, 'Amount'),
+          h('p', { class: 'dd-muted' }, `${isToday ? 'Total today' : `${weekday(date)}’s total`}: ${amt.fmt(total)}`),
+          plot(bars, true),
+        ),
+      );
+    }
+
+    if (this.metric === 'conditions') {
       const pops = hours.map((x) => x.precipProbability);
       const chance = chart({
         values: pops,
@@ -653,7 +733,14 @@ export class DayDetail {
     return row;
   }
 
-  private dayReadout(spec: Spec, hours: HourDetail[], own: number, e: ReturnType<typeof extremes>, now: HourDetail | null): [string, string] {
+  private dayReadout(
+    spec: Spec,
+    hours: HourDetail[],
+    own: number,
+    e: ReturnType<typeof extremes>,
+    now: HourDetail | null,
+    dayPop: number,
+  ): [string, string] {
     const s = this.s!;
     const day = hours.slice(0, own);
     const temp = (f: number) => `${Math.round(s.tempUnit === 'C' ? fToC(f) : f)}°`;
@@ -667,10 +754,17 @@ export class DayDetail {
       }
       case 'wind': {
         const g = now ? now.gustMph : gustMax;
-        return [spec.fmt(now ? spec.value(now) : e.hi), `Gusts ${spec.fmt(s.windUnit === 'kmh' ? mphToKmh(g) : g)}`];
+        const gust = `Gusts ${spec.fmt(s.windUnit === 'kmh' ? mphToKmh(g) : g)}`;
+        return [spec.fmt(now ? spec.value(now) : e.hi), now ? `${gust} · Max ${spec.fmt(e.hi)}` : gust];
       }
-      case 'precip':
-        return [spec.fmt(e.sum), now ? 'Total today' : 'Total for the day'];
+      case 'precip': {
+        // The day's chance (what the banner shows), and how much.
+        const amt = amountSpec(s);
+        const total = day.reduce((sum, x) => sum + amt.value(x), 0);
+        return [spec.fmt(dayPop), `${now ? 'Chance today' : 'Chance'} · ${amt.fmt(total)} total`];
+      }
+      case 'clouds':
+        return [spec.fmt(now ? now.cloudCover : e.avg), now ? cloudWord(now.cloudCover) : `Average · ${cloudWord(e.avg)}`];
       case 'humidity': {
         const dews = day.map((x) => x.dewF);
         return [
@@ -696,8 +790,12 @@ export class DayDetail {
     const extra =
       this.metric === 'wind'
         ? `Gusts ${spec.fmt(s.windUnit === 'kmh' ? mphToKmh(x.gustMph) : x.gustMph)} · from ${compass8(x.windFromDeg)}`
-        : this.metric === 'precip' || this.metric === 'conditions'
+        : this.metric === 'precip'
+          ? amountSpec(s).fmt(amountSpec(s).value(x))
+          : this.metric === 'conditions'
           ? `${Math.round(x.precipProbability)}% chance`
+          : this.metric === 'clouds'
+          ? cloudWord(x.cloudCover)
           : this.metric === 'humidity'
             ? `Dew point ${temp(x.dewF)}`
             : this.metric === 'uv'
@@ -736,10 +834,16 @@ export class DayDetail {
         return `${name}: wind ${spec.fmt(e.lo).replace(/ .*/, '')} to ${spec.fmt(e.hi)}, mostly from the ${dir}, with gusts up to ${gust}.`;
       }
       case 'precip': {
-        const pops = extremes(day.map((x) => x.precipProbability));
-        if (e.sum <= 0 && pops.hi < 20) return `${name}: no precipitation expected.`;
-        return `${name}: ${spec.fmt(e.sum)} expected in all. The best chance, ${Math.round(pops.hi)}%, is around ${when(pops.hiAt)}.`;
+        const amt = amountSpec(s);
+        const total = day.reduce((sum, x) => sum + amt.value(x), 0);
+        if (total <= 0 && e.hi < 20) return `${name}: no precipitation expected.`;
+        return `${name}: ${amt.fmt(total)} expected in all. The best chance, ${Math.round(e.hi)}%, is around ${when(e.hiAt)}.`;
       }
+      case 'clouds':
+        return (
+          `${name}: ${cloudWord(e.avg).toLowerCase()} on average, clearest around ${when(e.loAt)} (${spec.fmt(e.lo)}) ` +
+          `and cloudiest around ${when(e.hiAt)} (${spec.fmt(e.hi)}).`
+        );
       case 'humidity':
         return `${name}: humidity from ${spec.fmt(e.lo)} around ${when(e.loAt)} to ${spec.fmt(e.hi)} around ${when(e.hiAt)}.`;
       case 'visibility':
