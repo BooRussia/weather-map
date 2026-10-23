@@ -68,7 +68,7 @@ import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
 import { WeatherPage } from './ui/page';
-import { bannerHandle, phoneLayout } from './ui/phoneLayout';
+import { bannerHandle, dockHandle, phoneLayout } from './ui/phoneLayout';
 import { PIN, SearchBox } from './ui/search';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
@@ -1462,6 +1462,7 @@ async function main(): Promise<void> {
     mapOnly: () => $('#full-btn').click(),
   });
   $('#cap-alerts').addEventListener('click', () => $('#alert-pill').click());
+  dockHandle();
   // Phones: the little graphs along the banner's foot do the same, one per metric.
   $('#cap-sparks').addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-metric]');

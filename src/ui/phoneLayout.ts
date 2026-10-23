@@ -45,7 +45,7 @@ export function phoneLayout(): void {
     const phone = mq.matches;
     document.body.classList.toggle('phone', phone);
     if (phone) {
-      timeline.prepend(controls);
+      timeline.prepend($('#dock-handle'), controls);
       timeline.append(search);
       // Alerts and storms along the banner's foot (owner, 2026-10-23: "all in one clean forehead").
       pills.append(alert, storm);
@@ -183,5 +183,77 @@ export function bannerHandle(weather: {
     }
     if (weather.isOpen()) weather.close();
     else set(!compact);
+  });
+}
+
+const DOCK_KEY = 'weather-map:dock-minimal';
+
+/**
+ * The bottom panel's handle (owner, 2026-10-23: make the chin smaller). Pull it down: the panel shrinks
+ * to one line, play, the time, and the timeline, with the buttons and search tucked away. Push it up:
+ * the full panel again. A tap switches; the size is remembered.
+ */
+export function dockHandle(): void {
+  const panel = $('#timeline');
+  const handle = $('#dock-handle');
+  let minimal = false;
+  try {
+    minimal = localStorage.getItem(DOCK_KEY) === '1';
+  } catch {
+    // Storage blocked: starts full.
+  }
+  const set = (on: boolean, save = true) => {
+    minimal = on;
+    panel.classList.toggle('is-minimal', on);
+    handle.setAttribute('aria-label', on ? 'Show the map buttons and search' : 'Make the panel smaller');
+    handle.setAttribute('aria-expanded', String(!on));
+    if (save) {
+      try {
+        localStorage.setItem(DOCK_KEY, on ? '1' : '0');
+      } catch {
+        // Lasts for this visit.
+      }
+    }
+    // A chart hung above the panel finds its new edge.
+    window.dispatchEvent(new Event('resize'));
+  };
+  set(minimal, false);
+
+  let startY = 0;
+  let dy = 0;
+  let dragging = false;
+  let moved = false;
+  handle.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    moved = false;
+    startY = e.clientY;
+    dy = 0;
+    handle.setPointerCapture(e.pointerId);
+    panel.style.transition = 'none';
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    dy = e.clientY - startY;
+    if (Math.abs(dy) > 6) moved = true;
+    // The panel follows the finger a little, so the pull feels connected.
+    panel.style.transform = `translateY(${Math.max(-30, Math.min(30, dy * 0.35)).toFixed(1)}px)`;
+  });
+  const release = (act: boolean) => {
+    if (!dragging) return;
+    dragging = false;
+    panel.style.transition = '';
+    panel.style.transform = '';
+    if (!act || !moved) return;
+    if (dy > 24 && !minimal) set(true);
+    else if (dy < -24 && minimal) set(false);
+  };
+  handle.addEventListener('pointerup', () => release(true));
+  handle.addEventListener('pointercancel', () => release(false));
+  handle.addEventListener('click', () => {
+    if (moved) {
+      moved = false;
+      return;
+    }
+    set(!minimal);
   });
 }

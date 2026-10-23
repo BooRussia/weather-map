@@ -4128,7 +4128,80 @@ body.phone .dock {
 
 body.phone .timeline {
   max-width: none;
-  padding: 4px 12px 12px;
+  padding: 0 12px 10px;
+  transition: transform var(--dur-sheet) var(--ease-sheet);
+}
+
+/* The panel's handle, along its top edge (phoneLayout.ts dockHandle). */
+.dock-handle {
+  display: none;
+}
+
+body.phone .dock-handle {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 16px;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+body.phone .dock-handle::before {
+  content: '';
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+body.phone .dock-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  border-radius: 9px;
+}
+
+/* Minimal panel: one line, play, the time, and the timeline; the buttons and search tucked away. */
+body.phone .timeline.is-minimal {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  padding-bottom: 6px;
+}
+
+body.phone .timeline.is-minimal > .dock-handle {
+  grid-column: 1 / -1;
+}
+
+body.phone .timeline.is-minimal .controls,
+body.phone .timeline.is-minimal .top,
+body.phone .timeline.is-minimal .radar-legend,
+body.phone .timeline.is-minimal .tl-kind,
+body.phone .timeline.is-minimal .tl-scale,
+body.phone .timeline.is-minimal .map-legend,
+body.phone .timeline.is-minimal .site-bar {
+  display: none;
+}
+
+body.phone .timeline.is-minimal .tl-row {
+  display: contents;
+}
+
+body.phone .timeline.is-minimal .tl-play {
+  width: 34px;
+  height: 34px;
+}
+
+body.phone .timeline.is-minimal .tl-time {
+  font-size: var(--fs-foot);
+  white-space: nowrap;
+}
+
+body.phone .timeline.is-minimal .tl-range {
+  margin: 0;
 }
 
 /* The map buttons, in a row across the top of the panel. */
@@ -4137,8 +4210,8 @@ body.phone .controls {
   flex-direction: row;
   justify-content: space-between;
   width: auto;
-  margin: 0 -6px 8px;
-  padding-bottom: 4px;
+  margin: 0 -6px 6px;
+  padding-bottom: 2px;
   border-bottom: 1px solid var(--hairline);
   border-radius: 0;
   background: none;
@@ -4153,8 +4226,8 @@ body.phone .ctrl-sep {
 }
 
 body.phone .ctrl {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
 }
 
 /* The header (owner, 2026-10-23: the footer was too crammed): the place and today's weather on glass,
@@ -4486,11 +4559,11 @@ body.phone .top {
   position: relative;
   z-index: auto;
   inset: auto;
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 body.phone .search {
-  height: 40px;
+  height: 38px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.1);
   box-shadow: none;
