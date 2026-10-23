@@ -128,36 +128,30 @@ export class WeatherPage {
     return document.querySelector<HTMLElement>('.phone-head');
   }
 
-  /** The banner's bottom edge when closed (layout, so a transform in flight doesn't count). */
-  private foot(): number {
-    const head = this.head();
-    return head ? head.offsetTop + head.offsetHeight : 0;
+  /** The banner's top edge when closed (layout, so a transform in flight doesn't count). */
+  private top(): number {
+    return this.head()?.offsetTop ?? 0;
   }
 
-  /** How far the banner travels to open: down to where the bottom panel ends. */
+  /** How far it all travels to open: until the banner has gone off the bottom of the screen. */
   private span(): number {
-    const end = document.querySelector('.dock')?.getBoundingClientRect().bottom ?? innerHeight;
-    return Math.max(0, end - this.foot());
+    return Math.max(0, innerHeight - this.top());
   }
 
   /**
-   * Hang the drawer `px` down: the banner by exactly that, the page above it in step, so the page's
-   * bottom rides on the banner and reaches the full screen as the banner reaches the bottom.
+   * Hang the drawer `px` down: the banner by exactly that, and the page right above it, its bottom
+   * edge on the banner's top, so the two read as one sheet. Open, the page fills the screen and the
+   * banner, its foot, has been pushed off the bottom (owner, 2026-10-23: not left lying over it).
    */
   private hang(px: number, animate: boolean): void {
     const head = this.head();
-    const foot = this.foot();
-    const span = this.span();
-    this.pulled = Math.min(span, Math.max(0, px));
-    const p = span ? this.pulled / span : 1;
+    this.pulled = Math.min(this.span(), Math.max(0, px));
     const t = animate ? '' : 'none';
     this.el.style.transition = t;
-    this.el.style.transform = `translateY(${((1 - p) * (foot - innerHeight)).toFixed(1)}px)`;
+    this.el.style.transform = `translateY(${(this.top() + this.pulled - innerHeight).toFixed(1)}px)`;
     if (head) {
       head.style.transition = t;
       head.style.transform = this.pulled ? `translateY(${this.pulled.toFixed(1)}px)` : '';
-      // The page's last cards scroll clear of the banner lying over its foot.
-      document.documentElement.style.setProperty('--head-h', `${head.offsetHeight}px`);
     }
   }
 
@@ -182,7 +176,7 @@ export class WeatherPage {
     if (!this.dragging) return;
     this.dragging = false;
     const span = this.span();
-    const open = this.from === 0 ? dy > span * 0.25 || speed > 0.5 : !(-dy > span * 0.25 || speed < -0.5);
+    const open = this.from === 0 ? dy > span * 0.2 || speed > 0.5 : !(-dy > span * 0.2 || speed < -0.5);
     if (open) {
       if (this.isOpen) this.hang(span, true);
       else this.setOpen(true, opener);
@@ -317,14 +311,18 @@ export class WeatherPage {
     this.onLayout(docked);
   }
 
-  /** Tablets: pull down from the top of the page to close it. (Phones push the banner at its foot back up.) */
+  /**
+   * Send the page back the way it came. Phones (it came down from the top): push up past the end of
+   * the page. Tablets: pull down from the top of it.
+   */
   private swipeToClose(): void {
     let startY = 0;
     let tracking = false;
     this.scroller.addEventListener(
       'touchstart',
       (e) => {
-        tracking = !this.docked && !this.drawer && this.scroller.scrollTop <= 0;
+        const s = this.scroller;
+        tracking = !this.docked && (this.drawer ? s.scrollTop + s.clientHeight >= s.scrollHeight - 2 : s.scrollTop <= 0);
         startY = e.touches[0].clientY;
       },
       { passive: true },
@@ -332,7 +330,8 @@ export class WeatherPage {
     this.scroller.addEventListener(
       'touchmove',
       (e) => {
-        if (tracking && e.touches[0].clientY - startY > 110) {
+        const dy = e.touches[0].clientY - startY;
+        if (tracking && (this.drawer ? -dy : dy) > 110) {
           tracking = false;
           this.setOpen(false);
         }
