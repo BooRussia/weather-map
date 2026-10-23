@@ -159,9 +159,34 @@ export function binBase(bin: string): number | null {
 
 const ALL_BINS = ['AT', 'EP', 'CP'].flatMap((b) => [1, 2, 3, 4, 5].map((n) => `${b}${n}`));
 
-function layer<P = Record<string, unknown>>(id: number, signal?: AbortSignal): Promise<FeatureCollection<Geometry, P>> {
+async function layer<P = Record<string, unknown>>(id: number, signal?: AbortSignal): Promise<FeatureCollection<Geometry, P>> {
   const q = new URLSearchParams({ where: '1=1', outFields: '*', returnGeometry: 'true', outSR: '4326', f: 'geojson' });
-  return fetchJson<FeatureCollection<Geometry, P>>(`${NHC_GIS}/${id}/query?${q}`, { signal, timeoutMs: 15_000 });
+  return dropBrokenAreas(await fetchJson<FeatureCollection<Geometry, P>>(`${NHC_GIS}/${id}/query?${q}`, { signal, timeoutMs: 15_000 }));
+}
+
+/**
+ * Leave out areas no storm product can have: wider than half the globe or taller than 90° of latitude.
+ * NHC's service sometimes hands back an area across the date line as the whole world (2026-10-22: a
+ * 30% Pacific outlook area came back as -180..180, -90..90 and hatched the entire map).
+ */
+export function dropBrokenAreas<T extends FeatureCollection<Geometry, P>, P>(fc: T): T {
+  const broken = (g: Geometry | null): boolean => {
+    if (!g || (g.type !== 'Polygon' && g.type !== 'MultiPolygon')) return false;
+    let west = Infinity;
+    let east = -Infinity;
+    let south = Infinity;
+    let north = -Infinity;
+    for (const ring of g.type === 'Polygon' ? g.coordinates : g.coordinates.flat()) {
+      for (const [lon, lat] of ring) {
+        west = Math.min(west, lon);
+        east = Math.max(east, lon);
+        south = Math.min(south, lat);
+        north = Math.max(north, lat);
+      }
+    }
+    return east - west > 180 || north - south > 90;
+  };
+  return { ...fc, features: fc.features.filter((f) => !broken(f.geometry)) };
 }
 
 const EMPTY = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] });

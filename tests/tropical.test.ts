@@ -3,6 +3,7 @@ import { parseADeck, selectModels } from '../scripts/tropical.mjs';
 import {
   binBase,
   category,
+  dropBrokenAreas,
   floater,
   modelLines,
   nhcGraphicsPage,
@@ -197,5 +198,37 @@ describe('hurricane choices are remembered', () => {
     const again = createStore({ lat: 0, lon: 0 }, false).get();
     expect(again.tropics).toEqual({ ...DEFAULT_TROPICS, cone: false, models: true, windProb: 64 });
     expect(again.modelGroups).toEqual(['official', 'member']);
+  });
+});
+
+describe('broken NHC areas', () => {
+  it('drops an area that came back as the whole world, keeps real ones and tracks across the date line', () => {
+    const poly = (ring: number[][]) => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Polygon' as const, coordinates: [ring] } });
+    const world = poly([
+      [180, -90],
+      [180, 90],
+      [-180, 90],
+      [-180, -90],
+      [180, -90],
+    ]);
+    const real = poly([
+      [-54.5, 29.8],
+      [-48.9, 29.8],
+      [-48.9, 37.2],
+      [-54.5, 29.8],
+    ]);
+    const track = {
+      type: 'Feature' as const,
+      properties: {},
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: [
+          [179, 15],
+          [-179, 16],
+        ],
+      },
+    };
+    const out = dropBrokenAreas({ type: 'FeatureCollection', features: [world, real, track] });
+    expect(out.features).toEqual([real, track]);
   });
 });
