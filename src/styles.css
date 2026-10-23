@@ -181,7 +181,7 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: max(0px, calc(var(--safe-t) - 6px));
+  height: max(0px, calc(var(--safe-t) - 12px));
   background: rgba(0, 0, 0, 0.16);
   -webkit-backdrop-filter: blur(12px) saturate(160%);
   backdrop-filter: blur(12px) saturate(160%);
@@ -4248,6 +4248,16 @@ body.phone .ctrl {
 
 .phone-head > * {
   pointer-events: auto;
+}
+
+/*
+ * Home-screen app: iOS 26.1+ lays its own scrim over the status bar, which a page can't turn off, and
+ * it softened the banner's top edge (owner, 2026-10-23). The banner sits a little lower, clear of it.
+ */
+@media (display-mode: standalone) {
+  .phone-head {
+    top: calc(var(--safe-t) + 18px);
+  }
 }
 
 /*
