@@ -4469,6 +4469,8 @@ body.phone .cap-wrap .alert-pill::before {
 
 body.phone .cap-wrap {
   transition: transform var(--dur-sheet) var(--ease-sheet);
+  /* The whole banner is a drag grip: the browser mustn't take the gesture for itself. */
+  touch-action: none;
 }
 
 body.phone .cap-handle {

@@ -65,7 +65,7 @@ export function phoneLayout(): void {
 const COMPACT_KEY = 'weather-map:banner-compact';
 
 /**
- * The phone banner's handle (owner, 2026-10-23). Push it up: the banner tightens to the place, the
+ * The phone banner's handle, and the banner itself as its grip (owner, 2026-10-23). Push it up: the banner tightens to the place, the
  * temperature, the day's peaks as small numbers, and a triangle with the alert count, to show more
  * map. Pull it down from there: back to the full banner. Pull it down again: the whole weather comes
  * down with it, the banner as the page's foot, one drawer following the finger; with it open, push the
@@ -105,47 +105,63 @@ export function bannerHandle(weather: {
   };
   set(compact, false);
 
+  // The whole banner is the grip (owner, 2026-10-23: drag from anywhere on it, not just the handle).
+  // A touch becomes a drag once it has gone DRAG_PX mostly up or down; till then it's a tap, so the
+  // place, the graphs, the pin, and the alert triangle still answer taps, and a drag never taps them.
+  const DRAG_PX = 10;
+  let pointer: number | null = null;
+  let startX = 0;
   let startY = 0;
   let dy = 0;
   let lastY = 0;
   let lastT = 0;
   let speed = 0;
   let dragging = false;
-  let moved = false;
+  /** The click that ends a drag lands on whatever was under the finger: swallow it. */
+  let swallowClick = false;
   /** Pulling the whole weather down from the full banner. */
   let pullingPage = false;
-  handle.addEventListener('pointerdown', (e) => {
-    dragging = true;
-    moved = false;
+  cap.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || pointer != null) return;
+    pointer = e.pointerId;
+    dragging = false;
     pullingPage = false;
+    startX = e.clientX;
     startY = lastY = e.clientY;
     lastT = e.timeStamp;
     speed = 0;
     dy = 0;
-    handle.setPointerCapture(e.pointerId);
-    cap.style.transition = 'none';
   });
-  handle.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
+  cap.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== pointer) return;
     dy = e.clientY - startY;
     if (e.timeStamp > lastT) speed = (e.clientY - lastY) / (e.timeStamp - lastT);
     lastY = e.clientY;
     lastT = e.timeStamp;
-    if (Math.abs(dy) > 6) moved = true;
+    if (!dragging) {
+      if (Math.abs(dy) < DRAG_PX || Math.abs(dy) < Math.abs(e.clientX - startX)) return;
+      dragging = true;
+      cap.setPointerCapture(e.pointerId);
+      cap.style.transition = 'none';
+    }
     // With the weather out, the banner is its foot: it all moves with the finger, either way. From the
     // full banner, pulling down brings it all down from the top.
-    if (pullingPage || weather.isOpen() || (!compact && dy > 6)) {
+    if (pullingPage || weather.isOpen() || (!compact && dy > DRAG_PX)) {
       pullingPage = true;
       cap.style.transform = '';
-      weather.drag(weather.isOpen() ? dy : Math.max(0, dy - 6));
+      weather.drag(weather.isOpen() ? dy : Math.max(0, dy - DRAG_PX));
       return;
     }
     // Otherwise the banner follows the finger a little, so the pull feels connected.
     cap.style.transform = `translateY(${Math.max(-36, Math.min(36, dy * 0.35)).toFixed(1)}px)`;
   });
-  const release = (act: boolean) => {
+  const release = (e: PointerEvent, act: boolean) => {
+    if (e.pointerId !== pointer) return;
+    pointer = null;
     if (!dragging) return;
     dragging = false;
+    swallowClick = true;
+    setTimeout(() => (swallowClick = false), 0);
     cap.style.transition = '';
     cap.style.transform = '';
     if (pullingPage) {
@@ -154,7 +170,7 @@ export function bannerHandle(weather: {
       weather.release(act ? dy : 0, act ? speed : 0);
       return;
     }
-    if (!act || !moved) return;
+    if (!act) return;
     if (dy < -24) {
       if (!compact) {
         set(true);
@@ -173,14 +189,20 @@ export function bannerHandle(weather: {
       set(false);
     }
   };
-  handle.addEventListener('pointerup', () => release(true));
-  handle.addEventListener('pointercancel', () => release(false));
+  cap.addEventListener('pointerup', (e) => release(e, true));
+  cap.addEventListener('pointercancel', (e) => release(e, false));
+  cap.addEventListener(
+    'click',
+    (e) => {
+      if (!swallowClick) return;
+      swallowClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    true,
+  );
+  // A tap on the handle switches sizes (or puts the weather away).
   handle.addEventListener('click', () => {
-    // A drag ends in a click too; only a tap switches the size.
-    if (moved) {
-      moved = false;
-      return;
-    }
     if (weather.isOpen()) weather.close();
     else set(!compact);
   });
