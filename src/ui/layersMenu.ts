@@ -15,7 +15,8 @@ const DATA_NOTE =
   '(GeoMet: GDPS, GDWPS, GIOPS models), NASA GIBS (GOES infrared), and Open-Meteo (CC BY 4.0), which also gives falling rain ' +
   'and point forecasts. Hurricanes: NHC. Search: Photon (OpenStreetMap). Satellite imagery: Esri, Vantor, Earthstar ' +
   'Geographics, and the GIS User Community. Map © CARTO © OpenStreetMap contributors (Standard in Carto’s Voyager ' +
-  'colors). State and county lines: U.S. Census Bureau via the us-atlas package. Traffic © TomTom.';
+  'colors). State and county lines: U.S. Census Bureau via the us-atlas package. Traffic © TomTom. ' +
+  'The moon: NASA’s Scientific Visualization Studio (CGI Moon Kit, LRO camera). Air quality: Open-Meteo (CAMS).';
 
 type LayerKey = keyof AppState['layers'];
 

@@ -4066,18 +4066,11 @@ button.tip-row:hover {
   font-weight: 700;
 }
 
-/* Moon tile */
-.moon-dark {
-  fill: rgba(255, 255, 255, 0.1);
-}
-
-.moon-lit {
-  fill: var(--c-moon);
-}
-
-:root[data-theme='classic'] .moon-dark {
-  fill: none;
-  stroke: var(--fg);
+/* The moon card's moon: NASA's map on a lit sphere (moonRender.ts). */
+.moon-canvas {
+  display: block;
+  width: 124px;
+  height: 124px;
 }
 
 .dd-daylight {

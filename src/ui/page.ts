@@ -27,6 +27,7 @@ import {
   airIcon,
 } from './icons';
 import { DayDetail } from './dayDetail';
+import { paintMoon } from './moonRender';
 import { sceneFor, SkyRenderer } from './sky';
 
 const DOCK_KEY = 'weather-map:page-docked';
@@ -815,19 +816,12 @@ function gauge(hpa: number, value: string, unit: string): SVGSVGElement {
   return s;
 }
 
-/** The moon as it looks tonight: the lit part over a dim disk (northern-hemisphere view). */
-function moonDisk(phase: number): SVGSVGElement {
-  const s = el('svg', { viewBox: '0 0 120 76', class: 'viz', 'aria-hidden': 'true' });
-  const [cx, cy, r] = [60, 38, 30];
-  s.append(el('circle', { cx, cy, r, class: 'moon-dark' }));
-  const k = Math.cos(2 * Math.PI * phase);
-  const rx = (r * Math.abs(k)).toFixed(2);
-  const waxing = phase < 0.5;
-  // Lit limb from top to bottom on the lit side, then the terminator back up.
-  const limb = waxing ? 1 : 0;
-  const term = waxing ? (k > 0 ? 0 : 1) : k > 0 ? 1 : 0;
-  s.append(el('path', { d: `M${cx} ${cy - r}A${r} ${r} 0 0 ${limb} ${cx} ${cy + r}A${rx} ${r} 0 0 ${term} ${cx} ${cy - r}Z`, class: 'moon-lit' }));
-  return s;
+/** The moon as it looks tonight: NASA's map on a lit sphere at this phase (moonRender.ts). */
+function moonCanvas(phase: number, name: string): HTMLCanvasElement {
+  const px = Math.round(124 * Math.min(3, Math.max(1, window.devicePixelRatio || 1)));
+  const c = h('canvas', { class: 'moon-canvas', width: px, height: px, role: 'img', 'aria-label': name });
+  paintMoon(c, phase);
+  return c;
 }
 
 /** "07:25" style local times → minutes since midnight. */
@@ -918,7 +912,7 @@ function longCards(c: Conditions, om: PointForecast, s: AppState, air: AirQualit
             next,
             ['Next full moon', fullIn ? `${fullIn} day${fullIn > 1 ? 's' : ''}` : 'Tonight'],
           ),
-          moonDisk(moon.phase),
+          moonCanvas(moon.phase, moon.name),
         ),
       ),
       'conditions',

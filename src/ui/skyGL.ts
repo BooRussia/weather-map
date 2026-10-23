@@ -1,3 +1,5 @@
+import { moonIllumination } from '../data/moon';
+import { MOON_TEXTURE_URL } from './moonRender';
 import type { Scene } from './sky';
 
 /**
@@ -79,10 +81,9 @@ const smooth = (e0: number, e1: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** Fraction of the lunar cycle: 0 new, 0.5 full. */
+/** Fraction of the lunar cycle: 0 new, 0.5 full (from where the sun and moon are). */
 export function moonPhase(ms: number): number {
-  const days = (ms - Date.UTC(2000, 0, 6, 18, 14)) / 86_400_000;
-  return (((days / 29.530588853) % 1) + 1) % 1;
+  return moonIllumination(ms).phase;
 }
 
 export interface SkyState {
@@ -163,6 +164,8 @@ uniform vec3 u_top, u_bottom, u_lit, u_shade, u_sunColor, u_fogColor;
 uniform float u_cloud, u_cloudAlpha, u_rain, u_snow, u_fog, u_night, u_mono;
 uniform vec3 u_sun;      // x, y (0..1), visibility
 uniform vec4 u_moon;     // x, y, radius, phase
+uniform sampler2D u_moonTex; // NASA's map of the near side (moonRender.ts)
+uniform float u_moonTexOn;
 uniform float u_moonVis;
 uniform float u_flash;
 uniform vec2 u_flashAt;
@@ -211,6 +214,9 @@ float snowLayer(vec2 p, float t, float scale, float speed, float drift) {
   return smoothstep(r, r * 0.25, length(f - off));
 }
 
+// x², safely: GLSL's pow() is undefined for a negative base (black pixels on some GPUs).
+float sq(float x) { return x * x; }
+
 void main() {
   vec2 uv = gl_FragCoord.xy / u_res;
   float aspect = u_res.x / u_res.y;
@@ -223,7 +229,7 @@ void main() {
   vec2 sp = vec2(u_sun.x * aspect, u_sun.y);
   float sd = length(p - sp);
   vec3 sunLight = u_sunColor * (exp(-sd * 3.2) * 0.28 + exp(-sd * 16.0) * 0.35);
-  float disc = smoothstep(0.042, 0.032, sd);
+  float disc = 1.0 - smoothstep(0.032, 0.042, sd);
 
   // Clouds: domain-warped noise, drifting, denser toward the top.
   vec2 cp = vec2(p.x * 0.9, p.y * 1.7) * 2.3 + vec2(t * 0.012, 0.0);
@@ -260,30 +266,54 @@ void main() {
   float litSide = u_moon.w < 0.5 ? smoothstep(term - 0.05, term + 0.05, q.x) : smoothstep(-term + 0.05, -term - 0.05, q.x);
   float moonDisc = smoothstep(1.0, 0.94, md);
   vec3 moonCol = mix(vec3(0.09, 0.1, 0.13), vec3(0.93, 0.94, 0.97), litSide);
+  // With the map loaded: a lit sphere, its seas and craters, lit from the phase's angle, earthshine on the rest.
+  if (u_moonTexOn > 0.5 && md < 1.0) {
+    float nz = sqrt(max(0.0, 1.0 - md * md));
+    vec2 tuv = vec2(atan(q.x, nz) / 3.14159265 + 0.5, 0.5 - asin(clamp(q.y, -1.0, 1.0)) / 3.14159265);
+    vec3 tex = texture(u_moonTex, tuv).rgb;
+    float th = u_moon.w * 6.2831853;
+    float ld = q.x * sin(th) - nz * cos(th);
+    float light = smoothstep(-0.03, 0.1, ld) * (0.84 + 0.16 * max(ld, 0.0)) * 1.15 + 0.05;
+    moonCol = tex * light * (0.86 + 0.14 * nz) * vec3(0.98, 1.0, 1.03);
+  }
   col = mix(col, moonCol, moonDisc * u_moonVis);
   col += vec3(0.55, 0.6, 0.75) * exp(-md * 1.4) * 0.08 * u_moonVis * (0.3 + 0.7 * (1.0 - abs(k)));
 
   // Sun light and disc go on before the clouds so clouds can cover them.
   col += sunLight * u_sun.z;
-  // A clear sun the way a phone camera sees it (Apple's sky): a wide bloom, a faint 22-degree halo with a
-  // hint of color, and lens flares down the line through the middle of the screen. Fades with cover.
+  // A clear sun the way a phone camera sees it (owner, 2026-10-23: as good as Apple's): an overexposed
+  // white core, a wide bloom over a soft veil, fine diffraction spikes, a 22-degree halo with red inside
+  // and blue outside, and lens ghosts strung down the line through the middle of the screen. Fades with cover.
   float clearSun = u_sun.z * clamp(1.0 - u_cloud * 1.2, 0.0, 1.0);
-  col += vec3(1.0, 0.98, 0.93) * (exp(-sd * 7.0) * 0.32 + exp(-sd * 28.0) * 0.5) * clearSun;
+  // All of the sun's light gathered first, then laid on once. (Written out, no loop: with a loop here one
+  // GPU compiler turned the whole sky black.)
+  vec3 glow = vec3(0.9, 0.95, 1.0) * exp(-sd * 1.6) * 0.08;
+  glow += vec3(1.0, 0.98, 0.93) * (exp(-sd * 7.0) * 0.32 + exp(-sd * 24.0) * 0.55);
+  float ang = atan(p.y - sp.y, p.x - sp.x + 1e-5);
+  float spikes = pow(abs(cos(ang * 3.0 + 0.2)), 70.0) + 0.55 * pow(abs(cos(ang * 3.0 + 1.25)), 90.0) + 0.35 * pow(abs(sin(ang * 8.0 + 0.5)), 160.0);
+  glow += vec3(1.0, 0.97, 0.9) * spikes * exp(-sd * 10.0) * 0.08 * smoothstep(0.03, 0.08, sd);
   float ringR = 0.34;
-  float ring = exp(-pow((sd - ringR) / 0.024, 2.0));
-  vec3 ringCol = mix(vec3(1.0, 0.74, 0.56), vec3(0.62, 0.8, 1.0), smoothstep(ringR - 0.026, ringR + 0.026, sd));
-  col += ringCol * ring * 0.11 * clearSun;
+  float ring = exp(-sq((sd - ringR) / 0.03));
+  glow += mix(vec3(1.0, 0.62, 0.45), vec3(0.55, 0.75, 1.0), smoothstep(ringR - 0.03, ringR + 0.03, sd)) * ring * 0.13;
   vec2 axis = vec2(0.5 * aspect, 0.45) - sp;
-  for (int i = 0; i < 3; i++) {
-    float fi = float(i);
-    float rr = 0.032 + fi * 0.026;
-    float fd2 = length(p - (sp + axis * (0.75 + fi * 0.42)));
-    col += vec3(0.78, 0.88, 1.0) * smoothstep(rr, rr * 0.55, fd2) * (0.07 - fi * 0.015) * clearSun;
-  }
+  float g0 = length(p - (sp + axis * 0.7));
+  float g1 = length(p - (sp + axis * 1.15));
+  float g2 = length(p - (sp + axis * 1.6));
+  // Soft discs with slightly brighter rims, as real ghosts have.
+  glow += vec3(0.75, 1.0, 0.85) * ((1.0 - smoothstep(0.018, 0.032, g0)) * 0.7 + exp(-sq((g0 - 0.029) / 0.0026)) * 0.5) * 0.075;
+  glow += vec3(0.8, 0.78, 1.0) * ((1.0 - smoothstep(0.034, 0.062, g1)) * 0.7 + exp(-sq((g1 - 0.057) / 0.005)) * 0.5) * 0.06;
+  glow += vec3(1.0, 0.88, 0.75) * ((1.0 - smoothstep(0.050, 0.092, g2)) * 0.7 + exp(-sq((g2 - 0.085) / 0.0074)) * 0.5) * 0.045;
+  float g3 = length(p - (sp + axis * 2.1));
+  glow += vec3(0.7, 0.85, 1.0) * exp(-sq((g3 - 0.11) / 0.012)) * 0.05;
+  col += glow * clearSun;
+  // The core, burnt out white, with no hard edge.
+  // (Brighter than white, so the edge darkening below can't gray it.)
+  col = mix(col, vec3(1.25), (1.0 - smoothstep(0.015, 0.15, sd)) * clearSun);
   // Cirrus: thin streaks high in a clear sky.
   float wisp = fbm(vec2(p.x * 1.1 + t * 0.006, p.y * 7.0 + p.x * 0.8));
   col += vec3(1.0) * smoothstep(0.55, 0.85, wisp) * 0.16 * clearSun * smoothstep(0.35, 0.9, uv.y);
-  col = mix(col, u_sunColor * 1.02 + 0.05, disc * u_sun.z * 0.9);
+  // The disc itself: lost in the glare in a clear sky, a warm disc through thin cloud or low on the horizon.
+  col = mix(col, mix(u_sunColor * 1.02 + 0.05, vec3(1.25), clearSun), disc * u_sun.z * 0.9);
 
   col = mix(col, cloud, dens * u_cloudAlpha);
 
@@ -358,6 +388,27 @@ export class SkyGL {
   private flashAt: [number, number] = [0.5, 0.8];
   private bolt: number[] = [];
   private readonly still = matchMedia('(prefers-reduced-motion: reduce)');
+  private moonTex: WebGLTexture | null = null;
+
+  /** NASA's moon map into a texture, mipmapped (it's drawn much smaller than it is); until then, the plain moon. */
+  private loadMoon(): void {
+    const img = new Image();
+    img.onload = () => {
+      const gl = this.gl;
+      const tex = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.moonTex = tex;
+      if (!this.raf) this.draw(0);
+    };
+    img.src = MOON_TEXTURE_URL;
+  }
 
   /** Null when WebGL 2 isn't available (the caller falls back to the 2D sky). */
   static create(canvas: HTMLCanvasElement): SkyGL | null {
@@ -393,10 +444,11 @@ export class SkyGL {
     for (const name of [
       'u_res', 'u_time', 'u_top', 'u_bottom', 'u_lit', 'u_shade', 'u_sunColor', 'u_fogColor', 'u_cloud', 'u_cloudAlpha',
       'u_rain', 'u_snow', 'u_fog', 'u_night', 'u_mono', 'u_sun', 'u_moon', 'u_moonVis', 'u_flash', 'u_flashAt', 'u_bolt',
-      'u_boltN', 'u_boltA',
+      'u_boltN', 'u_boltA', 'u_moonTex', 'u_moonTexOn',
     ]) {
       this.u[name] = gl.getUniformLocation(prog, name);
     }
+    this.loadMoon();
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -513,7 +565,13 @@ export class SkyGL {
     gl.uniform1f(u.u_night, p.night);
     gl.uniform1f(u.u_mono, p.mono);
     gl.uniform3f(u.u_sun, 0.14 + 0.72 * arc, sunY, p.sunVis);
-    gl.uniform4f(u.u_moon, 0.26, 0.8, 0.045, moonPhase(Date.now()));
+    gl.uniform4f(u.u_moon, 0.26, 0.8, 0.06, moonPhase(Date.now()));
+    gl.uniform1f(u.u_moonTexOn, this.moonTex ? 1 : 0);
+    if (this.moonTex) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.moonTex);
+      gl.uniform1i(u.u_moonTex, 0);
+    }
     gl.uniform1f(u.u_moonVis, p.moonVis);
     gl.uniform1f(u.u_flash, this.flash);
     gl.uniform2f(u.u_flashAt, this.flashAt[0], this.flashAt[1]);

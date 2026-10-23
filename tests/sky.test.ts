@@ -4,13 +4,13 @@ import { moonPhase, paramsFor, type SkyState } from '../src/ui/skyGL';
 const state = (patch: Partial<SkyState>): SkyState => ({ scene: 'clear-day', clouds: 0, intensity: 0, mono: false, sunPhase: 0.5, ...patch });
 
 describe('sky', () => {
-  it('follows the lunar cycle', () => {
-    const newMoon = Date.UTC(2000, 0, 6, 18, 14);
-    // Phase is a circle: 0.9999 is as new as 0.0001.
+  it('follows the lunar cycle, from where the sun and moon are', () => {
+    // Phase is a circle: 0.9999 is as new as 0.0001. New moon 2026-10-10 15:50 UTC, full 2026-10-26 04:12 UTC.
     const fromNew = (p: number) => Math.min(p, 1 - p);
-    expect(fromNew(moonPhase(newMoon))).toBeCloseTo(0, 3);
-    expect(moonPhase(newMoon + 14.765 * 86_400_000)).toBeCloseTo(0.5, 2);
-    expect(fromNew(moonPhase(newMoon + 10 * 29.530588853 * 86_400_000))).toBeCloseTo(0, 2);
+    expect(fromNew(moonPhase(Date.UTC(2026, 9, 10, 15, 50)))).toBeLessThan(0.02);
+    expect(Math.abs(moonPhase(Date.UTC(2026, 9, 26, 4, 12)) - 0.5)).toBeLessThan(0.02);
+    expect(moonPhase(Date.UTC(2026, 9, 18, 12))).toBeGreaterThan(0.2);
+    expect(moonPhase(Date.UTC(2026, 9, 18, 12))).toBeLessThan(0.32);
   });
 
   it('is day between sunrise and sunset, night outside, with stars and moon only at night', () => {
