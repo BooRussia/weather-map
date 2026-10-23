@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cloudWord, dayHours, dayOutlook, extremes, hourOfDay, meanDirection, niceScale } from '../src/data/dayDetail';
-import { moonPhase } from '../src/data/moon';
+import { moonPhase, moonTimes } from '../src/data/moon';
+import { aqiNote, aqiWord } from '../src/data/airQuality';
 import { watchLabels } from '../src/map/alertAreas';
 import type { HourDetail } from '../src/data/openmeteo';
 
@@ -97,5 +98,28 @@ describe('watch labels', () => {
     expect(fc.features).toHaveLength(1);
     expect(fc.features[0].geometry).toEqual({ type: 'Point', coordinates: [-83, 29] });
     expect(fc.features[0].properties?.prod_type).toBe('Tornado Watch');
+  });
+});
+
+describe('moon and air for the long cards', () => {
+  // Ocala, 23 October 2026 (Eastern Daylight Time, UTC-4): Apple shows moonrise 17:11 and the full moon in 3 days.
+  const midnight = Date.UTC(2026, 9, 23, 4);
+  it('times the moonrise within a few minutes of Apple', () => {
+    const { rise } = moonTimes(midnight, 29.19, -82.14);
+    const local = (rise! - midnight) / 3_600_000;
+    expect(local).toBeGreaterThan(16.9);
+    expect(local).toBeLessThan(17.4);
+  });
+
+  it('counts calendar days to the full moon', () => {
+    const m = moonPhase(new Date(Date.UTC(2026, 9, 23, 17, 47)));
+    const fullLocal = new Date(m.nextFull.getTime() - 4 * 3_600_000).toISOString().slice(0, 10);
+    expect(fullLocal).toBe('2026-10-26');
+  });
+
+  it('words the air quality like Apple', () => {
+    expect(aqiWord(54)).toBe('Moderate');
+    expect(aqiNote({ aqi: 54, yesterday: 50 })).toBe('Air quality index is 54, which is similar to yesterday at about this time.');
+    expect(aqiNote({ aqi: 120, yesterday: 60 })).toContain('worse than yesterday');
   });
 });

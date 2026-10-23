@@ -1,17 +1,17 @@
 import type { Conditions } from '../data/conditions';
-import { cloudWord, type Metric } from '../data/dayDetail';
-import { moonPhase } from '../data/moon';
+import { aqiNote, aqiWord, getAirQuality, type AirQuality } from '../data/airQuality';
+import { cloudWord, dayHours, hourOfDay, type Metric } from '../data/dayDetail';
+import { moonPhase, moonTimes } from '../data/moon';
 import type { Alert } from '../data/nws';
-import type { PointForecast } from '../data/openmeteo';
+import type { HourDetail, PointForecast } from '../data/openmeteo';
 import { clockLabel, hourlyCells, nextRain, uvWord, weekRows } from '../data/outlook';
 import type { AppState } from '../state';
 import { sentenceCase } from '../util/text';
-import { compass8, formatTemp, formatWind } from '../util/units';
+import { compass8, formatTemp, formatWind, mphToKmh } from '../util/units';
 import { $, h, svg } from './dom';
 import { amountText, conditionWord, hiLoLine, rateText, reflow, shortPeriodName, timeShort, visibilityText } from './format';
 import {
   calendarIcon,
-  clockIcon,
   closeIcon,
   cloudMark,
   dropIcon,
@@ -24,6 +24,7 @@ import {
   umbrellaIcon,
   warningIcon,
   windIcon,
+  airIcon,
 } from './icons';
 import { DayDetail } from './dayDetail';
 import { sceneFor, SkyRenderer } from './sky';
@@ -69,6 +70,12 @@ export class WeatherPage {
   private opener: HTMLElement | null = null;
   /** Tap a card, tile, or day: that day's detail, hour by hour. */
   private readonly detail = new DayDetail();
+  /** What the hourly card and the 7-day list show (owner, 2026-10-23: Apple's toggles, plus humidity). */
+  private mode: PageMode = readMode();
+  private last: { c: Conditions | null; s: AppState } | null = null;
+  /** Air quality by place (null: none there), fetched when the page shows a place the first time. */
+  private readonly air = new Map<string, AirQuality | null>();
+  private readonly airLoading = new Set<string>();
 
   constructor(private readonly onLayout: (docked: boolean) => void) {
     const body = $('#page-body');
@@ -274,7 +281,34 @@ export class WeatherPage {
     first.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
+  private setMode(m: PageMode): void {
+    this.mode = m;
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      // Lasts for this visit.
+    }
+    if (this.last) this.render(this.last.c, this.last.s);
+  }
+
+  /** The place's air quality: known, null (none there), or undefined while it loads (then a redraw). */
+  private airFor(c: Conditions): AirQuality | null | undefined {
+    const key = `${c.point.lat.toFixed(2)},${c.point.lon.toFixed(2)}`;
+    if (!this.air.has(key) && !this.airLoading.has(key)) {
+      this.airLoading.add(key);
+      void getAirQuality(c.point)
+        .then((v) => this.air.set(key, v))
+        .catch(() => this.air.set(key, null))
+        .finally(() => {
+          this.airLoading.delete(key);
+          if (this.isOpen && this.last) this.render(this.last.c, this.last.s);
+        });
+    }
+    return this.air.get(key);
+  }
+
   render(c: Conditions | null, s: AppState): void {
+    this.last = { c, s };
     $('#page-kicker').hidden = !s.gps;
     $('#page-place').textContent = c?.place ?? 'Locating';
     $('#page-temp').textContent = c?.tempF != null ? formatTemp(c.tempF, s.tempUnit) : '--°';
@@ -297,7 +331,15 @@ export class WeatherPage {
     const keep = this.scroller.scrollTop;
     $('#page-body').replaceChildren(
       ...(c?.alerts.map((a) => alertCard(a)) ?? []),
-      ...(om ? [nextRainCard(om, s), hourlyCard(c!, om, s), weekCard(c!, om, s), tiles(c!, om, s)] : [loadingCard()]),
+      ...(om
+        ? [
+            nextRainCard(om, s),
+            hourlyCard(c!, om, s, this.mode, (m) => this.setMode(m)),
+            weekCard(c!, om, s, this.mode),
+            ...longCards(c!, om, s, this.airFor(c!)),
+            tiles(c!, om, s),
+          ]
+        : [loadingCard()]),
       sources(c),
     );
     this.scroller.scrollTop = keep;
@@ -429,69 +471,238 @@ function nextRainCard(om: PointForecast, s: AppState): HTMLElement {
   );
 }
 
-function hourlyCard(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
-  const first = c.periods[0];
-  const summary = first ? h('p', { class: 'card-text', style: 'margin-bottom:10px' }, `${shortPeriodName(first.name)}: ${sentenceCase(first.shortForecast)}.`) : null;
-  const strip = h('ol', { class: 'hours' });
-  for (const cell of hourlyCells(om.hourly, om.daily)) {
-    strip.append(
-      cell.kind === 'hour'
-        ? h(
-            'li',
-            { class: 'hour' },
-            h('span', { class: 'hour-time' }, cell.label),
-            h('span', { class: 'hour-pop' }, cell.pop >= 20 ? `${cell.pop}%` : ''),
-            svg(GLYPHS[cell.glyph]),
-            h('span', { class: 'hour-temp' }, formatTemp(cell.tempF, s.tempUnit)),
-          )
-        : h(
-            'li',
-            { class: 'hour is-sun' },
-            h('span', { class: 'hour-time' }, cell.label),
-            h('span', { class: 'hour-pop' }, ''),
-            svg(GLYPHS[cell.event]),
-            h('span', { class: 'hour-temp' }, cell.event),
-          ),
-    );
+/* ---------- hourly and 7 days, by what's picked: conditions, rain, wind, humidity ---------- */
+
+type PageMode = 'temp' | 'precip' | 'wind' | 'humidity';
+const MODE_KEY = 'weather-map:page-mode';
+const MODES: { id: PageMode; icon: string; label: string; metric: Metric; color: string }[] = [
+  { id: 'temp', icon: cloudMark, label: 'Conditions', metric: 'conditions', color: '#ffd60a' },
+  { id: 'precip', icon: umbrellaIcon, label: 'Precipitation', metric: 'precip', color: '#409cff' },
+  { id: 'wind', icon: windIcon, label: 'Wind', metric: 'wind', color: '#64d2ff' },
+  { id: 'humidity', icon: dropIcon, label: 'Humidity', metric: 'humidity', color: '#30d158' },
+];
+const modeOf = (m: PageMode) => MODES.find((x) => x.id === m)!;
+
+function readMode(): PageMode {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    return MODES.some((m) => m.id === v) ? (v as PageMode) : 'temp';
+  } catch {
+    return 'temp';
   }
-  return opens(card({ icon: clockIcon, label: 'Hourly forecast' }, summary, strip), 'conditions');
 }
 
-function weekCard(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
-  const classic = s.theme === 'classic';
-  const list = h('ol', { class: 'days' });
-  weekRows(om.daily, c.tempF).forEach((d, i) => {
-    const range = h('span', { class: 'range', 'aria-hidden': 'true' });
-    const seg = h('span', { class: 'range-seg' });
-    seg.style.left = `${(d.left * 100).toFixed(1)}%`;
-    seg.style.width = `${Math.max(3, d.width * 100).toFixed(1)}%`;
-    seg.style.background = classic
-      ? 'var(--fg)'
-      : `linear-gradient(to right, ${tempColor(d.loF)}, ${tempColor((d.loF + d.hiF) / 2)}, ${tempColor(d.hiF)})`;
-    range.append(seg);
-    if (d.now != null) {
-      const dot = h('span', { class: 'range-now' });
-      dot.style.left = `${(d.now * 100).toFixed(1)}%`;
-      range.append(dot);
-    }
-    list.append(
-      opens(
+/** Apple's toggle in the card's corner: one icon per view. */
+function modeSeg(mode: PageMode, setMode: (m: PageMode) => void): HTMLElement {
+  const g = h('div', { class: 'mode-seg', role: 'group', 'aria-label': 'Show by the hour' });
+  for (const m of MODES) {
+    const b = h('button', { type: 'button', 'aria-pressed': String(m.id === mode), 'aria-label': m.label, title: m.label }, svg(m.icon));
+    b.addEventListener('click', (e) => {
+      // The card itself opens the chart; the toggle only switches the view.
+      e.stopPropagation();
+      setMode(m.id);
+    });
+    g.append(b);
+  }
+  return g;
+}
+
+/** Rain intensity, mm/h → 0..1 (square root, so drizzle still shows; full at 8 mm/h). */
+const rainLevel = (mmH: number) => Math.min(1, Math.sqrt(Math.max(0, mmH) / 8));
+
+/** One hour's slice of a line that runs on through the strip: from the edge it shares with the hour before to the one after. */
+function hourLine(prev: number, cur: number, next: number, lo: number, hi: number, color: string, now: boolean): SVGSVGElement {
+  const y = (v: number) => 27 - ((Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo || 1)) * 22;
+  const a = y((prev + cur) / 2);
+  const m = y(cur);
+  const b = y((cur + next) / 2);
+  const s = el('svg', { viewBox: '0 0 100 30', preserveAspectRatio: 'none', class: 'hour-line', 'aria-hidden': 'true' });
+  s.append(el('path', { d: `M0 ${a}L50 ${m}L100 ${b}L100 30L0 30Z`, fill: color, 'fill-opacity': 0.18 }));
+  s.append(el('path', { d: `M0 ${a}L50 ${m}L100 ${b}`, fill: 'none', stroke: color, 'stroke-width': 2.5, 'vector-effect': 'non-scaling-stroke' }));
+  if (now) s.append(el('line', { x1: 50, y1: m, x2: 50, y2: m, stroke: '#ffffff', 'stroke-width': 7, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
+  return s;
+}
+
+function hourlyCard(c: Conditions, om: PointForecast, s: AppState, mode: PageMode, setMode: (m: PageMode) => void): HTMLElement {
+  const first = c.periods[0];
+  const kmh = s.windUnit === 'kmh';
+  const unit = kmh ? 'km/h' : 'mph';
+  const wind = (mph: number) => (kmh ? mphToKmh(mph) : mph);
+  const [title, sub] =
+    mode === 'precip'
+      ? ['Precipitation', 'Intensity · Chance']
+      : mode === 'wind'
+        ? ['Wind', `Speed (${unit}) · Direction`]
+        : mode === 'humidity'
+          ? ['Humidity', 'Humidity · Dew point']
+          : ['Hourly forecast', first ? `${shortPeriodName(first.name)}: ${sentenceCase(first.shortForecast)}.` : ''];
+  const head = h(
+    'div',
+    { class: 'card-top' },
+    h('div', { class: 'card-top-text' }, h('h3', { class: 'card-title2' }, title), sub ? h('p', { class: 'card-sub' }, sub) : null),
+    modeSeg(mode, setMode),
+  );
+
+  const cells = hourlyCells(om.hourly, om.daily);
+  // Lines run on through the sunrise/sunset cells with the hours either side.
+  const raw = cells.map((k) =>
+    k.kind !== 'hour' ? Number.NaN : mode === 'wind' ? wind(k.at.windMph) : (k.at as HourDetail).humidity,
+  );
+  const vals = raw.map((v, i) => (Number.isFinite(v) ? v : ((raw[i - 1] ?? raw[i + 1]) + (raw[i + 1] ?? raw[i - 1])) / 2));
+  const hi = mode === 'wind' ? Math.max(wind(10), ...vals.filter(Number.isFinite)) : 100;
+  const color = modeOf(mode).color;
+
+  const strip = h('ol', { class: `hours is-${mode}` });
+  cells.forEach((k, i) => {
+    if (k.kind !== 'hour') {
+      strip.append(
         h(
           'li',
-          {
-            class: 'day',
-            'aria-label': `${d.label}: low ${formatTemp(d.loF, s.tempUnit)}, high ${formatTemp(d.hiF, s.tempUnit)}, ${d.pop}% chance of rain`,
-          },
-          h('span', {}, d.label),
-          h('span', { class: 'day-icon' }, svg(GLYPHS[d.glyph]), d.pop >= 20 ? h('span', { class: 'pop' }, `${d.pop}%`) : null),
-          h('span', { class: 'day-lo' }, formatTemp(d.loF, s.tempUnit)),
-          range,
-          h('span', { class: 'day-hi' }, formatTemp(d.hiF, s.tempUnit)),
+          { class: 'hour is-sun' },
+          h('span', { class: 'hour-time' }, k.label),
+          mode === 'temp' ? h('span', { class: 'hour-pop' }, '') : null,
+          svg(GLYPHS[k.event]),
+          h('span', { class: 'hour-temp' }, k.event),
+          mode === 'wind' || mode === 'humidity' ? hourLine(vals[i - 1] ?? vals[i], vals[i], vals[i + 1] ?? vals[i], 0, hi, color, false) : null,
         ),
-        'conditions',
-        { day: om.daily[i].date },
-      ),
-    );
+      );
+      return;
+    }
+    const at = k.at as HourDetail;
+    if (mode === 'precip') {
+      const bar = h('span', { class: 'hour-bar' }, h('i', {}));
+      (bar.firstChild as HTMLElement).style.height = `${(rainLevel(at.precipitation) * 100).toFixed(0)}%`;
+      strip.append(
+        h(
+          'li',
+          { class: 'hour', title: `${rateText(at.precipitation, s)}, ${Math.round(at.precipProbability)}% chance` },
+          h('span', { class: 'hour-time' }, k.label),
+          bar,
+          h('span', { class: 'hour-chance' }, `${Math.round(at.precipProbability)}%`),
+        ),
+      );
+    } else if (mode === 'wind' || mode === 'humidity') {
+      const arrow = mode === 'wind' ? svg('<svg viewBox="0 0 24 24" class="hour-arrow"><path d="M12 20V5M6 11l6-6 6 6" /></svg>') : null;
+      if (arrow) arrow.style.transform = `rotate(${(at.windFromDeg + 180) % 360}deg)`;
+      strip.append(
+        h(
+          'li',
+          { class: 'hour', title: mode === 'humidity' ? `Dew point ${formatTemp(at.dewF, s.tempUnit)}` : `Gusts ${formatWind(at.gustMph, s.windUnit)}` },
+          h('span', { class: 'hour-time' }, k.label),
+          h(
+            'span',
+            { class: 'hour-val' },
+            mode === 'wind' ? String(Math.round(vals[i])) : `${Math.round(vals[i])}%`,
+            mode === 'wind' ? h('small', {}, unit) : h('small', {}, `dew ${formatTemp(at.dewF, s.tempUnit)}`),
+          ),
+          arrow,
+          hourLine(vals[i - 1] ?? vals[i], vals[i], vals[i + 1] ?? vals[i], 0, hi, color, i === 0),
+        ),
+      );
+    } else {
+      strip.append(
+        h(
+          'li',
+          { class: 'hour' },
+          h('span', { class: 'hour-time' }, k.label),
+          h('span', { class: 'hour-pop' }, k.pop >= 20 ? `${k.pop}%` : ''),
+          svg(GLYPHS[k.glyph]),
+          h('span', { class: 'hour-temp' }, formatTemp(k.tempF, s.tempUnit)),
+        ),
+      );
+    }
+  });
+  return opens(h('section', { class: 'card glass' }, head, strip), modeOf(mode).metric);
+}
+
+/** A day as a little graph in its row: bars (rain, two hours a bar) or a line, with a dot at now today. */
+function dayGraph(values: number[], lo: number, hi: number, color: string, bars: boolean, now: number | null): SVGSVGElement {
+  const W = 120;
+  const H = 26;
+  const s = el('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', class: 'day-graph', 'aria-hidden': 'true' });
+  const y = (v: number) => H - 2 - ((Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo || 1)) * (H - 4);
+  if (bars) {
+    const n = 12;
+    const bw = W / n;
+    for (let k = 0; k < n; k++) {
+      const v = Math.max(values[k * 2] ?? 0, values[k * 2 + 1] ?? 0);
+      s.append(el('rect', { x: k * bw + 2, y: 2, width: bw - 4, height: H - 4, rx: 2.5, fill: '#ffffff', 'fill-opacity': 0.12 }));
+      if (v > 0) s.append(el('rect', { x: k * bw + 2, y: y(v), width: bw - 4, height: H - 2 - y(v), rx: 2.5, fill: color }));
+    }
+    return s;
+  }
+  const x = (i: number) => (i / Math.max(1, values.length - 1)) * W;
+  const d = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+  s.append(el('path', { d, fill: 'none', stroke: color, 'stroke-width': 2.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
+  if (now != null) {
+    const i0 = Math.min(values.length - 1, Math.floor(now));
+    const nx = (now / Math.max(1, values.length - 1)) * W;
+    s.append(el('line', { x1: nx, y1: y(values[i0]), x2: nx, y2: y(values[i0]), stroke: '#ffffff', 'stroke-width': 7, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
+  }
+  return s;
+}
+
+function weekCard(c: Conditions, om: PointForecast, s: AppState, mode: PageMode): HTMLElement {
+  const classic = s.theme === 'classic';
+  const metric = modeOf(mode).metric;
+  const color = classic ? '#f0f0fa' : modeOf(mode).color;
+  const kmh = s.windUnit === 'kmh';
+  const wind = (mph: number) => (kmh ? mphToKmh(mph) : mph);
+  const list = h('ol', { class: `days is-${mode}` });
+  weekRows(om.daily, c.tempF).forEach((d, i) => {
+    const date = om.daily[i].date;
+    const { hours, own } = dayHours(om.week, date);
+    const day = hours.slice(0, own);
+    const now = i === 0 ? hourOfDay(om.current.time, date) : null;
+    let row: HTMLElement;
+    if (mode === 'temp' || !own) {
+      const range = h('span', { class: 'range', 'aria-hidden': 'true' });
+      const seg = h('span', { class: 'range-seg' });
+      seg.style.left = `${(d.left * 100).toFixed(1)}%`;
+      seg.style.width = `${Math.max(3, d.width * 100).toFixed(1)}%`;
+      seg.style.background = classic
+        ? 'var(--fg)'
+        : `linear-gradient(to right, ${tempColor(d.loF)}, ${tempColor((d.loF + d.hiF) / 2)}, ${tempColor(d.hiF)})`;
+      range.append(seg);
+      if (d.now != null) {
+        const dot = h('span', { class: 'range-now' });
+        dot.style.left = `${(d.now * 100).toFixed(1)}%`;
+        range.append(dot);
+      }
+      row = h(
+        'li',
+        { class: 'day', 'aria-label': `${d.label}: low ${formatTemp(d.loF, s.tempUnit)}, high ${formatTemp(d.hiF, s.tempUnit)}, ${d.pop}% chance of rain` },
+        h('span', {}, d.label),
+        h('span', { class: 'day-icon' }, svg(GLYPHS[d.glyph]), d.pop >= 20 ? h('span', { class: 'pop' }, `${d.pop}%`) : null),
+        h('span', { class: 'day-lo' }, formatTemp(d.loF, s.tempUnit)),
+        range,
+        h('span', { class: 'day-hi' }, formatTemp(d.hiF, s.tempUnit)),
+      );
+    } else if (mode === 'precip') {
+      const total = day.reduce((sum, x) => sum + x.precipitation, 0);
+      const pop = om.daily[i].precipProbability;
+      row = h(
+        'li',
+        { class: 'day', 'aria-label': `${d.label}: ${amountText(total, s)} of rain, ${Math.round(pop)}% chance` },
+        h('span', {}, d.label),
+        dayGraph(day.map((x) => rainLevel(x.precipitation)), 0, 1, color, true, null),
+        h('span', { class: 'day-amt' }, amountText(total, s)),
+        h('span', { class: `day-chance${pop >= 20 ? '' : ' is-low'}` }, pop >= 20 ? svg(dropIcon) : null, `${Math.round(pop)}%`),
+      );
+    } else {
+      const vals = day.map((x) => (mode === 'wind' ? wind(x.windMph) : x.humidity));
+      const lo = Math.min(...vals);
+      const hi = Math.max(...vals);
+      const text = mode === 'wind' ? `${Math.round(lo)}–${Math.round(hi)} ${kmh ? 'km/h' : 'mph'}` : `${Math.round(lo)}–${Math.round(hi)}%`;
+      row = h(
+        'li',
+        { class: 'day', 'aria-label': `${d.label}: ${mode === 'wind' ? 'wind' : 'humidity'} ${text}` },
+        h('span', {}, d.label),
+        dayGraph(vals, mode === 'wind' ? 0 : 0, mode === 'wind' ? Math.max(wind(20), hi) : 100, color, false, now),
+        h('span', { class: 'day-span' }, text),
+      );
+    }
+    list.append(opens(row, metric, { day: date }));
   });
   return card({ icon: calendarIcon, label: '7-day forecast' }, list);
 }
@@ -631,6 +842,91 @@ export function sunPhase(om: PointForecast | null): number {
   return set > rise ? (minutesOf(om.current.time) - rise) / (set - rise) : om.current.isDay ? 0.5 : -0.5;
 }
 
+/* ---------- the long cards: air quality, wind, moon (Apple's full-width ones) ---------- */
+
+/** A long card's list: a label on the left, its value on the right, hairlines between. */
+function rows(...items: [string, string][]): HTMLElement {
+  return h('dl', { class: 'long-rows' }, ...items.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));
+}
+
+function longCards(c: Conditions, om: PointForecast, s: AppState, air: AirQuality | null | undefined): HTMLElement[] {
+  const cur = om.current;
+  const out: HTMLElement[] = [];
+
+  // Air quality: the U.S. AQI, its word, where it sits on the scale, and how it compares with yesterday.
+  if (air !== null) {
+    if (air === undefined) {
+      out.push(card({ icon: airIcon, label: 'Air quality' }, h('p', { class: 'card-text' }, 'Loading air quality')));
+    } else {
+      const bar = h('div', { class: 'aqi-bar' });
+      const dot = h('span', { class: 'range-now' });
+      dot.style.left = `${Math.min(100, (air.aqi / 300) * 100).toFixed(1)}%`;
+      bar.append(dot);
+      out.push(
+        card(
+          { icon: airIcon, label: 'Air quality' },
+          h('div', { class: 'tile-value' }, String(air.aqi)),
+          h('div', { class: 'tile-sub' }, aqiWord(air.aqi)),
+          bar,
+          h('p', { class: 'tile-note' }, aqiNote(air)),
+        ),
+      );
+    }
+  }
+
+  // Wind: speed, gusts, and direction beside the compass.
+  const windVal = s.windUnit === 'kmh' ? Math.round(cur.windMph * 1.609344) : Math.round(cur.windMph);
+  out.push(
+    opens(
+      card(
+        { icon: windIcon, label: 'Wind' },
+        h(
+          'div',
+          { class: 'long-body' },
+          rows(
+            ['Wind', formatWind(cur.windMph, s.windUnit)],
+            ['Gusts', formatWind(cur.gustMph, s.windUnit)],
+            ['Direction', `${Math.round(cur.windFromDeg)}° ${compass8(cur.windFromDeg)}`],
+          ),
+          compass(cur.windFromDeg, String(windVal), s.windUnit === 'kmh' ? 'km/h' : 'mph'),
+        ),
+      ),
+      'wind',
+    ),
+  );
+
+  // Moon: its phase, how much is lit, when it rises (or sets) here today, and the next full moon.
+  const moon = moonPhase(new Date());
+  const today = om.daily[0];
+  const offset = om.utcOffsetSeconds * 1000;
+  const midnight = today ? Date.parse(`${today.date}T00:00:00Z`) - offset : Date.now();
+  const times = moonTimes(midnight, c.point.lat, c.point.lon);
+  const local = (ms: number) => clockLabel(new Date(ms + offset).toISOString().slice(0, 16));
+  const nowMs = Date.now();
+  // Calendar days to the full moon, in the place's own time zone (as Apple counts them).
+  const fullIn = today ? Math.round((Date.parse(new Date(moon.nextFull.getTime() + offset).toISOString().slice(0, 10)) - Date.parse(today.date)) / 86_400_000) : moon.daysToFull;
+  const next = times.rise && times.rise > nowMs ? (['Moonrise', local(times.rise)] as [string, string]) : times.set && times.set > nowMs ? (['Moonset', local(times.set)] as [string, string]) : (['Moonrise', times.rise ? local(times.rise) : 'Not today'] as [string, string]);
+  out.push(
+    opens(
+      card(
+        { icon: GLYPHS['clear-night'], label: moon.name },
+        h(
+          'div',
+          { class: 'long-body' },
+          rows(
+            ['Illumination', `${Math.round(moon.illumination * 100)}%`],
+            next,
+            ['Next full moon', fullIn ? `${fullIn} day${fullIn > 1 ? 's' : ''}` : 'Tonight'],
+          ),
+          moonDisk(moon.phase),
+        ),
+      ),
+      'conditions',
+    ),
+  );
+  return out;
+}
+
 function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
   const cur = om.current;
   const today = om.daily[0];
@@ -650,8 +946,6 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
   const uvDot = h('span', { class: 'range-now' });
   uvDot.style.left = `${Math.min(100, (cur.uv / 11) * 100).toFixed(1)}%`;
   uvBar.append(uvDot);
-
-  const windVal = s.windUnit === 'kmh' ? Math.round(cur.windMph * 1.609344) : Math.round(cur.windMph);
 
   // Sun: which event is next, and where the sun is between sunrise and sunset.
   const nowMin = minutesOf(cur.time);
@@ -676,8 +970,6 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
   const next12 = om.hourly.slice(0, 12);
   const cloudsNext12 = next12.reduce((sum, hr) => sum + hr.cloudCover, 0) / Math.max(1, next12.length);
 
-  const moon = moonPhase(new Date());
-  const fullOn = moon.nextFull.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return h(
     'div',
@@ -693,12 +985,6 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
       uvBar,
       today ? h('p', { class: 'tile-note' }, `Max today: ${Math.round(today.uvMax)}`) : null,
     ), 'uv'),
-    opens(tile(
-      windIcon,
-      'Wind',
-      compass(cur.windFromDeg, String(windVal), s.windUnit === 'kmh' ? 'km/h' : 'mph'),
-      h('p', { class: 'tile-note' }, `Gusts ${formatWind(cur.gustMph, s.windUnit)} · from ${compass8(cur.windFromDeg)}`),
-    ), 'wind'),
     opens(tile(
       dropIcon,
       'Humidity',
@@ -730,16 +1016,6 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
         h('p', { class: 'tile-note' }, `${cloudWord(cloudsNext12)} for the next 12 hours.`),
       ),
       'clouds',
-    ),
-    opens(
-      tile(
-        GLYPHS['clear-night'],
-        'Moon',
-        h('div', { class: 'tile-sub' }, moon.name),
-        moonDisk(moon.phase),
-        h('p', { class: 'tile-note' }, `${Math.round(moon.illumination * 100)}% lit · ${moon.daysToFull ? `Full ${fullOn}` : 'Full tonight'}`),
-      ),
-      'conditions',
     ),
   );
 }

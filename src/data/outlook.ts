@@ -65,7 +65,7 @@ export function nextRain(slots: MinutelyPoint[]): NextRain {
 /* ---------- hourly strip ---------- */
 
 export type HourCell =
-  | { kind: 'hour'; label: string; tempF: number; pop: number; glyph: Glyph }
+  | { kind: 'hour'; label: string; tempF: number; pop: number; glyph: Glyph; at: HourlyPoint }
   | { kind: 'sun'; label: string; event: 'Sunrise' | 'Sunset' };
 
 /** "2026-10-05T19:17" → "7:17 PM"; minutes dropped on the hour. */
@@ -106,6 +106,7 @@ export function hourlyCells(hourly: HourlyPoint[], daily: DailyPoint[]): HourCel
       tempF: h.tempF,
       pop: h.precipProbability,
       glyph: glyphFor(h.weatherCode, h.isDay),
+      at: h,
     });
     // An event inside this hour goes right after it.
     while (e < events.length && events[e].time.slice(0, 13) === h.time.slice(0, 13)) {

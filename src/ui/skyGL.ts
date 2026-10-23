@@ -33,7 +33,8 @@ const look = (top: string, bottom: string, lit: string, shade: string, sun: stri
 });
 
 const DAY: Record<Kind, Look> = {
-  clear: look('#1f6bd0', '#7cbdf2', '#ffffff', '#c9d6e6', '#fff4d6', '#dfe8f2'),
+  // Deeper and more even than a pale sky-to-white wash (owner, 2026-10-23: next to Apple's, ours looked washed out).
+  clear: look('#1a5cc4', '#4c92dc', '#ffffff', '#c9d6e6', '#fff4d6', '#dfe8f2'),
   cloudy: look('#56687e', '#a6b4c4', '#f4f7fb', '#8c99a9', '#fff1d0', '#d5dbe2'),
   rain: look('#2b3746', '#5b6b7e', '#9ba8b7', '#47525f', '#e8e6dc', '#9aa5b1'),
   storm: look('#121922', '#33414f', '#6c7986', '#1f2832', '#d8dce0', '#5d6873'),
@@ -222,7 +223,7 @@ void main() {
   vec2 sp = vec2(u_sun.x * aspect, u_sun.y);
   float sd = length(p - sp);
   vec3 sunLight = u_sunColor * (exp(-sd * 3.2) * 0.28 + exp(-sd * 16.0) * 0.35);
-  float disc = smoothstep(0.03, 0.024, sd);
+  float disc = smoothstep(0.042, 0.032, sd);
 
   // Clouds: domain-warped noise, drifting, denser toward the top.
   vec2 cp = vec2(p.x * 0.9, p.y * 1.7) * 2.3 + vec2(t * 0.012, 0.0);
@@ -264,6 +265,24 @@ void main() {
 
   // Sun light and disc go on before the clouds so clouds can cover them.
   col += sunLight * u_sun.z;
+  // A clear sun the way a phone camera sees it (Apple's sky): a wide bloom, a faint 22-degree halo with a
+  // hint of color, and lens flares down the line through the middle of the screen. Fades with cover.
+  float clearSun = u_sun.z * clamp(1.0 - u_cloud * 1.2, 0.0, 1.0);
+  col += vec3(1.0, 0.98, 0.93) * (exp(-sd * 7.0) * 0.32 + exp(-sd * 28.0) * 0.5) * clearSun;
+  float ringR = 0.34;
+  float ring = exp(-pow((sd - ringR) / 0.024, 2.0));
+  vec3 ringCol = mix(vec3(1.0, 0.74, 0.56), vec3(0.62, 0.8, 1.0), smoothstep(ringR - 0.026, ringR + 0.026, sd));
+  col += ringCol * ring * 0.11 * clearSun;
+  vec2 axis = vec2(0.5 * aspect, 0.45) - sp;
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    float rr = 0.032 + fi * 0.026;
+    float fd2 = length(p - (sp + axis * (0.75 + fi * 0.42)));
+    col += vec3(0.78, 0.88, 1.0) * smoothstep(rr, rr * 0.55, fd2) * (0.07 - fi * 0.015) * clearSun;
+  }
+  // Cirrus: thin streaks high in a clear sky.
+  float wisp = fbm(vec2(p.x * 1.1 + t * 0.006, p.y * 7.0 + p.x * 0.8));
+  col += vec3(1.0) * smoothstep(0.55, 0.85, wisp) * 0.16 * clearSun * smoothstep(0.35, 0.9, uv.y);
   col = mix(col, u_sunColor * 1.02 + 0.05, disc * u_sun.z * 0.9);
 
   col = mix(col, cloud, dens * u_cloudAlpha);

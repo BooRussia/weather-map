@@ -39,6 +39,8 @@ export const sunMark = `${open('i-sun')}<circle cx="12" cy="12" r="4" /><path d=
 export const windIcon = `${open('i-wind')}<path d="M3 8.5h10.5a3 3 0 1 0-3-3" /><path d="M3 12.5h15a3 3 0 1 1-3 3" /><path d="M3 16.5h6.5" /></svg>`;
 export const dropIcon = `${open('i-drop')}<path d="M12 3.2c-2.6 3.6-5.6 6.6-5.6 10a5.6 5.6 0 0 0 11.2 0c0-3.4-3-6.4-5.6-10z" /></svg>`;
 export const sunsetIcon = `${open('i-sunset')}<path d="M3 18.5h18M7 18.5a5 5 0 0 1 10 0M12 4v5M9.5 6.5 12 9l2.5-2.5" /></svg>`;
+/** Air quality: a round cloud of dots, like Apple's. */
+export const airIcon = `${open('i-air')}<path stroke-width="2.6" d="M12 4.5h.01M7.5 6.5h.01M16.5 6.5h.01M5 11h.01M9.5 9.5h.01M14.5 9.5h.01M19 11h.01M12 12h.01M7 15.5h.01M17 15.5h.01M9.5 14.5h.01M14.5 14.5h.01M12 19.5h.01" /></svg>`;
 export const eyeIcon = `${open('i-eye')}<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>`;
 export const gaugeIcon = `${open('i-gauge')}<path d="M4.5 17.5a8.5 8.5 0 1 1 15 0" /><path d="m12 13 3.5-4" /></svg>`;
 export const rainMark = `${open('i-rainmark')}<path d="M6.8 13.5h10a3.6 3.6 0 0 0 .4-7.17 5.1 5.1 0 0 0-9.8-1.1A4.1 4.1 0 0 0 6.8 13.5z" /><path d="M8.5 17 7.5 20M12.5 17l-1 3M16.5 17l-1 3" /></svg>`;
