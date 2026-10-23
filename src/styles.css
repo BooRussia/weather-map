@@ -176,16 +176,17 @@ body {
 /* The status bar's strip: the map runs up under it, blurred so the clock and battery stay readable. */
 .status-blur {
   position: fixed;
-  z-index: 30;
+  /* Over the map, under every panel: it never blurs the banner below it (owner, 2026-10-23). */
+  z-index: 3;
   top: 0;
   left: 0;
   right: 0;
-  height: var(--safe-t);
+  height: max(0px, calc(var(--safe-t) - 6px));
   background: rgba(0, 0, 0, 0.16);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
-  mask-image: linear-gradient(to bottom, #000 65%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent);
+  mask-image: linear-gradient(to bottom, #000 45%, transparent);
   pointer-events: none;
 }
 
@@ -4627,6 +4628,159 @@ body.phone .trip.folded {
 
 .credits-now a {
   color: inherit;
+}
+
+/* ---------- phones: the banner centered; the temperature as a sign on the map (owner, 2026-10-23) ---------- */
+
+body.phone .cap-wrap {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 12px 16px 10px;
+  text-align: center;
+}
+
+body.phone .cap-wrap.is-compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.phone .cap-wrap .capsule {
+  grid-column: 1;
+  grid-row: auto;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: 100%;
+  justify-content: center;
+  align-items: baseline;
+  column-gap: 6px;
+  min-width: 0;
+  /* Clear of the pin (right) and the alert triangle (left). */
+  padding: 0 32px;
+  text-align: center;
+}
+
+body.phone .cap-place-row {
+  flex-basis: 100%;
+  justify-content: center;
+}
+
+body.phone .cap-temp {
+  display: none;
+}
+
+body.phone .cap-hilo {
+  margin-left: 0;
+}
+
+body.phone .cap-wrap .cap-pin {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  grid-column: auto;
+  grid-row: auto;
+}
+
+body.phone .cap-wrap.is-compact .cap-alerts:not([hidden]) {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  grid-column: auto;
+  grid-row: auto;
+}
+
+body.phone .cap-wrap.is-compact .cap-pin {
+  top: 8px;
+}
+
+.spark {
+  align-items: center;
+  text-align: center;
+}
+
+body.phone .cap-wrap.is-compact .cap-sparks:not([hidden]) {
+  justify-content: center;
+}
+
+body.phone .cap-wrap .head-pills {
+  justify-content: center;
+}
+
+/* The temperature sign: a small glass tag with a tail, over the dot or the pin (map/tempBubble.ts). */
+.temp-bubble {
+  display: none;
+  pointer-events: none;
+}
+
+body.phone .temp-bubble {
+  display: block;
+}
+
+body.map-only .temp-bubble {
+  visibility: hidden;
+}
+
+.temp-bubble-in {
+  position: relative;
+  padding: 3px 9px 4px;
+  border-radius: 12px;
+  background: rgba(28, 28, 32, 0.84);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: var(--fs-callout);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+  transform: scale(var(--k, 1));
+  transform-origin: 50% 100%;
+}
+
+.temp-bubble-in::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  border-radius: 0 0 3px 0;
+  background: rgba(28, 28, 32, 0.84);
+  transform: rotate(45deg);
+}
+
+/* It grows up out of the dot when it first shows, and pops when the reading changes. */
+.temp-bubble-in.is-in {
+  animation: bubble-in 460ms var(--ease-sheet) both;
+}
+
+.temp-bubble-in.is-bump {
+  animation: bubble-bump 360ms ease-out;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(calc(var(--k, 1) * 0.3));
+  }
+  to {
+    opacity: 1;
+    transform: scale(var(--k, 1));
+  }
+}
+
+@keyframes bubble-bump {
+  40% {
+    transform: scale(calc(var(--k, 1) * 1.12));
+  }
+}
+
+:root[data-theme='classic'] .temp-bubble-in,
+:root[data-theme='classic'] .temp-bubble-in::after {
+  background: #000000;
 }
 
 @media (prefers-reduced-motion: reduce) {

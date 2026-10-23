@@ -22,6 +22,8 @@ import { CloudCutout } from './map/cloudCutout';
 import { addImagery, setBasemap, setColorMode } from './map/imagery';
 import { AlertAreas } from './map/alertAreas';
 import { Boundaries } from './map/boundaries';
+import { TempBubble } from './map/tempBubble';
+import { formatTemp } from './util/units';
 import { TrafficLayer } from './map/trafficLayer';
 import { OutlookLayer } from './map/outlookLayer';
 import { StormLayer, type StormHit } from './map/stormLayer';
@@ -507,9 +509,12 @@ async function main(): Promise<void> {
   };
   const page = new WeatherPage(onPageLayout);
 
+  /** The temperature sign on the map (set up once the blue dot exists, below). */
+  let renderBubble = () => {};
   const renderAll = () => {
     const s = store.get();
     renderCapsule(conditions, s);
+    renderBubble();
     renderAlertPill(conditions?.alerts ?? []);
     if (page.open) page.render(conditions, s);
     else page.feedDetail(conditions, s);
@@ -571,6 +576,7 @@ async function main(): Promise<void> {
     mode = m;
     renderLocate();
     renderPin();
+    renderBubble();
   };
 
   // The pin on the weather card: one tap keeps the weather on this place while you look around
@@ -610,8 +616,23 @@ async function main(): Promise<void> {
     if (following) map.easeTo({ center: [p.lon, p.lat], duration: 600 });
     const s = store.get().selected;
     if (Math.hypot(p.lat - s.lat, p.lon - s.lon) > 0.01) select(p, { gps: true });
+    renderBubble();
   });
   if (located) dot.set(start);
+
+  // Phones: the temperature right now as a little sign on the map (owner, 2026-10-23): over your blue
+  // dot when the weather is yours, else over the pinned place or the cross.
+  const bubble = new TempBubble(map);
+  renderBubble = () => {
+    const s = store.get();
+    const text = conditions?.tempF != null ? formatTemp(conditions.tempF, s.tempUnit) : null;
+    if (mode === 'gps' && dot.position) bubble.set(dot.position, text, 'dot');
+    else bubble.set(s.selected, text, pinShown || tagAt(s.tags, s.selected) ? 'pin' : 'point');
+  };
+  store.subscribe((s, prev) => {
+    if (s.selected !== prev.selected || s.tempUnit !== prev.tempUnit || s.followMap !== prev.followMap || s.tags !== prev.tags) renderBubble();
+  });
+  renderBubble();
 
   // A gesture stops the camera following you and, if the weather follows the map, hands the readout to the cross.
   // Only your moves pick a new point: a gesture, or a tap's glide. Camera moves the app makes
