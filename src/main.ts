@@ -1452,7 +1452,7 @@ async function main(): Promise<void> {
       tagsLayer.setAccent(token('--accent'));
       camerasLayer.setAccent(token('--accent'));
     }
-    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme) {
+    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme || s.bannerForecast !== prev.bannerForecast) {
       renderAll();
       trip?.refresh();
       rerenderStorm();

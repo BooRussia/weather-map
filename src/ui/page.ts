@@ -710,7 +710,7 @@ function weekCard(c: Conditions, om: PointForecast, s: AppState, mode: PageMode)
     }
     list.append(opens(row, metric, { day: date }));
   });
-  return card({ icon: calendarIcon, label: '7-day forecast' }, list);
+  return card({ icon: calendarIcon, label: `${om.daily.length}-day forecast` }, list);
 }
 
 /* ---------- detail tiles ---------- */

@@ -48,6 +48,10 @@ export const boltMark = `${open('i-bolt')}<path d="M13.2 2.5 5 13.6h6l-1.2 7.9 8
 export const cloudMark = `${open('i-cloud')}<path d="M6.6 18.5h10.6a4 4 0 0 0 .5-7.97 5.7 5.7 0 0 0-11-1.2A4.6 4.6 0 0 0 6.6 18.5z" /></svg>`;
 /** The hurricane symbol: an eye with two curled arms. */
 export const hurricaneMark = `${open('i-hurricane')}<circle cx="12" cy="12" r="3" /><path d="M12 9c-.9-3.6 1.6-6 6.2-6.4" /><path d="M12 15c.9 3.6-1.6 6-6.2 6.4" /></svg>`;
+/** Storm tracks: a storm cell heading right, its forecast positions as dots, then an arrowhead. */
+export const stormTrackMark = `${open('i-stormtrack')}<circle cx="6" cy="12" r="3.3" /><path stroke-width="2.4" d="M11.6 12h.01M15.2 12h.01" /><path d="m18 8.5 3.5 3.5-3.5 3.5" /></svg>`;
+/** Storm outlook: a calendar with a bolt, the storm risk by day (today, tomorrow, day 3). */
+export const outlookMark = `${open('i-outlook')}<rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M3.5 9.5h17M8 3v4M16 3v4" /><path d="m12.8 11-2.6 4h3.4l-1.2 3.2" /></svg>`;
 export const alertMark =`${open('i-alertmark')}<path d="M12 3.5 2.5 20h19z" /><path d="M12 10v4.5M12 17.2v.3" /></svg>`;
 
 /* ---------- weather glyphs (multicolor in Liquid) ---------- */

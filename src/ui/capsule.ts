@@ -1,6 +1,6 @@
 import type { Conditions } from '../data/conditions';
 import { dayHours, dayOutlook, hourOfDay, type Metric } from '../data/dayDetail';
-import { weekRows } from '../data/outlook';
+import { glyphFor, weekRows } from '../data/outlook';
 import type { Alert } from '../data/nws';
 import type { AppState } from '../state';
 import { formatTemp, formatWind, fToC, mphToKmh } from '../util/units';
@@ -91,7 +91,7 @@ export function setSparkOpen(metric: Metric | null, date: string | null = null):
   for (const b of document.querySelectorAll<HTMLElement>('#cap-sparks [data-metric]')) {
     b.setAttribute('aria-pressed', String(b.dataset.metric === sparkOpen));
   }
-  for (const b of document.querySelectorAll<HTMLElement>('#cap-week [data-day]')) {
+  for (const b of document.querySelectorAll<HTMLElement>('#cap-week .wk[data-day]')) {
     b.setAttribute('aria-pressed', String(b.dataset.day === dayOpen));
   }
 }
@@ -218,17 +218,66 @@ function renderSparks(c: Conditions | null, s: AppState): void {
   );
 }
 
+/** How many hours the hourly strip runs: today and tomorrow. */
+const STRIP_HOURS = 48;
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** Which strip was drawn last, so a redraw of the same one keeps its scroll. */
+let stripKind = '';
+
+/** "Now", "1PM"; midnight is the new day's name, so you can tell the days apart as you scroll. */
+function hourLabel(time: string, first: boolean): string {
+  if (first) return 'Now';
+  const hr = Number(time.slice(11, 13));
+  if (hr === 0) return DOW[new Date(`${time.slice(0, 10)}T12:00:00Z`).getUTCDay()];
+  return `${hr % 12 || 12}${hr < 12 ? 'AM' : 'PM'}`;
+}
+
 /**
- * The week along the medium banner's foot (owner, 2026-10-24: the graphs for the small banner, the
- * week for the medium one): each day's name, its sky, the chance of rain when it's worth a mention,
- * and its high and low. Each opens that day's chart under the banner.
+ * The strip along the full banner's foot (owner, 2026-10-24: the graphs for the small banner, the
+ * forecast for the full one), scrolling sideways. Daily (the default): ten days, each its name, its
+ * sky, the chance of rain when it's worth a mention, and its high and low. Hourly (Settings): the next
+ * two days by the hour. Each opens that day's chart under the banner.
  */
 function renderWeek(c: Conditions | null, s: AppState): void {
   const box = $('#cap-week');
   const om = c?.om;
-  const days = om ? weekRows(om.daily, c?.tempF ?? null).slice(0, 7) : [];
+  if (s.bannerForecast === 'hourly' && om) {
+    const at = om.current.time.slice(0, 13);
+    const from = om.week.findIndex((x) => x.time.slice(0, 13) >= at);
+    const hours = from < 0 ? [] : om.week.slice(from, from + STRIP_HOURS);
+    box.hidden = !hours.length;
+    if (!hours.length) return;
+    const left = stripKind === 'hourly' ? box.scrollLeft : 0;
+    stripKind = 'hourly';
+    box.replaceChildren(
+      ...hours.map((x, i) => {
+        const label = hourLabel(x.time, i === 0);
+        // Now is the temperature right now, as on the map, not the hour's forecast.
+        const temp = formatTemp(i === 0 && c?.tempF != null ? c.tempF : x.tempF, s.tempUnit);
+        const pop = Math.round(x.precipProbability);
+        return h(
+          'button',
+          {
+            type: 'button',
+            class: `wk is-hour${i && x.time.slice(11, 13) === '00' ? ' is-day' : ''}`,
+            'data-day': x.time.slice(0, 10),
+            'aria-label': `${label}: ${temp}, ${pop}% chance of rain. Show the day.`,
+          },
+          h('span', { class: 'wk-day' }, label),
+          h('span', { class: 'wk-icon' }, svg(GLYPHS[glyphFor(x.weatherCode, x.isDay)])),
+          h('span', { class: 'wk-pop' }, pop >= 20 ? `${pop}%` : ''),
+          h('span', { class: 'wk-hi' }, temp),
+        );
+      }),
+    );
+    box.scrollLeft = left;
+    return;
+  }
+  const days = om ? weekRows(om.daily, c?.tempF ?? null) : [];
   box.hidden = !days.length;
   if (!om || !days.length) return;
+  const left = stripKind === 'daily' ? box.scrollLeft : 0;
+  stripKind = 'daily';
   box.replaceChildren(
     ...days.map((d, i) => {
       const date = om.daily[i].date;
@@ -252,6 +301,7 @@ function renderWeek(c: Conditions | null, s: AppState): void {
       );
     }),
   );
+  box.scrollLeft = left;
 }
 
 /** The small banner's alert mark (phones): a triangle with how many alerts are in effect inside it. */

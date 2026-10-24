@@ -5,6 +5,8 @@ import type { OutlookDay, OutlookKind } from './data/outlooks';
 import { readTags, type Tag } from './data/tags';
 
 export type Theme = 'liquid' | 'classic';
+/** What the phone banner's strip shows at full size: the days, or the hours. */
+export type BannerForecast = 'daily' | 'hourly';
 import type { TempUnit, WindUnit } from './util/units';
 
 /** What the Hurricanes layer shows (the dropdown under it in Layers). */
@@ -84,6 +86,8 @@ export interface AppState {
   alertAreas: boolean;
   /** Liquid (Apple-like, default) or Classic (the original black-and-amber). */
   theme: Theme;
+  /** Phones: the full banner's strip, ten days (default) or the hours ahead (owner, 2026-10-24). */
+  bannerForecast: BannerForecast;
   /**
    * Moving the map moves the readout to the center cross. Off (the default, the pin on the weather
    * card): the readout stays on your location, or the place it shows, while you look around.
@@ -126,6 +130,7 @@ interface Prefs {
   precipType?: boolean;
   alertAreas?: boolean;
   theme?: Theme;
+  bannerForecast?: BannerForecast;
   /** The weather card's pin (2026-10-09: pinned by default; replaces the old followMap key). */
   pinned?: boolean;
   /** Which hurricane defaults `tropics` and `modelGroups` were saved under (TROPICS_PREFS_V). */
@@ -166,6 +171,7 @@ function writePrefs(s: AppState): void {
       precipType: s.precipType,
       alertAreas: s.alertAreas,
       theme: s.theme,
+      bannerForecast: s.bannerForecast,
       pinned: !s.followMap,
       tropicsV: TROPICS_PREFS_V,
       tropics: s.tropics,
@@ -204,6 +210,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     precipType: prefs.precipType ?? true,
     alertAreas: prefs.alertAreas ?? true,
     theme: prefs.theme === 'classic' ? 'classic' : 'liquid',
+    bannerForecast: prefs.bannerForecast === 'hourly' ? 'hourly' : 'daily',
     followMap: prefs.pinned === false,
     tropics: { ...DEFAULT_TROPICS, ...(tropicsCurrent ? prefs.tropics : {}) },
     modelGroups: tropicsCurrent && Array.isArray(prefs.modelGroups) ? prefs.modelGroups : DEFAULT_MODEL_GROUPS,
@@ -234,6 +241,7 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.precipType !== undefined ||
         patch.alertAreas !== undefined ||
         patch.theme !== undefined ||
+        patch.bannerForecast !== undefined ||
         patch.followMap !== undefined ||
         patch.tropics !== undefined ||
         patch.modelGroups !== undefined ||

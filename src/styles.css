@@ -3829,9 +3829,23 @@ button.tip-row:hover {
   stroke-width: 1.9;
 }
 
+/* Seven days across; more (ten) scroll sideways. */
 .dd-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: calc(100% / 7);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.dd-days::-webkit-scrollbar {
+  display: none;
+}
+
+.dd-days .dd-day {
+  scroll-snap-align: start;
 }
 
 .dd-day {
@@ -5196,14 +5210,28 @@ body.phone .cap-wrap:not(.is-compact) .cap-sparks {
   display: none;
 }
 
+/* Scrolls sideways (the banner's vertical drag still works on it): six and a half across, so the next one peeks out. */
 body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 12px) / 6.5);
   gap: 2px;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--hairline);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  /* Soft edges where the days run on past the banner. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+}
+
+.cap-week::-webkit-scrollbar {
+  display: none;
 }
 
 .wk {
@@ -5211,6 +5239,7 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
   flex-direction: column;
   align-items: center;
   min-width: 0;
+  scroll-snap-align: start;
   padding: 4px 0 5px;
   border: 0;
   border-radius: 10px;
@@ -5262,6 +5291,11 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
   font-size: var(--fs-foot);
   font-weight: 500;
   color: var(--muted);
+}
+
+/* Hourly: the hour, or a new day's name in the accent where it begins. */
+.wk.is-day .wk-day {
+  color: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {

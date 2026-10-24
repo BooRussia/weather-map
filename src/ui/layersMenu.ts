@@ -2,7 +2,7 @@ import { TrafficLayer } from '../map/trafficLayer';
 import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
-import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, hurricaneMark, layersIcon, rainMark, windIcon } from './icons';
+import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, hurricaneMark, layersIcon, outlookMark, rainMark, stormTrackMark, windIcon } from './icons';
 import { mapThumb } from './mapThumbs';
 
 /** Where everything on the map comes from (the credits line under the map names them too). */
@@ -363,7 +363,7 @@ export class LayersMenu {
     const head = h(
       'div',
       { class: 'row' },
-      h('span', { class: 'row-mark is-precip' }, svg(rainMark)),
+      h('span', { class: 'row-mark is-precip' }, svg(stormTrackMark)),
       h('span', { class: 'row-label' }, 'Storm tracks', h('span', { class: 'row-sub' }, 'Strong storms and where they’re headed')),
       more,
       input,
@@ -416,7 +416,7 @@ export class LayersMenu {
     const head = h(
       'div',
       { class: 'row' },
-      h('span', { class: 'row-mark is-bolt' }, svg(boltMark)),
+      h('span', { class: 'row-mark is-bolt' }, svg(outlookMark)),
       h('span', { class: 'row-label' }, 'Storm outlook', h('span', { class: 'row-sub' }, `${kindLabel} · ${dayLabel}`)),
       more,
       input,
@@ -487,6 +487,17 @@ export class LayersMenu {
       this.store.set({ colorMode: v }),
     );
     radar.classList.add('seg-compact');
+    const strip = segmented<'daily' | 'hourly'>(
+      'Banner forecast',
+      [
+        { value: 'daily', label: 'Daily' },
+        { value: 'hourly', label: 'Hourly' },
+      ],
+      s.bannerForecast,
+      (v) => this.store.set({ bannerForecast: v }),
+    );
+    strip.classList.add('seg-compact');
+    const phone = document.body.classList.contains('phone');
     return [
       h('p', { class: 'group-label' }, 'Look'),
       h('div', { class: 'group' }, segRow('App', theme), segRow('Radar colors', radar)),
@@ -495,6 +506,7 @@ export class LayersMenu {
         'div',
         { class: 'group' },
         h('div', { class: 'row row-units' }, h('span', { class: 'row-label' }, 'Units'), temp, wind),
+        phone ? segRow('Banner forecast', strip) : null,
         switchRow({ label: 'Thunder sound', checked: s.sound, onChange: (on) => this.store.set({ sound: on }) }),
         h('div', { class: 'row' }, h('span', { class: 'row-label' }, 'Where the data comes from'), more),
         this.dataOpen ? h('div', { id: 'data-note', class: 'pop-note data-note' }, h('p', {}, DATA_NOTE), creditsNow()) : null,

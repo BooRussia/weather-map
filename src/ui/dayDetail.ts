@@ -726,6 +726,11 @@ export class DayDetail {
       });
       list.append(b);
     }
+    // Ten days in a strip that shows seven: the chosen day scrolled into sight, once the panel's drawn.
+    queueMicrotask(() => {
+      const on = list.querySelector<HTMLElement>('[aria-pressed="true"]');
+      if (on && on.offsetLeft + on.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = on.offsetLeft + on.offsetWidth - list.clientWidth;
+    });
     return list;
   }
 

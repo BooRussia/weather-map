@@ -152,7 +152,8 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
     temperature_unit: 'fahrenheit',
     wind_speed_unit: 'mph',
     timezone: 'auto',
-    forecast_days: '7',
+    // Ten days, like Apple's (owner, 2026-10-24: scroll further into the week from the banner).
+    forecast_days: '10',
   });
   const r = await fetchJson<PointResponse>(`${OPEN_METEO_FORECAST}?${q}`, { signal });
   const c = r.current;
