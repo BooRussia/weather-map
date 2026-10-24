@@ -233,29 +233,35 @@ export function bannerHandle(weather: {
 }
 
 const DOCK_KEY = 'weather-map:dock-minimal';
+/** The bottom panel's sizes, biggest first; stored as these words ('1' and '0' from before 2026-10-24). */
+const DOCK_SIZES = ['full', 'mid', 'min'] as const;
 
 /**
- * The bottom panel's handle, and the panel itself as its grip (owner, 2026-10-23: make the chin smaller). Pull it down: the panel shrinks
- * to one line, play, the time, and the timeline, with the buttons and search tucked away. Push it up:
- * the full panel again. A tap switches; the size is remembered.
+ * The bottom panel's handle, and the panel itself as its grip (owner, 2026-10-23: make the chin
+ * smaller). Three sizes (owner, 2026-10-24): full; pull it down once and search and the legend tuck
+ * away, leaving the map buttons over one line of play, the time, and the timeline; pull it down again
+ * and the buttons go too. Push it up a size at a time. A tap steps it smaller, and from the smallest
+ * back to full; the size is remembered.
  */
 export function dockHandle(): void {
   const panel = $('#timeline');
   const handle = $('#dock-handle');
-  let minimal = false;
+  let size = 0;
   try {
-    minimal = localStorage.getItem(DOCK_KEY) === '1';
+    const saved = localStorage.getItem(DOCK_KEY);
+    size = saved === '1' ? 2 : Math.max(0, DOCK_SIZES.indexOf(saved as (typeof DOCK_SIZES)[number]));
   } catch {
     // Storage blocked: starts full.
   }
-  const set = (on: boolean, save = true) => {
-    minimal = on;
-    panel.classList.toggle('is-minimal', on);
-    handle.setAttribute('aria-label', on ? 'Show the map buttons and search' : 'Make the panel smaller');
-    handle.setAttribute('aria-expanded', String(!on));
+  const set = (to: number, save = true) => {
+    size = Math.max(0, Math.min(DOCK_SIZES.length - 1, to));
+    panel.classList.toggle('is-mid', size === 1);
+    panel.classList.toggle('is-minimal', size === 2);
+    handle.setAttribute('aria-label', size === 2 ? 'Show the map buttons and search' : 'Make the panel smaller');
+    handle.setAttribute('aria-expanded', String(size === 0));
     if (save) {
       try {
-        localStorage.setItem(DOCK_KEY, on ? '1' : '0');
+        localStorage.setItem(DOCK_KEY, DOCK_SIZES[size]);
       } catch {
         // Lasts for this visit.
       }
@@ -263,7 +269,7 @@ export function dockHandle(): void {
     // A chart hung above the panel finds its new edge.
     window.dispatchEvent(new Event('resize'));
   };
-  set(minimal, false);
+  set(size, false);
 
   // The whole panel is the grip too (owner, 2026-10-23), the slider and search aside.
   grip(panel, {
@@ -278,9 +284,9 @@ export function dockHandle(): void {
       panel.style.transition = '';
       panel.style.transform = '';
       if (!act) return;
-      if (dy > 20 && !minimal) set(true);
-      else if (dy < -20 && minimal) set(false);
+      if (dy > 20) set(size + 1);
+      else if (dy < -20) set(size - 1);
     },
   });
-  handle.addEventListener('click', () => set(!minimal));
+  handle.addEventListener('click', () => set((size + 1) % DOCK_SIZES.length));
 }

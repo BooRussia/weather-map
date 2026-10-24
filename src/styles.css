@@ -4191,8 +4191,11 @@ body.phone .dock-handle:focus-visible {
   border-radius: 9px;
 }
 
-/* Minimal panel: one line, play, the time, and the timeline; the buttons and search tucked away. */
-body.phone .timeline.is-minimal {
+/*
+ * Three sizes (owner, 2026-10-24). Middle: the map buttons over one line of play, the time, and the
+ * timeline, search and the legend tucked away. Minimal: just that line.
+ */
+body.phone .timeline:is(.is-mid, .is-minimal) {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
@@ -4200,35 +4203,36 @@ body.phone .timeline.is-minimal {
   padding-bottom: 6px;
 }
 
-body.phone .timeline.is-minimal > .dock-handle {
+body.phone .timeline:is(.is-mid, .is-minimal) > .dock-handle,
+body.phone .timeline.is-mid .controls {
   grid-column: 1 / -1;
 }
 
 body.phone .timeline.is-minimal .controls,
-body.phone .timeline.is-minimal .top,
-body.phone .timeline.is-minimal .radar-legend,
-body.phone .timeline.is-minimal .tl-kind,
-body.phone .timeline.is-minimal .tl-scale,
-body.phone .timeline.is-minimal .map-legend,
-body.phone .timeline.is-minimal .site-bar {
+body.phone .timeline:is(.is-mid, .is-minimal) .top,
+body.phone .timeline:is(.is-mid, .is-minimal) .radar-legend,
+body.phone .timeline:is(.is-mid, .is-minimal) .tl-kind,
+body.phone .timeline:is(.is-mid, .is-minimal) .tl-scale,
+body.phone .timeline:is(.is-mid, .is-minimal) .map-legend,
+body.phone .timeline:is(.is-mid, .is-minimal) .site-bar {
   display: none;
 }
 
-body.phone .timeline.is-minimal .tl-row {
+body.phone .timeline:is(.is-mid, .is-minimal) .tl-row {
   display: contents;
 }
 
-body.phone .timeline.is-minimal .tl-play {
+body.phone .timeline:is(.is-mid, .is-minimal) .tl-play {
   width: 34px;
   height: 34px;
 }
 
-body.phone .timeline.is-minimal .tl-time {
+body.phone .timeline:is(.is-mid, .is-minimal) .tl-time {
   font-size: var(--fs-foot);
   white-space: nowrap;
 }
 
-body.phone .timeline.is-minimal .tl-range {
+body.phone .timeline:is(.is-mid, .is-minimal) .tl-range {
   margin: 0;
 }
 
