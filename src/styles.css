@@ -4156,6 +4156,8 @@ body.phone .timeline {
   max-width: none;
   padding: 0 12px 10px;
   transition: transform var(--dur-sheet) var(--ease-sheet);
+  /* The whole panel is a drag grip (phoneLayout.ts), so the browser mustn't take the gesture. */
+  touch-action: none;
 }
 
 /* The panel's handle, along its top edge (phoneLayout.ts dockHandle). */
@@ -4508,10 +4510,8 @@ body.phone .cap-wrap.is-compact {
 }
 
 body.phone .cap-wrap.is-compact .cap-cond,
-body.phone .cap-wrap.is-compact .cap-hilo,
 body.phone .cap-wrap.is-compact .head-pills,
-body.phone .cap-wrap.is-compact .spark-label,
-body.phone .cap-wrap.is-compact .spark-line {
+body.phone .cap-wrap.is-compact .spark-label {
   display: none;
 }
 
@@ -5087,6 +5087,105 @@ body.map-only .temp-bubble {
 
 :root[data-theme='classic'] .aqi-bar {
   background: var(--track);
+}
+
+/* ---------- phones: the small banner keeps everything (owner, 2026-10-23) ---------- */
+
+/* The place with its high and low beside it. */
+body.phone .cap-wrap.is-compact .cap-place-row {
+  flex-basis: auto;
+}
+
+body.phone .cap-wrap.is-compact .capsule {
+  column-gap: 8px;
+}
+
+body.phone .cap-wrap.is-compact .cap-hilo {
+  font-size: var(--fs-foot);
+}
+
+/* The corner buttons stay in their corners now the small banner is taller. */
+body.phone .cap-wrap.is-compact .cap-pin,
+body.phone .cap-wrap.is-compact .cap-alerts {
+  align-self: start;
+}
+
+/* The day's peaks, each with its little line under it. */
+body.phone .cap-wrap.is-compact .cap-sparks:not([hidden]) {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+  padding: 0 30px;
+  border-top: 0;
+}
+
+body.phone .cap-wrap.is-compact .spark-line {
+  display: block;
+  height: 12px;
+  margin-top: 2px;
+}
+
+/* Go to your location, under the pin, in both sizes. (Off the bottom row on phones: it's up here.) */
+.cap-locate,
+.cap-storm {
+  display: none;
+}
+
+body.phone #locate-btn {
+  display: none;
+}
+
+body.phone .cap-locate {
+  position: absolute;
+  top: 42px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+  transition: background-color var(--dur) var(--ease);
+}
+
+body.phone .cap-locate .icon {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: none;
+}
+
+body.phone .cap-locate[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+body.phone .cap-wrap.is-compact .cap-locate {
+  top: 38px;
+}
+
+/* Storms in the small banner: the hurricane mark under the alert triangle, which opens them. */
+body.phone .cap-wrap.is-compact .cap-storm:not([hidden]) {
+  position: absolute;
+  top: 38px;
+  left: 10px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #ff9f0a;
+}
+
+.cap-storm .icon {
+  width: 20px;
+  height: 20px;
 }
 
 @media (prefers-reduced-motion: reduce) {

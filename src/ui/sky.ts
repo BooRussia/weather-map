@@ -85,6 +85,11 @@ export class SkyRenderer {
     (this.gl ?? this.flat)!.start();
   }
 
+  /** The color along the sky's top edge (null for the 2D fallback). */
+  topColor(): string | null {
+    return this.gl?.topColor() ?? null;
+  }
+
   stop(): void {
     (this.gl ?? this.flat)!.stop();
   }

@@ -458,6 +458,15 @@ export class SkyGL {
     this.target = this.cur;
   }
 
+  /** The sky's color along its top edge, where the status bar sits (the scene it's heading for). */
+  topColor(): string {
+    const t = this.target;
+    // The shader's edge darkening takes about 5% off up there; Classic grays it and halves it.
+    const k = t.mono ? 0.5 * 0.95 : 0.95;
+    const rgb = t.mono ? [t.top[0] * 0.299 + t.top[1] * 0.587 + t.top[2] * 0.114].flatMap((v) => [v, v, v]) : t.top;
+    return `#${rgb.map((v) => Math.round(Math.min(1, v * k) * 255).toString(16).padStart(2, '0')).join('')}`;
+  }
+
   set(state: SkyState): void {
     const first = !this.w;
     this.state = state;

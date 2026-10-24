@@ -143,8 +143,9 @@ async function main(): Promise<void> {
   const stormCells = new StormLayer(map);
   const lightning = new LightningLayer(map);
   const borders = new Boundaries(map);
-  // Safari on a phone: its strip under the status bar takes the map's color instead of black.
-  edgeTint(map);
+  // Phone browsers: the strip under the status bar takes the map's color instead of black, or the
+  // weather page's sky while it's open.
+  const tint = edgeTint(map);
   const traffic = new TrafficLayer(map);
   /** The style has loaded: layers can be added. */
   let styled = false;
@@ -511,6 +512,7 @@ async function main(): Promise<void> {
     }
   };
   const page = new WeatherPage(onPageLayout);
+  page.onTop = (color) => tint.hold(color);
 
   /** The temperature sign on the map (set up once the blue dot exists, below). */
   let renderBubble = () => {};
@@ -1486,6 +1488,26 @@ async function main(): Promise<void> {
     mapOnly: () => $('#full-btn').click(),
   });
   $('#cap-alerts').addEventListener('click', () => $('#alert-pill').click());
+  // Phones: the locate button rides in the banner (owner, 2026-10-23), and active storms show as a
+  // mark in the small banner; both mirror the buttons they stand for.
+  const capLocate = $('#cap-locate');
+  const capStorm = $('#cap-storm');
+  capLocate.append(svg(locateIcon));
+  capStorm.append(svg(hurricaneMark));
+  capLocate.addEventListener('click', () => $('#locate-btn').click());
+  capStorm.addEventListener('click', () => $('#storm-pill').click());
+  const mirrorBanner = () => {
+    const loc = $('#locate-btn');
+    capLocate.setAttribute('aria-pressed', loc.getAttribute('aria-pressed') ?? 'false');
+    capLocate.setAttribute('aria-label', loc.getAttribute('aria-label') ?? 'Show my location');
+    const pill = $('#storm-pill');
+    capStorm.hidden = pill.hidden;
+    capStorm.setAttribute('aria-label', pill.getAttribute('aria-label') ?? (pill.textContent?.trim() || 'Storms'));
+  };
+  const mirror = new MutationObserver(mirrorBanner);
+  mirror.observe($('#locate-btn'), { attributes: true });
+  mirror.observe($('#storm-pill'), { attributes: true, childList: true, subtree: true, characterData: true });
+  mirrorBanner();
   dockHandle();
   // Phones: the little graphs along the banner's foot do the same, one per metric.
   $('#cap-sparks').addEventListener('click', (e) => {

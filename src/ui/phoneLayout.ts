@@ -62,6 +62,77 @@ export function phoneLayout(): void {
   mq.addEventListener('change', apply);
 }
 
+/** A touch turns into a drag once it has moved this far, mostly up or down; till then it's a tap. */
+const DRAG_PX = 10;
+
+/**
+ * Make `el` a drag grip: anywhere on it, a touch that moves DRAG_PX mostly up or down becomes a drag
+ * (`move` with how far, from where the drag took hold; `end` with how far, how fast, px/ms, and
+ * whether it ended or was cancelled). Taps still reach the buttons inside; the click a drag ends with
+ * is swallowed so it doesn't press whatever was under the finger. Fields and sliders are left alone.
+ */
+function grip(
+  el: HTMLElement,
+  on: { start?: () => void; move: (dy: number) => void; end: (dy: number, speed: number, act: boolean) => void },
+): void {
+  let pointer: number | null = null;
+  let x0 = 0;
+  let y0 = 0;
+  let dy = 0;
+  let lastY = 0;
+  let lastT = 0;
+  let speed = 0;
+  let dragging = false;
+  let swallow = false;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || pointer != null || (e.target as Element).closest('input, select, textarea')) return;
+    pointer = e.pointerId;
+    dragging = false;
+    x0 = e.clientX;
+    y0 = lastY = e.clientY;
+    lastT = e.timeStamp;
+    speed = 0;
+    dy = 0;
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== pointer) return;
+    const raw = e.clientY - y0;
+    if (e.timeStamp > lastT) speed = (e.clientY - lastY) / (e.timeStamp - lastT);
+    lastY = e.clientY;
+    lastT = e.timeStamp;
+    if (!dragging) {
+      if (Math.abs(raw) < DRAG_PX || Math.abs(raw) < Math.abs(e.clientX - x0)) return;
+      dragging = true;
+      el.setPointerCapture(e.pointerId);
+      on.start?.();
+    }
+    // Measured from where it took hold, so nothing jumps by the threshold.
+    dy = raw - Math.sign(raw) * DRAG_PX;
+    on.move(dy);
+  });
+  const release = (e: PointerEvent, act: boolean) => {
+    if (e.pointerId !== pointer) return;
+    pointer = null;
+    if (!dragging) return;
+    dragging = false;
+    swallow = true;
+    setTimeout(() => (swallow = false), 0);
+    on.end(dy, speed, act);
+  };
+  el.addEventListener('pointerup', (e) => release(e, true));
+  el.addEventListener('pointercancel', (e) => release(e, false));
+  el.addEventListener(
+    'click',
+    (e) => {
+      if (!swallow) return;
+      swallow = false;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    true,
+  );
+}
+
 const COMPACT_KEY = 'weather-map:banner-compact';
 
 /**
@@ -106,101 +177,54 @@ export function bannerHandle(weather: {
   set(compact, false);
 
   // The whole banner is the grip (owner, 2026-10-23: drag from anywhere on it, not just the handle).
-  // A touch becomes a drag once it has gone DRAG_PX mostly up or down; till then it's a tap, so the
-  // place, the graphs, the pin, and the alert triangle still answer taps, and a drag never taps them.
-  const DRAG_PX = 10;
-  let pointer: number | null = null;
-  let startX = 0;
-  let startY = 0;
-  let dy = 0;
-  let lastY = 0;
-  let lastT = 0;
-  let speed = 0;
-  let dragging = false;
-  /** The click that ends a drag lands on whatever was under the finger: swallow it. */
-  let swallowClick = false;
   /** Pulling the whole weather down from the full banner. */
   let pullingPage = false;
-  cap.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || pointer != null) return;
-    pointer = e.pointerId;
-    dragging = false;
-    pullingPage = false;
-    startX = e.clientX;
-    startY = lastY = e.clientY;
-    lastT = e.timeStamp;
-    speed = 0;
-    dy = 0;
-  });
-  cap.addEventListener('pointermove', (e) => {
-    if (e.pointerId !== pointer) return;
-    dy = e.clientY - startY;
-    if (e.timeStamp > lastT) speed = (e.clientY - lastY) / (e.timeStamp - lastT);
-    lastY = e.clientY;
-    lastT = e.timeStamp;
-    if (!dragging) {
-      if (Math.abs(dy) < DRAG_PX || Math.abs(dy) < Math.abs(e.clientX - startX)) return;
-      dragging = true;
-      cap.setPointerCapture(e.pointerId);
-      cap.style.transition = 'none';
-    }
-    // With the weather out, the banner is its foot: it all moves with the finger, either way. From the
-    // full banner, pulling down brings it all down from the top.
-    if (pullingPage || weather.isOpen() || (!compact && dy > DRAG_PX)) {
-      pullingPage = true;
-      cap.style.transform = '';
-      weather.drag(weather.isOpen() ? dy : Math.max(0, dy - DRAG_PX));
-      return;
-    }
-    // Otherwise the banner follows the finger a little, so the pull feels connected.
-    cap.style.transform = `translateY(${Math.max(-36, Math.min(36, dy * 0.35)).toFixed(1)}px)`;
-  });
-  const release = (e: PointerEvent, act: boolean) => {
-    if (e.pointerId !== pointer) return;
-    pointer = null;
-    if (!dragging) return;
-    dragging = false;
-    swallowClick = true;
-    setTimeout(() => (swallowClick = false), 0);
-    cap.style.transition = '';
-    cap.style.transform = '';
-    if (pullingPage) {
+  grip(cap, {
+    start: () => {
       pullingPage = false;
-      // Opens or closes by how far it went and which way it was moving (a cancel puts it back).
-      weather.release(act ? dy : 0, act ? speed : 0);
-      return;
-    }
-    if (!act) return;
-    if (dy < -24) {
-      if (!compact) {
-        set(true);
-      } else {
-        // Already small: up and off the top, and the map takes the whole screen.
-        cap.style.transform = 'translateY(-160%)';
-        setTimeout(() => {
-          weather.mapOnly();
-          cap.style.transition = 'none';
-          cap.style.transform = '';
-          void cap.offsetHeight;
-          cap.style.transition = '';
-        }, 220);
-      }
-    } else if (dy > 24 && compact) {
-      set(false);
-    }
-  };
-  cap.addEventListener('pointerup', (e) => release(e, true));
-  cap.addEventListener('pointercancel', (e) => release(e, false));
-  cap.addEventListener(
-    'click',
-    (e) => {
-      if (!swallowClick) return;
-      swallowClick = false;
-      e.stopPropagation();
-      e.preventDefault();
+      cap.style.transition = 'none';
     },
-    true,
-  );
+    move: (dy) => {
+      // With the weather out, the banner is its foot: it all moves with the finger, either way. From the
+      // full banner, pulling down brings it all down from the top.
+      if (pullingPage || weather.isOpen() || (!compact && dy > 0)) {
+        pullingPage = true;
+        cap.style.transform = '';
+        weather.drag(weather.isOpen() ? dy : Math.max(0, dy));
+        return;
+      }
+      // Otherwise the banner follows the finger a little, so the pull feels connected.
+      cap.style.transform = `translateY(${Math.max(-36, Math.min(36, dy * 0.35)).toFixed(1)}px)`;
+    },
+    end: (dy, speed, act) => {
+      cap.style.transition = '';
+      cap.style.transform = '';
+      if (pullingPage) {
+        pullingPage = false;
+        // Opens or closes by how far it went and which way it was moving (a cancel puts it back).
+        weather.release(act ? dy : 0, act ? speed : 0);
+        return;
+      }
+      if (!act) return;
+      if (dy < -20) {
+        if (!compact) {
+          set(true);
+        } else {
+          // Already small: up and off the top, and the map takes the whole screen.
+          cap.style.transform = 'translateY(-160%)';
+          setTimeout(() => {
+            weather.mapOnly();
+            cap.style.transition = 'none';
+            cap.style.transform = '';
+            void cap.offsetHeight;
+            cap.style.transition = '';
+          }, 220);
+        }
+      } else if (dy > 20 && compact) {
+        set(false);
+      }
+    },
+  });
   // A tap on the handle switches sizes (or puts the weather away).
   handle.addEventListener('click', () => {
     if (weather.isOpen()) weather.close();
@@ -211,7 +235,7 @@ export function bannerHandle(weather: {
 const DOCK_KEY = 'weather-map:dock-minimal';
 
 /**
- * The bottom panel's handle (owner, 2026-10-23: make the chin smaller). Pull it down: the panel shrinks
+ * The bottom panel's handle, and the panel itself as its grip (owner, 2026-10-23: make the chin smaller). Pull it down: the panel shrinks
  * to one line, play, the time, and the timeline, with the buttons and search tucked away. Push it up:
  * the full panel again. A tap switches; the size is remembered.
  */
@@ -241,41 +265,22 @@ export function dockHandle(): void {
   };
   set(minimal, false);
 
-  let startY = 0;
-  let dy = 0;
-  let dragging = false;
-  let moved = false;
-  handle.addEventListener('pointerdown', (e) => {
-    dragging = true;
-    moved = false;
-    startY = e.clientY;
-    dy = 0;
-    handle.setPointerCapture(e.pointerId);
-    panel.style.transition = 'none';
+  // The whole panel is the grip too (owner, 2026-10-23), the slider and search aside.
+  grip(panel, {
+    start: () => {
+      panel.style.transition = 'none';
+    },
+    move: (dy) => {
+      // The panel follows the finger a little, so the pull feels connected.
+      panel.style.transform = `translateY(${Math.max(-30, Math.min(30, dy * 0.35)).toFixed(1)}px)`;
+    },
+    end: (dy, _speed, act) => {
+      panel.style.transition = '';
+      panel.style.transform = '';
+      if (!act) return;
+      if (dy > 20 && !minimal) set(true);
+      else if (dy < -20 && minimal) set(false);
+    },
   });
-  handle.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    dy = e.clientY - startY;
-    if (Math.abs(dy) > 6) moved = true;
-    // The panel follows the finger a little, so the pull feels connected.
-    panel.style.transform = `translateY(${Math.max(-30, Math.min(30, dy * 0.35)).toFixed(1)}px)`;
-  });
-  const release = (act: boolean) => {
-    if (!dragging) return;
-    dragging = false;
-    panel.style.transition = '';
-    panel.style.transform = '';
-    if (!act || !moved) return;
-    if (dy > 24 && !minimal) set(true);
-    else if (dy < -24 && minimal) set(false);
-  };
-  handle.addEventListener('pointerup', () => release(true));
-  handle.addEventListener('pointercancel', () => release(false));
-  handle.addEventListener('click', () => {
-    if (moved) {
-      moved = false;
-      return;
-    }
-    set(!minimal);
-  });
+  handle.addEventListener('click', () => set(!minimal));
 }

@@ -77,6 +77,8 @@ export class WeatherPage {
   /** Air quality by place (null: none there), fetched when the page shows a place the first time. */
   private readonly air = new Map<string, AirQuality | null>();
   private readonly airLoading = new Set<string>();
+  /** Told the sky's top color while the page is open, null when it closes (the browser's status-bar strip follows it). */
+  onTop: ((color: string | null) => void) | null = null;
 
   constructor(private readonly onLayout: (docked: boolean) => void) {
     const body = $('#page-body');
@@ -221,6 +223,7 @@ export class WeatherPage {
       if (this.detail.bannerMetric) this.detail.close();
       this.opener = opener ?? null;
       this.el.hidden = false;
+      this.onTop?.(this.sky.topColor());
       if (this.drawer) {
         // Phones: down from the top with the banner as its foot, from wherever a pull left it.
         document.body.classList.add('drawer-on');
@@ -242,6 +245,7 @@ export class WeatherPage {
       }
     } else {
       this.detail.close();
+      this.onTop?.(null);
       this.el.classList.remove('open');
       if (this.drawer || this.pulled) {
         this.shut();
@@ -328,6 +332,7 @@ export class WeatherPage {
     }
     const { scene, clouds, intensity } = sceneFor(code, phase >= 0 && phase <= 1);
     this.sky.setScene(scene, clouds, intensity, s.theme === 'classic', phase);
+    if (this.isOpen) this.onTop?.(this.sky.topColor());
 
     const keep = this.scroller.scrollTop;
     $('#page-body').replaceChildren(
