@@ -1,6 +1,7 @@
 import * as maplibregl from 'maplibre-gl';
 import type { Map as MlMap } from 'maplibre-gl';
 import type { LatLon } from '../config';
+import { currentFix, watchFix } from '../util/position';
 
 /**
  * Your location as an Apple Maps-style blue dot with a pulsing halo. Once a
@@ -8,7 +9,7 @@ import type { LatLon } from '../config';
  */
 export class LocationDot {
   private marker: maplibregl.Marker | null = null;
-  private watchId: number | null = null;
+  private watching = false;
   position: LatLon | null = null;
 
   constructor(
@@ -18,18 +19,12 @@ export class LocationDot {
 
   /** Ask for a fresh fix (user gesture: high accuracy). Resolves null if denied or unavailable. */
   locate(highAccuracy = true, timeoutMs = 10_000): Promise<LatLon | null> {
-    if (!('geolocation' in navigator)) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const p = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          this.set(p);
-          this.watch();
-          resolve(p);
-        },
-        () => resolve(null),
-        { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: 60_000 },
-      );
+    return currentFix({ enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: 60_000 }).then((p) => {
+      if (p) {
+        this.set(p);
+        this.watch();
+      }
+      return p;
     });
   }
 
@@ -48,15 +43,11 @@ export class LocationDot {
   }
 
   private watch(): void {
-    if (this.watchId != null || !('geolocation' in navigator)) return;
-    this.watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const p = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        this.set(p);
-        this.onMove(p);
-      },
-      () => {},
-      { enableHighAccuracy: false, maximumAge: 120_000 },
-    );
+    if (this.watching) return;
+    this.watching = true;
+    watchFix({ enableHighAccuracy: false, maximumAge: 120_000 }, (p) => {
+      this.set(p);
+      this.onMove(p);
+    });
   }
 }

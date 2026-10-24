@@ -1,4 +1,5 @@
 import type { Map as MlMap } from 'maplibre-gl';
+import { isNative } from '../util/position';
 
 /** Every this many pixels along the top row is averaged (plenty for one color). */
 const STEP = 6;
@@ -19,8 +20,8 @@ export interface EdgeTint {
 
 export function edgeTint(map: MlMap): EdgeTint {
   const nav = navigator as Navigator & { standalone?: boolean };
-  // The home-screen app draws the map up there itself.
-  if (nav.standalone || matchMedia('(display-mode: standalone)').matches) return { hold: () => {} };
+  // The home-screen app and the iPhone app draw the map up there themselves.
+  if (isNative || nav.standalone || matchMedia('(display-mode: standalone)').matches) return { hold: () => {} };
   const paint = (color: string) => {
     document.documentElement.style.backgroundColor = color;
     document.body.style.backgroundColor = color;

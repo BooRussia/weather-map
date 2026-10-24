@@ -18,6 +18,9 @@ const DATA_NOTE =
   'colors). State and county lines: U.S. Census Bureau via the us-atlas package. Traffic © TomTom. ' +
   'The moon: NASA’s Scientific Visualization Studio (CGI Moon Kit, LRO camera). Air quality: Open-Meteo (CAMS).';
 
+/** The privacy policy (public/privacy.html), where the App Store listing points too. */
+const PRIVACY_URL = 'https://boorussia.github.io/weather-map/privacy.html';
+
 type LayerKey = keyof AppState['layers'];
 
 interface SegOption<T extends string> {
@@ -510,6 +513,8 @@ export class LayersMenu {
         switchRow({ label: 'Thunder sound', checked: s.sound, onChange: (on) => this.store.set({ sound: on }) }),
         h('div', { class: 'row' }, h('span', { class: 'row-label' }, 'Where the data comes from'), more),
         this.dataOpen ? h('div', { id: 'data-note', class: 'pop-note data-note' }, h('p', {}, DATA_NOTE), creditsNow()) : null,
+        // The hosted page, opened outside the app (the iPhone app hands it to Safari).
+        h('a', { class: 'row row-link', href: PRIVACY_URL, target: '_blank', rel: 'noopener' }, h('span', { class: 'row-label' }, 'Privacy policy'), svg(chevronIcon)),
       ),
     ];
   }

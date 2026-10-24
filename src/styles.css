@@ -194,6 +194,11 @@ body {
   }
 }
 
+/* The iPhone app (Capacitor, html.native) runs edge to edge the same way. */
+.native .status-blur {
+  display: block;
+}
+
 .status-blur {
   position: fixed;
   /* Over the map, under every panel: it never blurs the banner below it (owner, 2026-10-23). */
@@ -2850,6 +2855,24 @@ body.trip-open .left-stack {
 .stop-arrow {
   color: var(--faint);
   font-size: var(--fs-foot);
+}
+
+/* A row that opens a page (Settings → Privacy policy). */
+.row-link {
+  color: var(--fg);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.row-link .row-label {
+  flex: 1;
+}
+
+.row-link .i-chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--faint);
 }
 
 /* A disclosure inside a row (Hurricanes → what it shows). */

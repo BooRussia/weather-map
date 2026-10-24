@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Weather Map privacy policy</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1c1c1e;
+        --muted: #6e6e73;
+        --rule: #e5e5ea;
+        --link: #0a66d6;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #000000;
+          --fg: #f2f2f7;
+          --muted: #98989f;
+          --rule: #2c2c2e;
+          --link: #4ea1ff;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 17px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+      main {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 40px 20px 64px;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 30px;
+        line-height: 1.2;
+      }
+      h2 {
+        margin: 32px 0 8px;
+        padding-top: 20px;
+        border-top: 1px solid var(--rule);
+        font-size: 20px;
+      }
+      p,
+      li {
+        margin: 0 0 10px;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      .date {
+        color: var(--muted);
+        font-size: 15px;
+      }
+      a {
+        color: var(--link);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy policy</h1>
+      <p class="date">Weather Map · Effective October 24, 2026</p>
+
+      <p>
+        Weather Map shows radar, forecasts, and weather alerts on a map. It has no accounts, no ads, no analytics, and no
+        tracking. We don’t collect, store, sell, or share your personal information, and we don’t run servers that receive it.
+      </p>
+
+      <h2>Your location</h2>
+      <p>
+        If you allow it, the app uses your device’s location to show the weather where you are and to put you on the map. You
+        can say no, or turn it off any time in your device’s settings; the app then shows a default place, and you can search for
+        any other.
+      </p>
+      <p>
+        To get the weather for a place, the app sends that place’s coordinates (your location, or a place you picked) straight
+        from your device to the weather services listed below. The coordinates aren’t linked to your name or any account.
+      </p>
+
+      <h2>What stays on your device</h2>
+      <p>
+        Your settings (units, map style, and the like) and any places you tag on the map are saved only on your device. They
+        never leave it, and deleting the app deletes them.
+      </p>
+
+      <h2>Services the app talks to</h2>
+      <p>
+        The weather, maps, and search come from these services. Like any website, each one receives the request your device
+        makes, which includes your device’s internet (IP) address, and handles it under its own privacy policy.
+      </p>
+      <ul>
+        <li>Forecasts, air quality, and the weather maps: <a href="https://open-meteo.com/en/terms">Open-Meteo</a></li>
+        <li>
+          Place names, observations, and alerts: the U.S. <a href="https://www.weather.gov/privacy">National Weather Service</a>;
+          hurricanes: the National Hurricane Center
+        </li>
+        <li>
+          Radar, satellite, and lightning imagery: Iowa Environmental Mesonet (Iowa State University), SSEC RealEarth (University
+          of Wisconsin–Madison), NOAA nowCOAST, and NASA GIBS
+        </li>
+        <li>Wind and weather maps: Environment and Climate Change Canada (GeoMet)</li>
+        <li>Map tiles: CARTO and OpenStreetMap; satellite imagery: Esri</li>
+        <li>Traffic: TomTom</li>
+        <li>Search: Photon (komoot), which receives what you type in the search box</li>
+        <li>Driving routes: the OpenStreetMap routing service (FOSSGIS), which receives a trip’s start and end</li>
+      </ul>
+
+      <h2>Children</h2>
+      <p>The app collects nothing from anyone, children included.</p>
+
+      <h2>Changes</h2>
+      <p>If this policy changes, the new version will be posted here with a new date.</p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about privacy: open an issue at
+        <a href="https://github.com/BooRussia/weather-map/issues">github.com/BooRussia/weather-map</a>.
+      </p>
+    </main>
+  </body>
+</html>

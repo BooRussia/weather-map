@@ -64,3 +64,5 @@ Open the app and see the weather moving over a satellite map right away. Your lo
 - The owner shared screenshots of MyRadar, (Not Boring) Weather, Apple Weather, and another app; take/skip decisions are in `docs/inspiration.md`.
 - 2026-10-05: the owner disliked the black-and-amber style and asked for a redesign close to Apple's UI: liquid glass, a weather-matching background behind the menu, a blue location dot, a clear GPS button, a center icon that picks the point while dragging, a city/address search bar, and more expensive, crisp, soft typography.
 - No user research yet. Unknown: real usage split between phone and desktop; assumed phone-first.
+
+The iPhone app (owner, 2026-10-24: get it on the App Store): this same site wrapped with Capacitor (`ios/`), iPhone only and portrait like Apple Weather, dark, edge to edge like the home-screen app, with location from iOS (one permission prompt, not the web view's two). A privacy policy page (`public/privacy.html`) is linked from Layers → Settings and is the listing's privacy URL. README → iPhone app has the build steps.

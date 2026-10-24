@@ -1578,6 +1578,7 @@ function renderCredits(s: AppState): void {
 void main();
 
 // Faster repeat visits, and a page that opens offline (public/sw.js). Production only: in dev it would cache Vite's modules.
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+// Not in the iPhone app, whose page ships inside it.
+if ('serviceWorker' in navigator && import.meta.env.PROD && !document.documentElement.classList.contains('native')) {
   window.addEventListener('load', () => void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {}));
 }

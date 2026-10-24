@@ -1,0 +1,11 @@
+{
+  "appId": "com.boorussia.weathermap",
+  "appName": "Weather Map",
+  "webDir": "dist",
+  "backgroundColor": "#000000",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#000000",
+    "scrollEnabled": false
+  }
+}

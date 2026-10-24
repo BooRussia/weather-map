@@ -136,12 +136,24 @@ src/
 tests/                  vitest unit tests for the pure logic
 ```
 
+## iPhone app (App Store)
+
+The App Store version wraps this same site with [Capacitor](https://capacitorjs.com/) (`ios/`, `capacitor.config.json`). Inside the app the page runs edge to edge like the home-screen app (`html.native`), and location comes from iOS through `@capacitor/geolocation` (`src/util/position.ts`), since the web view's own asks twice. iPhone only, portrait; bundle ID `com.boorussia.weathermap`. The privacy policy is `public/privacy.html`, served by Pages and linked from Layers → Settings.
+
+1. Install Xcode from the Mac App Store, open it once, and sign in under Settings → Accounts with your Apple Developer account.
+2. Put `VITE_NWS_USER_AGENT` and `VITE_TOMTOM_KEY` in `.env.local`; they're baked in at build time.
+3. `npm run ios` builds the site and copies it into the Xcode project; `npm run ios:open` also opens Xcode.
+4. In Xcode: the App target → Signing & Capabilities → pick your Team. Run it on a simulator or your iPhone.
+5. Product → Archive → Distribute App → App Store Connect, then test it in TestFlight before submitting.
+
+After any change to the site, run `npm run ios` again before building in Xcode.
+
 ## Taking it native later
 
 Everything under `data/`, `field/`, and `layers/` is plain TypeScript with no framework, written so the logic can move. Three routes, from least to most work:
 
 1. **Home-screen web app (now).** Already works. No App Store listing, no push notifications on older iOS.
-2. **Wrap this site with [Capacitor](https://capacitorjs.com/).** Same code inside a native iOS/Android shell; App Store listing in days. Native plugins add push, haptics, and background location when you want them.
+2. **Wrap this site with [Capacitor](https://capacitorjs.com/)** (started 2026-10-24: see iPhone app above). Same code inside a native iOS/Android shell. Native plugins add push, haptics, and background location when you want them.
 3. **Native Swift (SwiftUI + MapKit or MapLibre Native).** Port `data/` and `field/` almost line for line, and redraw the particles with Metal or Core Animation. MapKit gives you Apple Maps, including its satellite and hybrid views, free and built in. Best feel and battery life; needed for widgets, Live Activities, and the Apple Watch. The most work.
 
 Apple Maps on the website (MapKit JS) is possible but needs a paid Apple Developer account ($99/yr) for a MapKit key, and Apple doesn't allow its tiles inside other map libraries, so MapLibre would have to be swapped out. The free Esri imagery covers the satellite look on the web until the native app.
