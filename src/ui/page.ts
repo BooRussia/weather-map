@@ -263,10 +263,10 @@ export class WeatherPage {
     this.layout();
   }
 
-  /** The banner's chips: that metric's chart for today, dropped down under the banner; tap again to close. */
-  toggleDetail(metric: Metric, opener: HTMLElement, anchor: HTMLElement): void {
-    if (this.detail.bannerMetric === metric) this.detail.close();
-    else this.detail.open(metric, null, opener, false, anchor);
+  /** The banner's chips: that metric's chart for today (or `date`), dropped down under the banner; tap again to close. */
+  toggleDetail(metric: Metric, opener: HTMLElement, anchor: HTMLElement, date: string | null = null): void {
+    if (this.detail.bannerMetric === metric && this.detail.bannerDate === date) this.detail.close();
+    else this.detail.open(metric, date, opener, false, anchor);
   }
 
   /** Keeps the chart current while the page is closed (the page's own render does it while open). */
@@ -275,8 +275,8 @@ export class WeatherPage {
   }
 
   /** Told when the chart under the banner opens, closes, or changes metric. */
-  set onDetailToggle(fn: (bannerMetric: Metric | null) => void) {
-    this.detail.onToggle = () => fn(this.detail.bannerMetric);
+  set onDetailToggle(fn: (bannerMetric: Metric | null, bannerDate: string | null) => void) {
+    this.detail.onToggle = () => fn(this.detail.bannerMetric, this.detail.bannerDate);
   }
 
   scrollToAlerts(): void {

@@ -4742,9 +4742,13 @@ body.phone .cap-wrap .head-pills {
   justify-content: center;
 }
 
-/* The temperature sign: a small glass tag with a tail, over the dot or the pin (map/tempBubble.ts). */
+/*
+ * The temperature sign, over the dot or the pin (map/tempBubble.ts): a capsule in the temperature's own
+ * color, ringed in white like the dot. Above the wind and rain canvases (z-index 1), so it reads over them.
+ */
 .temp-bubble {
   display: none;
+  z-index: 2;
   pointer-events: none;
 }
 
@@ -4758,35 +4762,25 @@ body.map-only .temp-bubble {
 
 .temp-bubble-in {
   position: relative;
-  padding: 3px 9px 4px;
-  border-radius: 12px;
-  background: rgba(28, 28, 32, 0.84);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  box-shadow:
-    0 3px 10px rgba(0, 0, 0, 0.35),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.14);
-  color: #ffffff;
-  font-size: var(--fs-callout);
-  font-weight: 600;
+  min-width: 38px;
+  padding: 2px 8px 3px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--bubble-fill, #1c1c20);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  color: var(--bubble-ink, #ffffff);
+  font-size: 15px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   line-height: 1.2;
+  text-align: center;
   white-space: nowrap;
   transform: scale(var(--k, 1));
   transform-origin: 50% 100%;
-}
-
-.temp-bubble-in::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -4px;
-  width: 9px;
-  height: 9px;
-  margin-left: -4.5px;
-  border-radius: 0 0 3px 0;
-  background: rgba(28, 28, 32, 0.84);
-  transform: rotate(45deg);
+  transition:
+    background-color 400ms var(--ease),
+    color 400ms var(--ease);
 }
 
 /* It grows up out of the dot when it first shows, and pops when the reading changes. */
@@ -4815,9 +4809,9 @@ body.map-only .temp-bubble {
   }
 }
 
-:root[data-theme='classic'] .temp-bubble-in,
-:root[data-theme='classic'] .temp-bubble-in::after {
+:root[data-theme='classic'] .temp-bubble-in {
   background: #000000;
+  color: #ffffff;
 }
 
 /* ---------- weather page, Apple's way (owner, 2026-10-23) ---------- */
@@ -5186,6 +5180,84 @@ body.phone .cap-wrap.is-compact .cap-storm:not([hidden]) {
 .cap-storm .icon {
   width: 20px;
   height: 20px;
+}
+
+/* ---------- phones: the week in the medium banner, the graphs in the small one (owner, 2026-10-24) ---------- */
+
+.cap-week {
+  display: none;
+}
+
+body.phone .cap-wrap:not(.is-compact) .cap-sparks {
+  display: none;
+}
+
+body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.wk {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 4px 0 5px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  transition: background-color var(--dur) var(--ease);
+}
+
+.wk[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.wk:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.wk-day {
+  font-size: var(--fs-foot);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wk-icon .glyph {
+  display: block;
+  width: 26px;
+  height: 26px;
+  margin-top: 4px;
+}
+
+/* Kept even when empty, so every day's high and low line up. */
+.wk-pop {
+  height: 13px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 13px;
+  color: var(--c-precip);
+}
+
+.wk-hi {
+  margin-top: 1px;
+  font-size: var(--fs-callout);
+  font-weight: 600;
+}
+
+.wk-lo {
+  font-size: var(--fs-foot);
+  font-weight: 500;
+  color: var(--muted);
 }
 
 @media (prefers-reduced-motion: reduce) {

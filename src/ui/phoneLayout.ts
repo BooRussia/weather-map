@@ -162,7 +162,7 @@ export function bannerHandle(weather: {
   const set = (on: boolean, save = true) => {
     compact = on;
     cap.classList.toggle('is-compact', on);
-    handle.setAttribute('aria-label', on ? 'Show the day’s graphs and alerts' : 'Make the banner smaller');
+    handle.setAttribute('aria-label', on ? 'Show the week and alerts' : 'Make the banner smaller');
     handle.setAttribute('aria-expanded', String(!on));
     if (save) {
       try {

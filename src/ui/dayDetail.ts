@@ -450,6 +450,11 @@ export class DayDetail {
     return this.isOpen && this.anchor ? this.metric : null;
   }
 
+  /** And for which day (null: today, from the graphs). */
+  get bannerDate(): string | null {
+    return this.isOpen && this.anchor ? this.date : null;
+  }
+
   /**
    * Show a metric for a day (null: today). `anchor`: drop down under that element (the banner)
    * rather than beside the weather page.

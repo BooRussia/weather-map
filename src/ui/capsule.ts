@@ -1,11 +1,12 @@
 import type { Conditions } from '../data/conditions';
 import { dayHours, dayOutlook, hourOfDay, type Metric } from '../data/dayDetail';
+import { weekRows } from '../data/outlook';
 import type { Alert } from '../data/nws';
 import type { AppState } from '../state';
 import { formatTemp, formatWind, fToC, mphToKmh } from '../util/units';
 import { $, h, svg } from './dom';
 import { conditionLine, conditionWord, hiLoLine } from './format';
-import { dropIcon, thermoIcon, umbrellaIcon, windIcon } from './icons';
+import { dropIcon, GLYPHS, thermoIcon, umbrellaIcon, windIcon } from './icons';
 import { tempColor } from './page';
 
 /**
@@ -22,6 +23,7 @@ export function renderCapsule(c: Conditions | null, s: AppState): void {
   const hilo = $('#cap-hilo');
   renderChips(c, s);
   renderSparks(c, s);
+  renderWeek(c, s);
   if (!c) {
     place.textContent = 'Locating';
     temp.textContent = '--°';
@@ -79,13 +81,18 @@ function renderChips(c: Conditions | null, s: AppState): void {
 /* ---------- little line graphs (phones) ---------- */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-/** Which graph's chart is open under the banner, so a redraw keeps it pressed. */
+/** Which graph's chart (today's), or which day's, is open under the banner, so a redraw keeps it pressed. */
 let sparkOpen: Metric | null = null;
+let dayOpen: string | null = null;
 
-export function setSparkOpen(metric: Metric | null): void {
-  sparkOpen = metric;
+export function setSparkOpen(metric: Metric | null, date: string | null = null): void {
+  sparkOpen = date ? null : metric;
+  dayOpen = metric === 'conditions' ? date : null;
   for (const b of document.querySelectorAll<HTMLElement>('#cap-sparks [data-metric]')) {
-    b.setAttribute('aria-pressed', String(b.dataset.metric === metric));
+    b.setAttribute('aria-pressed', String(b.dataset.metric === sparkOpen));
+  }
+  for (const b of document.querySelectorAll<HTMLElement>('#cap-week [data-day]')) {
+    b.setAttribute('aria-pressed', String(b.dataset.day === dayOpen));
   }
 }
 
@@ -96,18 +103,21 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
 }
 
 /**
- * A day's hours as one line, no axes or fill, with a dot at now. `domain` fixes the scale (percentages);
- * otherwise it fits the day. `stroke` is a color, or a gradient (top, bottom) for temperature.
+ * A day's hours as one line, no axes or fill, with a dot at now. Each line fits its own day, but spans
+ * at least `minSpan`, centered, so a day that barely changes stays a calm line through the middle,
+ * level with the others (owner, 2026-10-24: a day with a few percent chance of rain drew its line
+ * along the bottom, lower than the rest). `stroke` is a color, or a gradient (top, bottom) for temperature.
  */
-function sparkline(values: number[], now: number | null, stroke: string | [string, string], domain?: [number, number]): SVGSVGElement {
+function sparkline(values: number[], now: number | null, stroke: string | [string, string], minSpan: number): SVGSVGElement {
   const W = 64;
   const H = 22;
   const pad = 3;
-  const lo = domain?.[0] ?? Math.min(...values);
-  const hi = domain?.[1] ?? Math.max(...values);
-  const span = hi - lo || 1;
+  const vlo = Math.min(...values);
+  const vhi = Math.max(...values);
+  const span = Math.max(vhi - vlo, minSpan, 1e-6);
+  const lo = (vlo + vhi) / 2 - span / 2;
   const x = (i: number) => (i / Math.max(1, values.length - 1)) * W;
-  const y = (v: number) => pad + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / span) * (H - 2 * pad);
+  const y = (v: number) => pad + (1 - (v - lo) / span) * (H - 2 * pad);
   const s = el('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', class: 'spark-line', 'aria-hidden': 'true' });
   let paint = typeof stroke === 'string' ? stroke : '';
   if (typeof stroke !== 'string') {
@@ -160,6 +170,7 @@ function renderSparks(c: Conditions | null, s: AppState): void {
         day.map((x) => temp(x.tempF)),
         now,
         classic ? '#f0f0fa' : [tempColor(Math.max(...day.map((x) => x.tempF))), tempColor(Math.min(...day.map((x) => x.tempF)))],
+        8,
       ),
       say: `High ${formatTemp(today.hiF, s.tempUnit)} today`,
     },
@@ -169,7 +180,7 @@ function renderSparks(c: Conditions | null, s: AppState): void {
       icon: windIcon,
       value: formatWind(maxWind, s.windUnit),
       color: ink('#64d2ff'),
-      line: sparkline(day.map((x) => wind(x.windMph)), now, ink('#64d2ff'), [0, Math.max(wind(maxWind), wind(10))]),
+      line: sparkline(day.map((x) => wind(x.windMph)), now, ink('#64d2ff'), wind(8)),
       say: `Wind up to ${formatWind(maxWind, s.windUnit)} today`,
     },
     {
@@ -178,7 +189,7 @@ function renderSparks(c: Conditions | null, s: AppState): void {
       icon: umbrellaIcon,
       value: `${Math.round(today.precipProbability)}%`,
       color: ink('#7d7aff'),
-      line: sparkline(day.map((x) => x.precipProbability), now, ink('#7d7aff'), [0, 100]),
+      line: sparkline(day.map((x) => x.precipProbability), now, ink('#7d7aff'), 40),
       say: `${Math.round(today.precipProbability)}% chance of rain today`,
     },
     {
@@ -187,7 +198,7 @@ function renderSparks(c: Conditions | null, s: AppState): void {
       icon: dropIcon,
       value: `${Math.round(maxHumid)}%`,
       color: ink('#30d158'),
-      line: sparkline(day.map((x) => x.humidity), now, ink('#30d158'), [0, 100]),
+      line: sparkline(day.map((x) => x.humidity), now, ink('#30d158'), 40),
       say: `Humidity up to ${Math.round(maxHumid)}% today`,
     },
   ];
@@ -203,6 +214,42 @@ function renderSparks(c: Conditions | null, s: AppState): void {
       );
       (b.querySelector('.spark-value') as HTMLElement).style.color = k.color;
       return b;
+    }),
+  );
+}
+
+/**
+ * The week along the medium banner's foot (owner, 2026-10-24: the graphs for the small banner, the
+ * week for the medium one): each day's name, its sky, the chance of rain when it's worth a mention,
+ * and its high and low. Each opens that day's chart under the banner.
+ */
+function renderWeek(c: Conditions | null, s: AppState): void {
+  const box = $('#cap-week');
+  const om = c?.om;
+  const days = om ? weekRows(om.daily, c?.tempF ?? null).slice(0, 7) : [];
+  box.hidden = !days.length;
+  if (!om || !days.length) return;
+  box.replaceChildren(
+    ...days.map((d, i) => {
+      const date = om.daily[i].date;
+      const hi = formatTemp(d.hiF, s.tempUnit);
+      const lo = formatTemp(d.loF, s.tempUnit);
+      const pop = Math.round(d.pop);
+      return h(
+        'button',
+        {
+          type: 'button',
+          class: 'wk',
+          'data-day': date,
+          'aria-pressed': String(dayOpen === date),
+          'aria-label': `${d.label}: high ${hi}, low ${lo}, ${pop}% chance of rain. Show the day.`,
+        },
+        h('span', { class: 'wk-day' }, d.label),
+        h('span', { class: 'wk-icon' }, svg(GLYPHS[d.glyph])),
+        h('span', { class: 'wk-pop' }, pop >= 20 ? `${pop}%` : ''),
+        h('span', { class: 'wk-hi' }, hi),
+        h('span', { class: 'wk-lo' }, lo),
+      );
     }),
   );
 }

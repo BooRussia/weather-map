@@ -70,7 +70,7 @@ import { getAlert, type Alert } from './data/nws';
 import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
-import { WeatherPage } from './ui/page';
+import { tempColor, WeatherPage } from './ui/page';
 import { bannerHandle, dockHandle, phoneLayout } from './ui/phoneLayout';
 import { PIN, SearchBox } from './ui/search';
 import { Sheet } from './ui/sheet';
@@ -631,8 +631,9 @@ async function main(): Promise<void> {
   renderBubble = () => {
     const s = store.get();
     const text = conditions?.tempF != null ? formatTemp(conditions.tempF, s.tempUnit) : null;
-    if (mode === 'gps' && dot.position) bubble.set(dot.position, text, 'dot');
-    else bubble.set(s.selected, text, pinShown || tagAt(s.tags, s.selected) ? 'pin' : 'point');
+    const fill = conditions?.tempF != null ? tempColor(conditions.tempF) : null;
+    if (mode === 'gps' && dot.position) bubble.set(dot.position, text, 'dot', fill);
+    else bubble.set(s.selected, text, pinShown || tagAt(s.tags, s.selected) ? 'pin' : 'point', fill);
   };
   store.subscribe((s, prev) => {
     if (s.selected !== prev.selected || s.tempUnit !== prev.tempUnit || s.followMap !== prev.followMap || s.tags !== prev.tags) renderBubble();
@@ -1514,9 +1515,14 @@ async function main(): Promise<void> {
     const b = (e.target as Element).closest<HTMLElement>('[data-metric]');
     if (b) page.toggleDetail(b.dataset.metric as Metric, b, capWrap);
   });
-  page.onDetailToggle = (open) => {
-    for (const [metric, chip] of Object.entries(chips)) chip.setAttribute('aria-pressed', String(open === metric));
-    setSparkOpen(open);
+  // And the medium banner's week: a day opens that day's chart.
+  $('#cap-week').addEventListener('click', (e) => {
+    const b = (e.target as Element).closest<HTMLElement>('[data-day]');
+    if (b) page.toggleDetail('conditions', b, capWrap, b.dataset.day);
+  });
+  page.onDetailToggle = (open, date) => {
+    for (const [metric, chip] of Object.entries(chips)) chip.setAttribute('aria-pressed', String(!date && open === metric));
+    setSparkOpen(open, date);
   };
   $('#alert-pill').addEventListener('click', () => {
     if (!page.open) page.setOpen(true, $('#alert-pill'));
