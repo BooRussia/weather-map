@@ -89,9 +89,12 @@ export function segRow(label: string, control: HTMLElement): HTMLElement {
 }
 
 /**
- * The layers drawer, on the right like Windy's menu: the weather map (one
- * colored variable at a time, picked from thumbnails), the switches for
- * what's drawn over it, the map style and radar options, and Settings.
+ * The layers drawer, on the right like Windy's menu, in three tabs with one home for each kind of thing
+ * (owner, 2026-10-24: colors and styles were in all three, and it felt scattered). Weather: the
+ * switches for the weather drawn over the map, each with its own options folded under it. Map: what's
+ * underneath, the base map with its lines and traffic, and the weather map that colors it (one at a
+ * time, picked from thumbnails). Settings: every look in one place (the app's and the radar's), units,
+ * sound, and where the data comes from.
  */
 export class LayersMenu {
   private readonly el = $('#layers-menu');
@@ -103,6 +106,8 @@ export class LayersMenu {
   /** The data sources note is open. */
   private dataOpen = false;
   private cellsOpen = false;
+  /** Radar's options are open. */
+  private radarOpen = false;
   /** Which part of the drawer shows (owner, 2026-10-23: one long list had too much going on). */
   private tab: 'weather' | 'map' | 'settings' = 'weather';
 
@@ -280,6 +285,62 @@ export class LayersMenu {
     ];
   }
 
+  /** Radar: the switch, and a disclosure for what it shows besides rain (snow, mix, and ice; falling rain). */
+  private radarRows(): HTMLElement[] {
+    const s = this.store.get();
+    const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch', 'aria-label': 'Radar' });
+    input.checked = s.layers.rain;
+    input.addEventListener('change', () => {
+      this.store.set({ layers: { ...this.store.get().layers, rain: input.checked } });
+      this.onLayer('rain', input.checked);
+    });
+    const more = h(
+      'button',
+      { type: 'button', id: 'radar-more', class: 'row-more', 'aria-expanded': String(this.radarOpen), 'aria-controls': 'radar-options', 'aria-label': 'Radar options' },
+      svg(chevronIcon),
+    );
+    more.addEventListener('click', () => {
+      this.radarOpen = !this.radarOpen;
+      this.render();
+      $('#radar-more').focus();
+    });
+    const extras = [s.precipType ? 'Snow, mix & ice' : null, s.rainStreaks ? 'Falling rain' : null].filter(Boolean).join(' · ');
+    const head = h(
+      'div',
+      { class: 'row' },
+      h('span', { class: 'row-mark is-precip' }, svg(rainMark)),
+      h('span', { class: 'row-label' }, 'Radar', extras ? h('span', { class: 'row-sub' }, extras) : null),
+      more,
+      input,
+    );
+    if (!this.radarOpen) return [head];
+    return [
+      head,
+      h(
+        'div',
+        { id: 'radar-options', class: 'sub-options' },
+        switchRow({
+          label: 'Snow, mix & ice',
+          sub: 'Radar colored by what’s falling',
+          checked: s.precipType,
+          onChange: (on) => {
+            this.store.set({ precipType: on });
+            this.render();
+          },
+        }),
+        switchRow({
+          label: 'Falling rain',
+          sub: 'Streaks where it’s raining',
+          checked: s.rainStreaks,
+          onChange: (on) => {
+            this.store.set({ rainStreaks: on });
+            this.render();
+          },
+        }),
+      ),
+    ];
+  }
+
   /** Storm tracks: the switch, and a disclosure with storm reports and what the colors mean. */
   private cellRows(): HTMLElement[] {
     const s = this.store.get();
@@ -398,9 +459,8 @@ export class LayersMenu {
     ];
   }
 
-  /** What used to be its own Settings page, now one short group: units side by side, sound, look, and the data. */
-  private settingsRows(): HTMLElement[] {
-    const s = this.store.get();
+  /** Settings: every look in one place (the app's and the radar's), then units, sound, and the data. */
+  private settingsTab(s: AppState): HTMLElement[] {
     const temp = segmented('Temperature', [{ value: 'F', label: '°F' }, { value: 'C', label: '°C' }], s.tempUnit, (v) =>
       this.store.set({ tempUnit: v }),
     );
@@ -419,18 +479,23 @@ export class LayersMenu {
       this.render();
       $('#data-more').focus();
     });
-    const theme = segmented('Theme', [{ value: 'liquid', label: 'Liquid' }, { value: 'classic', label: 'Classic' }], s.theme, (v) =>
+    const theme = segmented('App look', [{ value: 'liquid', label: 'Liquid' }, { value: 'classic', label: 'Classic' }], s.theme, (v) =>
       this.store.set({ theme: v }),
     );
     theme.classList.add('seg-compact');
+    const radar = segmented('Radar colors', [{ value: 'color', label: 'Color' }, { value: 'mono', label: 'Mono' }], s.colorMode, (v) =>
+      this.store.set({ colorMode: v }),
+    );
+    radar.classList.add('seg-compact');
     return [
-      h('p', { class: 'group-label' }, 'Settings'),
+      h('p', { class: 'group-label' }, 'Look'),
+      h('div', { class: 'group' }, segRow('App', theme), segRow('Radar colors', radar)),
+      h('p', { class: 'group-label' }, 'General'),
       h(
         'div',
         { class: 'group' },
         h('div', { class: 'row row-units' }, h('span', { class: 'row-label' }, 'Units'), temp, wind),
         switchRow({ label: 'Thunder sound', checked: s.sound, onChange: (on) => this.store.set({ sound: on }) }),
-        segRow('Look', theme),
         h('div', { class: 'row' }, h('span', { class: 'row-label' }, 'Where the data comes from'), more),
         this.dataOpen ? h('div', { id: 'data-note', class: 'pop-note data-note' }, h('p', {}, DATA_NOTE), creditsNow()) : null,
       ),
@@ -466,20 +531,20 @@ export class LayersMenu {
     const body = h(
       'div',
       { class: 'popover-body' },
-      ...(this.tab === 'weather' ? this.weatherTab(s) : this.tab === 'map' ? this.mapTab(s) : this.settingsRows().slice(1)),
+      ...(this.tab === 'weather' ? this.weatherTab(s) : this.tab === 'map' ? this.mapTab(s) : this.settingsTab(s)),
     );
     this.el.replaceChildren(head, tabs, body);
     body.scrollTop = scroll;
   }
 
-  /** Weather: what's on the map now, the storm hazards (hurricanes last, its options run long), the weather map, and the radar's look. */
+  /** Weather: the switches for what's drawn over the map, live weather then storm hazards (hurricanes last, its options run long). */
   private weatherTab(s: AppState): HTMLElement[] {
     return [
-      h('p', { class: 'group-label' }, 'On the map'),
+      h('p', { class: 'group-label' }, 'Live'),
       h(
         'div',
         { class: 'group' },
-        this.layer('rain', 'Radar', rainMark, 'is-precip'),
+        ...this.radarRows(),
         this.layer('clouds', 'Satellite clouds', cloudMark, '', 'Live GOES imagery · beta'),
         this.layer('thunder', 'Lightning', boltMark, 'is-bolt', 'Live from GOES satellite'),
         this.layer('wind', 'Wind', windIcon, ''),
@@ -499,38 +564,21 @@ export class LayersMenu {
         ...this.outlookRows(),
         ...this.tropicsRows(),
       ),
-      h('p', { class: 'group-label' }, 'Weather map'),
-      this.mapTiles(),
-      h('p', { class: 'group-label' }, 'Radar'),
-      h(
-        'div',
-        { class: 'group' },
-        segRow(
-          'Colors',
-          segmented('Radar colors', [{ value: 'color', label: 'Color' }, { value: 'mono', label: 'Mono' }], s.colorMode, (v) =>
-            this.store.set({ colorMode: v }),
-          ),
-        ),
-        switchRow({
-          label: 'Snow, mix & ice',
-          sub: 'Radar colored by what’s falling',
-          checked: s.precipType,
-          onChange: (on) => this.store.set({ precipType: on }),
-        }),
-        switchRow({ label: 'Falling rain', checked: s.rainStreaks, onChange: (on) => this.store.set({ rainStreaks: on }) }),
-      ),
     ];
   }
 
-  /** Map: the base map's style, and what's drawn on it besides the weather (borders, traffic). */
+  /**
+   * Map: what's under the weather. The base map (its style, lines, traffic) first, short; then the
+   * weather map that colors it, one at a time, the long grid last.
+   */
   private mapTab(s: AppState): HTMLElement[] {
     return [
-      h('p', { class: 'group-label' }, 'Style'),
+      h('p', { class: 'group-label' }, 'Base map'),
       h(
         'div',
         { class: 'group' },
         segRow(
-          'Map',
+          'Style',
           segmented(
             'Map style',
             [
@@ -542,11 +590,6 @@ export class LayersMenu {
             (v) => this.store.set({ basemap: v }),
           ),
         ),
-      ),
-      h('p', { class: 'group-label' }, 'Map features'),
-      h(
-        'div',
-        { class: 'group' },
         switchRow({ label: 'State lines', checked: s.stateLines, onChange: (on) => this.store.set({ stateLines: on }) }),
         switchRow({
           label: 'County lines',
@@ -556,6 +599,8 @@ export class LayersMenu {
         }),
         trafficSwitch(s, (on) => this.store.set({ traffic: on })),
       ),
+      h('p', { class: 'group-label' }, 'Weather map'),
+      this.mapTiles(),
     ];
   }
 }
