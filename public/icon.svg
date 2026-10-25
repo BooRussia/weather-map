@@ -1,8 +1,53 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#000000"/>
-  <g fill="none" stroke="#f0f0fa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 24h26a8 8 0 1 0-8-8"/>
-    <path d="M12 34h36a8 8 0 1 1-8 8"/>
-    <path d="M12 44h16"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- The app icon (owner, 2026-10-25): a storm in the radar's colors on a night map, headed for your blue dot.
+       ios/App/App/Assets.xcassets/AppIcon.appiconset and public/apple-touch-icon.png are renders of this. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14356b"/>
+      <stop offset="1" stop-color="#06101f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="500" cy="420" r="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2d63ab" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#2d63ab" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="g" x1="0.15" y1="0.1" x2="0.85" y2="0.9">
+      <stop offset="0" stop-color="#5ee38a"/>
+      <stop offset="1" stop-color="#1fae4c"/>
+    </linearGradient>
+    <linearGradient id="y" x1="0.15" y1="0.1" x2="0.85" y2="0.9">
+      <stop offset="0" stop-color="#ffe55c"/>
+      <stop offset="1" stop-color="#f5c400"/>
+    </linearGradient>
+    <linearGradient id="o" x1="0.15" y1="0.1" x2="0.85" y2="0.9">
+      <stop offset="0" stop-color="#ffb340"/>
+      <stop offset="1" stop-color="#f58a00"/>
+    </linearGradient>
+    <radialGradient id="r" cx="0.5" cy="0.45" r="0.6">
+      <stop offset="0" stop-color="#c8102e"/>
+      <stop offset="1" stop-color="#ff4a3d"/>
+    </radialGradient>
+    <filter id="b5" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.5"/></filter>
+    <filter id="b4" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2"/></filter>
+    <filter id="b3" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.6"/></filter>
+    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000814" flood-opacity="0.55"/></filter>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.5"/></filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#sky)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <!-- The map: a gulf in the lower left, and a state line in the upper left. -->
+  <path fill="#030915" fill-opacity="0.55" d="M0 610C110 640 170 700 190 790C205 860 250 930 330 980C370 1004 400 1016 420 1024H0Z"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round">
+    <path stroke-opacity="0.11" stroke-width="5" d="M0 610C110 640 170 700 190 790C205 860 250 930 330 980C370 1004 400 1016 420 1024"/>
+    <path stroke-opacity="0.09" stroke-width="5" stroke-dasharray="2 18" d="M430 0L405 115 255 195 0 222"/>
   </g>
+  <!-- The storm: lumpy, hot at the core, like a radar echo, lifted off the map. -->
+  <g filter="url(#drop)">
+    <path filter="url(#b5)" fill="url(#g)" d="M170 520C150 455 200 395 265 380C300 315 375 262 470 255C550 248 605 205 680 215C770 228 830 290 822 365C815 428 772 462 742 505C708 556 640 584 570 580C520 618 445 640 392 618C350 648 292 656 246 632C200 608 160 572 170 520Z"/>
+  </g>
+  <path filter="url(#b4)" fill="url(#y)" d="M300 500C290 448 345 400 408 386C450 340 525 312 590 322C665 334 712 382 700 438C690 486 645 512 592 522C552 556 478 572 425 560C372 566 310 548 300 500Z"/>
+  <path filter="url(#b4)" fill="url(#o)" d="M398 466C392 430 430 400 478 392C515 366 570 360 610 376C648 392 660 428 640 456C620 484 578 495 540 495C502 506 450 506 422 492C408 485 400 476 398 466Z"/>
+  <path filter="url(#b3)" fill="url(#r)" d="M470 450C470 422 504 404 538 404C572 404 596 420 590 444C584 468 556 480 528 480C498 480 471 471 470 450Z"/>
+  <!-- You: the blue dot, downstream of the storm. -->
+  <circle cx="742" cy="746" r="132" fill="#0a84ff" fill-opacity="0.17"/>
+  <circle cx="742" cy="746" r="64" fill="#0a84ff" stroke="#ffffff" stroke-width="22" filter="url(#shadow)"/>
 </svg>
