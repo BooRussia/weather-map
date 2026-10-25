@@ -1520,6 +1520,17 @@ async function main(): Promise<void> {
     const b = (e.target as Element).closest<HTMLElement>('[data-day]');
     if (b) page.toggleDetail('conditions', b, capWrap, b.dataset.day);
   });
+  // A mouse wheel scrolls the strip sideways (trackpads and fingers already can).
+  $('#cap-week').addEventListener(
+    'wheel',
+    (e) => {
+      const box = e.currentTarget as HTMLElement;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || box.scrollWidth <= box.clientWidth) return;
+      box.scrollLeft += e.deltaY;
+      e.preventDefault();
+    },
+    { passive: false },
+  );
   page.onDetailToggle = (open, date) => {
     for (const [metric, chip] of Object.entries(chips)) chip.setAttribute('aria-pressed', String(!date && open === metric));
     setSparkOpen(open, date);

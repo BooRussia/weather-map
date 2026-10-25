@@ -1,8 +1,5 @@
 import { $, h } from './dom';
 
-/** Phones get the one-panel layout; tablets and computers keep the classic one. */
-const PHONE = '(max-width: 699px)';
-
 /** The keyboard's height (--kb) and the visible height (--vvh), so the bottom panel can ride on the keyboard. */
 function trackKeyboard(): void {
   const root = document.documentElement;
@@ -13,11 +10,12 @@ function trackKeyboard(): void {
 }
 
 /**
- * Phones (owner, 2026-10-23): a header on top with the place and its temperature, little graphs of
- * today's temperature, wind, rain, and humidity, and any alerts and storms; and one panel at the bottom, on the radar
- * timeline's glass: the map buttons in a row, the timeline, then search. Wider screens keep search on
- * top, the banner at the top left, and the buttons down the right. The elements move rather than
- * being copied, so their listeners come with them.
+ * The one-panel layout (owner, 2026-10-23 on phones; every screen size since 2026-10-25: "make desktop
+ * the exact same"): a header on top with the place and its weather, the forecast or little graphs of
+ * the day, and any alerts and storms; and one panel at the bottom, on the radar timeline's glass: the
+ * map buttons in a row, the timeline, then search. Wider screens get the same two, phone-width and
+ * centered. body.phone marks it (the name is older than the layout's reach). The elements move rather
+ * than being copied, so their listeners come with them.
  */
 export function phoneLayout(): void {
   trackKeyboard();
@@ -25,41 +23,17 @@ export function phoneLayout(): void {
   window.visualViewport?.addEventListener('resize', trackKeyboard);
   window.visualViewport?.addEventListener('scroll', trackKeyboard);
 
-  const mq = matchMedia(PHONE);
   const timeline = $('#timeline');
-  const controls = $('.controls');
   const cap = $('.cap-wrap');
-  const search = $('.top');
-  const alert = $('#alert-pill');
-  const storm = $('#storm-pill');
-  // A marker where each lives on wide screens, to put it back.
-  const homes = [controls, cap, search, alert, storm].map((el) => {
-    const mark = document.createComment(`home of ${el.id || el.className}`);
-    el.before(mark);
-    return [el, mark] as const;
-  });
   const head = h('div', { class: 'phone-head' });
-  const pills = h('div', { class: 'head-pills' });
-
-  const apply = () => {
-    const phone = mq.matches;
-    document.body.classList.toggle('phone', phone);
-    if (phone) {
-      timeline.prepend($('#dock-handle'), controls);
-      timeline.append(search);
-      // Alerts and storms along the banner's foot (owner, 2026-10-23: "all in one clean forehead").
-      pills.append(alert, storm);
-      cap.append(pills, $('#cap-handle'));
-      head.append(cap);
-      document.body.append(head);
-    } else {
-      for (const [el, mark] of homes) mark.after(el);
-      pills.remove();
-      head.remove();
-    }
-  };
-  apply();
-  mq.addEventListener('change', apply);
+  // Alerts and storms along the banner's foot (owner, 2026-10-23: "all in one clean forehead").
+  const pills = h('div', { class: 'head-pills' }, $('#alert-pill'), $('#storm-pill'));
+  document.body.classList.add('phone');
+  timeline.prepend($('#dock-handle'), $('.controls'));
+  timeline.append($('.top'));
+  cap.append(pills, $('#cap-handle'));
+  head.append(cap);
+  document.body.append(head);
 }
 
 /** A touch turns into a drag once it has moved this far, mostly up or down; till then it's a tap. */

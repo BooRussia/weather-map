@@ -58,9 +58,10 @@ export function tempColor(f: number): string {
 }
 
 /**
- * The weather page: Apple Weather's main screen for the selected point. A
- * live sky matching the current weather behind glass cards. Full screen on
- * phones (swipe down or ✕ to close); docked on the right at 1100px+.
+ * The weather page: Apple Weather's main screen for the selected point. A live sky matching the
+ * current weather behind glass cards. With the one-panel layout (every screen since 2026-10-25) it
+ * comes down from the banner as a drawer, full screen, its cards a centered column; without it,
+ * docked on the right at 1100px+.
  */
 export class WeatherPage {
   private readonly el = $('#page');
@@ -105,8 +106,8 @@ export class WeatherPage {
       this.sky.resize();
       if (this.drawer && !this.dragging) this.hang(this.span(), false);
     });
-    // Desktop opens docked unless you closed it last time.
-    if (this.wide.matches && readFlag(DOCK_KEY, true)) this.setOpen(true);
+    // Desktop without the drawer opens docked unless you closed it last time.
+    if (this.wide.matches && !this.drawer && readFlag(DOCK_KEY, true)) this.setOpen(true);
     else this.layout();
   }
 
@@ -115,7 +116,7 @@ export class WeatherPage {
   }
 
   get docked(): boolean {
-    return this.isOpen && this.wide.matches;
+    return this.isOpen && this.wide.matches && !this.drawer;
   }
 
   toggle(opener?: HTMLElement): void {
@@ -217,7 +218,7 @@ export class WeatherPage {
   setOpen(open: boolean, opener?: HTMLElement): void {
     if (open === this.isOpen) return;
     this.isOpen = open;
-    if (this.wide.matches) writeFlag(DOCK_KEY, open);
+    if (this.wide.matches && !this.drawer) writeFlag(DOCK_KEY, open);
     if (open) {
       // The page takes over from a chart hanging under the banner.
       if (this.detail.bannerMetric) this.detail.close();

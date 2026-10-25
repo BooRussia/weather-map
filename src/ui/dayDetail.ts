@@ -508,6 +508,7 @@ export class DayDetail {
     this.root.style.setProperty('--dd-top', `${Math.round(r.bottom + 8)}px`);
     this.root.style.setProperty('--dd-bottom', `${Math.round(innerHeight - top + 8)}px`);
     this.root.style.setProperty('--dd-left', `${Math.round(r.left)}px`);
+    this.root.style.setProperty('--dd-width', `${Math.round(r.width)}px`);
   }
 
   /** New data for the place (or new units): redraw if open. */

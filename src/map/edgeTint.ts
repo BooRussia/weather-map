@@ -18,6 +18,9 @@ export interface EdgeTint {
   hold(color: string | null): void;
 }
 
+/** A phone's browser, whose status-bar strip this colors (a computer's toolbar is left alone). */
+const phoneBrowser = () => matchMedia('(max-width: 699px)').matches;
+
 export function edgeTint(map: MlMap): EdgeTint {
   const nav = navigator as Navigator & { standalone?: boolean };
   // The home-screen app and the iPhone app draw the map up there themselves.
@@ -34,7 +37,7 @@ export function edgeTint(map: MlMap): EdgeTint {
   const ask = (ms: number) => {
     clearTimeout(timer);
     timer = window.setTimeout(() => {
-      if (!document.body.classList.contains('phone')) return;
+      if (!phoneBrowser()) return;
       want = true;
       map.triggerRepaint();
     }, ms);
@@ -72,7 +75,7 @@ export function edgeTint(map: MlMap): EdgeTint {
   return {
     hold(color) {
       // Phones only, like the sampling (a desktop browser's toolbar shouldn't change color).
-      if (!document.body.classList.contains('phone')) return;
+      if (!phoneBrowser()) return;
       held = color;
       if (color) paint(color);
       else ask(0);
