@@ -5609,6 +5609,24 @@ body.phone .timeline {
   user-select: none;
 }
 
+/* The handles say they're handles: brighter under the pointer, and a closed hand while dragging, wherever it goes. */
+@media (hover: hover) {
+  body.phone .cap-handle:hover::before,
+  body.phone .dock-handle:hover::before {
+    background: rgba(255, 255, 255, 0.62);
+  }
+}
+
+body.phone .cap-handle::before,
+body.phone .dock-handle::before {
+  transition: background-color var(--dur) var(--ease);
+}
+
+body.is-gripping,
+body.is-gripping * {
+  cursor: grabbing !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -36,14 +36,23 @@ export function phoneLayout(): void {
   document.body.append(head);
 }
 
-/** A touch turns into a drag once it has moved this far, mostly up or down; till then it's a tap. */
-const DRAG_PX = 10;
+/** A press turns into a drag once it has moved this far, mostly up or down; till then it's a tap. A mouse is steadier than a finger. */
+const DRAG_PX = { touch: 10, mouse: 4 } as const;
+/** How far, or how fast (px/ms), a drag has to go to change a size: a short flick counts as much as a long pull. */
+const FLING_PX = 16;
+const FLING_SPEED = 0.35;
 
 /**
- * Make `el` a drag grip: anywhere on it, a touch that moves DRAG_PX mostly up or down becomes a drag
+ * Make `el` a drag grip: anywhere on it, a press that moves a few px mostly up or down becomes a drag
  * (`move` with how far, from where the drag took hold; `end` with how far, how fast, px/ms, and
  * whether it ended or was cancelled). Taps still reach the buttons inside; the click a drag ends with
- * is swallowed so it doesn't press whatever was under the finger. Fields and sliders are left alone.
+ * is swallowed so it doesn't press whatever was under the pointer. Fields and sliders are left alone.
+ *
+ * Once pressed, the whole window is listened to, not just `el` (owner, 2026-10-26: on a computer the
+ * handles didn't work first try): a mouse isn't held to what it pressed the way a finger is, so a quick
+ * flick left the panel before it was heard, and a release outside it went unheard and left the grip
+ * waiting, ignoring the next press. A press is never stuck now: a new one, or a mouse found with its
+ * button up, ends the last.
  */
 function grip(
   el: HTMLElement,
@@ -58,43 +67,75 @@ function grip(
   let speed = 0;
   let dragging = false;
   let swallow = false;
+  let slop: number = DRAG_PX.touch;
+
+  const finish = (act: boolean, at: number) => {
+    pointer = null;
+    removeEventListener('pointermove', move, true);
+    removeEventListener('pointerup', up, true);
+    removeEventListener('pointercancel', cancel, true);
+    removeEventListener('blur', lost);
+    document.body.classList.remove('is-gripping');
+    if (!dragging) return;
+    dragging = false;
+    swallow = true;
+    setTimeout(() => (swallow = false), 0);
+    // A pause before letting go is no flick.
+    on.end(dy, at - lastT > 90 ? 0 : speed, act);
+  };
+  const move = (e: PointerEvent) => {
+    if (e.pointerId !== pointer) return;
+    // A mouse whose button came up where we couldn't hear it (outside the window): it's over.
+    if (e.pointerType === 'mouse' && !(e.buttons & 1)) {
+      finish(true, e.timeStamp);
+      return;
+    }
+    const raw = e.clientY - y0;
+    if (e.timeStamp > lastT) speed = (e.clientY - lastY) / (e.timeStamp - lastT);
+    lastY = e.clientY;
+    lastT = e.timeStamp;
+    if (!dragging) {
+      if (Math.abs(raw) < slop || Math.abs(raw) < Math.abs(e.clientX - x0)) return;
+      dragging = true;
+      document.body.classList.add('is-gripping');
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        // Already released: the window listeners still follow it.
+      }
+      on.start?.();
+    }
+    e.preventDefault();
+    // Measured from where it took hold, so nothing jumps by the threshold.
+    dy = raw - Math.sign(raw) * slop;
+    on.move(dy);
+  };
+  const up = (e: PointerEvent) => {
+    if (e.pointerId === pointer) finish(true, e.timeStamp);
+  };
+  const cancel = (e: PointerEvent) => {
+    if (e.pointerId === pointer) finish(false, e.timeStamp);
+  };
+  const lost = () => {
+    if (pointer != null) finish(false, performance.now());
+  };
   el.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || pointer != null || (e.target as Element).closest('input, select, textarea')) return;
+    if (e.button !== 0 || (e.target as Element).closest('input, select, textarea')) return;
+    // A press we never heard end doesn't lock the grip: it ends here, and this one starts.
+    if (pointer != null) finish(false, e.timeStamp);
     pointer = e.pointerId;
+    slop = e.pointerType === 'mouse' ? DRAG_PX.mouse : DRAG_PX.touch;
     dragging = false;
     x0 = e.clientX;
     y0 = lastY = e.clientY;
     lastT = e.timeStamp;
     speed = 0;
     dy = 0;
+    addEventListener('pointermove', move, true);
+    addEventListener('pointerup', up, true);
+    addEventListener('pointercancel', cancel, true);
+    addEventListener('blur', lost);
   });
-  el.addEventListener('pointermove', (e) => {
-    if (e.pointerId !== pointer) return;
-    const raw = e.clientY - y0;
-    if (e.timeStamp > lastT) speed = (e.clientY - lastY) / (e.timeStamp - lastT);
-    lastY = e.clientY;
-    lastT = e.timeStamp;
-    if (!dragging) {
-      if (Math.abs(raw) < DRAG_PX || Math.abs(raw) < Math.abs(e.clientX - x0)) return;
-      dragging = true;
-      el.setPointerCapture(e.pointerId);
-      on.start?.();
-    }
-    // Measured from where it took hold, so nothing jumps by the threshold.
-    dy = raw - Math.sign(raw) * DRAG_PX;
-    on.move(dy);
-  });
-  const release = (e: PointerEvent, act: boolean) => {
-    if (e.pointerId !== pointer) return;
-    pointer = null;
-    if (!dragging) return;
-    dragging = false;
-    swallow = true;
-    setTimeout(() => (swallow = false), 0);
-    on.end(dy, speed, act);
-  };
-  el.addEventListener('pointerup', (e) => release(e, true));
-  el.addEventListener('pointercancel', (e) => release(e, false));
   el.addEventListener(
     'click',
     (e) => {
@@ -180,7 +221,7 @@ export function bannerHandle(weather: {
         return;
       }
       if (!act) return;
-      if (dy < -20) {
+      if (dy < -FLING_PX || speed < -FLING_SPEED) {
         if (!compact) {
           set(true);
         } else {
@@ -194,7 +235,7 @@ export function bannerHandle(weather: {
             cap.style.transition = '';
           }, 220);
         }
-      } else if (dy > 20 && compact) {
+      } else if ((dy > FLING_PX || speed > FLING_SPEED) && compact) {
         set(false);
       }
     },
@@ -254,12 +295,12 @@ export function dockHandle(): void {
       // The panel follows the finger a little, so the pull feels connected.
       panel.style.transform = `translateY(${Math.max(-30, Math.min(30, dy * 0.35)).toFixed(1)}px)`;
     },
-    end: (dy, _speed, act) => {
+    end: (dy, speed, act) => {
       panel.style.transition = '';
       panel.style.transform = '';
       if (!act) return;
-      if (dy > 20) set(size + 1);
-      else if (dy < -20) set(size - 1);
+      if (dy > FLING_PX || speed > FLING_SPEED) set(size + 1);
+      else if (dy < -FLING_PX || speed < -FLING_SPEED) set(size - 1);
     },
   });
   handle.addEventListener('click', () => set((size + 1) % DOCK_SIZES.length));
