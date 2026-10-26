@@ -5323,11 +5323,20 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
 }
 
 /*
- * ---------- wider screens: the same banner and panel, out to a side margin (owner, 2026-10-25: "use the
- * lateral space") ----------
- * The margin grows with the window, 16 px on a small tablet to 40 px on a big monitor, and both stretch to
- * meet it. From 1000 px they lay out sideways (below), so they're shorter and cover less map.
+ * ---------- wider screens: the same banner and panel, at a sweet-spot width ----------
+ * Owner, 2026-10-25/26: use the lateral space, but edge to edge was too big. Both are 60% of the window,
+ * never narrower than on a phone (440 px) nor wider than 1040 px, and always clear of a side margin that
+ * grows with the window (16 to 40 px); centered. Once they're wide enough they lay out sideways (the
+ * container queries below), so they're shorter and cover less map.
  */
+.phone-head {
+  container: head / inline-size;
+}
+
+body.phone .dock {
+  container: dock / inline-size;
+}
+
 @media (min-width: 700px) {
   :root {
     --side: clamp(16px, 2.5vw, 40px);
@@ -5335,8 +5344,10 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
 
   .phone-head,
   body.phone .dock {
-    left: calc(var(--safe-l) + var(--side));
-    right: calc(var(--safe-r) + var(--side));
+    left: 0;
+    right: 0;
+    width: min(calc(100% - var(--safe-l) - var(--safe-r) - 2 * var(--side)), clamp(440px, 60vw, 1040px));
+    margin: 0 auto;
   }
 
   .phone-head {
@@ -5353,7 +5364,7 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
 
   /* The forecast row fills the width; it scrolls only when the days or hours don't all fit. */
   body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
-    grid-auto-columns: minmax(58px, 1fr);
+    grid-auto-columns: minmax(56px, 1fr);
   }
 
   /* The weather page comes down from the banner full width (its cards stay a centered column). */
@@ -5384,10 +5395,11 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
   }
 }
 
-@media (min-width: 1000px) {
+/* Sideways once the banner itself is wide enough (it follows its own width, not the window's). */
+@container head (min-width: 760px) {
   /* Full banner: the place and its day on the left, the forecast across the rest. */
   body.phone .cap-wrap:not(.is-compact) {
-    grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+    grid-template-columns: minmax(160px, 200px) minmax(0, 1fr);
     column-gap: 16px;
     padding-right: 52px;
     text-align: left;
@@ -5424,6 +5436,10 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
     grid-column: 1 / -1;
   }
 
+}
+
+/* The small banner goes to one line a little later: its four graphs need room beside their numbers. */
+@container head (min-width: 840px) {
   /* Small banner: one line, the place and its high and low, then the day's four graphs across. */
   body.phone .cap-wrap.is-compact {
     grid-template-columns: auto minmax(0, 1fr);
@@ -5489,11 +5505,15 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
     height: 16px;
     margin: 0;
   }
+}
 
-  /* Full panel: one row, the map buttons, play, the time, the timeline, the legend, and search. */
+/* And the panel, once it's wide enough for one row. */
+@container dock (min-width: 840px) {
+  /* Full panel: one row, the map buttons, play, the time, the timeline, and search (the radar's color
+     key is in the stacked panel; in the row it would leave the timeline too short). */
   body.phone .timeline:not(.is-mid):not(.is-minimal) {
     display: grid;
-    grid-template-columns: auto auto minmax(88px, auto) minmax(160px, 1fr) clamp(200px, 22vw, 300px);
+    grid-template-columns: auto auto minmax(88px, 120px) minmax(140px, 1fr) clamp(180px, 20cqw, 260px);
     grid-template-areas:
       'handle handle handle handle handle'
       'site site site site site'
@@ -5524,6 +5544,13 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
 
   body.phone .timeline:not(.is-mid):not(.is-minimal) .tl-label {
     grid-area: label;
+    white-space: nowrap;
+  }
+
+  /* Slimmer buttons, so the timeline gets the room. */
+  body.phone .timeline:not(.is-minimal) .ctrl {
+    width: 34px;
+    height: 34px;
   }
 
   body.phone .timeline:not(.is-mid):not(.is-minimal) .tl-range {
@@ -5536,9 +5563,7 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
   }
 
   body.phone .timeline:not(.is-mid):not(.is-minimal) .radar-legend {
-    grid-area: legend;
-    width: 180px;
-    margin: 0;
+    display: none;
   }
 
   body.phone .timeline:not(.is-mid):not(.is-minimal) .map-legend {
@@ -5566,25 +5591,6 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
   body.phone .timeline.is-mid .controls {
     grid-area: auto;
     grid-column: auto;
-  }
-}
-
-@media (min-width: 1280px) {
-  body.phone .timeline:not(.is-mid):not(.is-minimal) {
-    grid-template-columns: auto auto minmax(88px, auto) minmax(220px, 1fr) auto clamp(220px, 20vw, 300px);
-    grid-template-areas:
-      'handle handle handle handle handle handle'
-      'site site site site site site'
-      'ctrl play label range legend search'
-      'ctrl play label scale legend search'
-      'map map map map map map';
-  }
-}
-
-/* Till then the row has no room for the radar's color key. */
-@media (min-width: 1000px) and (max-width: 1279px) {
-  body.phone .timeline:not(.is-mid):not(.is-minimal) .radar-legend {
-    display: none;
   }
 }
 
