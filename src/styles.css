@@ -5873,6 +5873,64 @@ body.phone.search-up .cap-wrap:not(.is-compact) .cap-search {
   height: 14px;
 }
 
+/*
+ * Alerts and storms as marks in the banner's top-left corner at every size (owner, 2026-10-26: the pills
+ * took a whole row): the triangle with the alert count, and the hurricane mark under it, mirroring the
+ * pin and the location arrow on the right. Each opens what its pill did; the weather page lists them.
+ */
+body.phone .cap-wrap .head-pills {
+  display: none;
+}
+
+body.phone .cap-wrap .cap-alerts:not([hidden]) {
+  position: absolute;
+  top: 9px;
+  left: 10px;
+  grid-column: auto;
+  grid-row: auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+body.phone .cap-wrap .cap-storm:not([hidden]) {
+  position: absolute;
+  top: 42px;
+  left: 11px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--c-alert);
+}
+
+/* The worst alert's color: red for a warning, orange for a watch, yellow for an advisory or statement. */
+.cap-alerts[data-level='warning'] path {
+  fill: #ff453a;
+}
+
+.cap-alerts[data-level='warning'] text {
+  fill: #ffffff;
+}
+
+.cap-alerts[data-level='advisory'] path {
+  fill: #ffd60a;
+}
+
+/* Sideways (wide screens), the place moves over for them, as the forecast does for the pin. */
+@container head (min-width: 760px) {
+  body.phone .cap-wrap:not(.is-compact):has(.cap-alerts:not([hidden]), .cap-storm:not([hidden])) {
+    padding-left: 52px;
+  }
+}
+
 /* A mouse drags the banner and the panel too: no text selection along the way (fields still type). */
 body.phone .cap-wrap,
 body.phone .timeline {

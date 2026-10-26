@@ -304,11 +304,18 @@ function renderWeek(c: Conditions | null, s: AppState): void {
   box.scrollLeft = left;
 }
 
-/** The small banner's alert mark (phones): a triangle with how many alerts are in effect inside it. */
+/**
+ * The banner's alert mark, in its top-left corner at every size (owner, 2026-10-26: the pills took a
+ * whole row): a triangle with how many alerts are in effect, in the worst one's color, red for a
+ * warning, orange for a watch, yellow for the rest; hovering lists them.
+ */
 function renderAlertCount(alerts: Alert[]): void {
   const b = $('#cap-alerts');
   b.hidden = !alerts.length;
   if (!alerts.length) return;
+  const worst = alerts[0].event;
+  b.dataset.level = /warning/i.test(worst) ? 'warning' : /watch/i.test(worst) ? 'watch' : 'advisory';
+  b.title = [...new Set(alerts.map((a) => a.event))].join('\n');
   const n = alerts.length > 9 ? '9+' : String(alerts.length);
   const tri = document.createElementNS(SVG_NS, 'svg');
   tri.setAttribute('viewBox', '0 0 28 25');
