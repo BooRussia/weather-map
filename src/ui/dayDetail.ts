@@ -507,8 +507,10 @@ export class DayDetail {
     this.root.classList.toggle('is-above', above);
     this.root.style.setProperty('--dd-top', `${Math.round(r.bottom + 8)}px`);
     this.root.style.setProperty('--dd-bottom', `${Math.round(innerHeight - top + 8)}px`);
-    this.root.style.setProperty('--dd-left', `${Math.round(r.left)}px`);
-    this.root.style.setProperty('--dd-width', `${Math.round(r.width)}px`);
+    // As wide as the banner, up to a phone-ish width; under a wider banner, centered on it.
+    const w = Math.min(r.width, 560);
+    this.root.style.setProperty('--dd-left', `${Math.round(r.left + (r.width - w) / 2)}px`);
+    this.root.style.setProperty('--dd-width', `${Math.round(w)}px`);
   }
 
   /** New data for the place (or new units): redraw if open. */

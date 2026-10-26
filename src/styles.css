@@ -5322,15 +5322,21 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
   color: var(--accent);
 }
 
-/* ---------- wider screens: the same banner and panel, phone-width and centered (owner, 2026-10-25) ---------- */
-
+/*
+ * ---------- wider screens: the same banner and panel, out to a side margin (owner, 2026-10-25: "use the
+ * lateral space") ----------
+ * The margin grows with the window, 16 px on a small tablet to 40 px on a big monitor, and both stretch to
+ * meet it. From 1000 px they lay out sideways (below), so they're shorter and cover less map.
+ */
 @media (min-width: 700px) {
+  :root {
+    --side: clamp(16px, 2.5vw, 40px);
+  }
+
   .phone-head,
   body.phone .dock {
-    left: calc(var(--safe-l) + 8px);
-    right: calc(var(--safe-r) + 8px);
-    max-width: 440px;
-    margin: 0 auto;
+    left: calc(var(--safe-l) + var(--side));
+    right: calc(var(--safe-r) + var(--side));
   }
 
   .phone-head {
@@ -5341,11 +5347,244 @@ body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
     bottom: max(calc(var(--safe-b) + 12px), calc(var(--kb, 0px) + 12px));
   }
 
+  body.phone .timeline {
+    max-width: none;
+  }
+
+  /* The forecast row fills the width; it scrolls only when the days or hours don't all fit. */
+  body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
+    grid-auto-columns: minmax(58px, 1fr);
+  }
+
   /* The weather page comes down from the banner full width (its cards stay a centered column). */
   body.phone .page {
     left: 0;
     width: auto;
     border-left: 0;
+  }
+
+  /* Trip weather as on phones: a sheet at the bottom (the panel steps aside), folding to the top; centered. */
+  body.phone .trip,
+  body.phone .trip.folded {
+    left: calc(var(--safe-l) + var(--side));
+    right: calc(var(--safe-r) + var(--side));
+    width: auto;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  body.phone .trip:not(.folded) {
+    top: auto;
+    bottom: calc(var(--safe-b) + 12px);
+    max-height: min(64dvh, 640px);
+  }
+
+  body.phone.trip-open:not(.trip-folded) .dock {
+    display: none;
+  }
+}
+
+@media (min-width: 1000px) {
+  /* Full banner: the place and its day on the left, the forecast across the rest. */
+  body.phone .cap-wrap:not(.is-compact) {
+    grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+    column-gap: 16px;
+    padding-right: 52px;
+    text-align: left;
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .capsule {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+    justify-content: flex-start;
+    padding: 0;
+    text-align: left;
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .cap-place-row {
+    justify-content: flex-start;
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+    padding: 0 0 0 12px;
+    border-top: 0;
+    border-left: 1px solid var(--hairline);
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .head-pills {
+    justify-content: flex-start;
+  }
+
+  body.phone .cap-wrap .head-pills,
+  body.phone .cap-wrap .cap-handle {
+    grid-column: 1 / -1;
+  }
+
+  /* Small banner: one line, the place and its high and low, then the day's four graphs across. */
+  body.phone .cap-wrap.is-compact {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 20px;
+    align-items: center;
+    padding-left: 48px;
+    padding-right: 48px;
+  }
+
+  body.phone .cap-wrap.is-compact .capsule {
+    grid-column: 1;
+    grid-row: 1;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    padding: 0;
+  }
+
+  body.phone .cap-wrap.is-compact .cap-sparks:not([hidden]) {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 24px;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* The corner buttons side by side: the slim banner is one line tall. */
+  body.phone .cap-wrap.is-compact {
+    padding-right: 84px;
+  }
+
+  body.phone .cap-wrap.is-compact .cap-pin,
+  body.phone .cap-wrap.is-compact .cap-locate {
+    top: 11px;
+  }
+
+  body.phone .cap-wrap.is-compact .cap-locate {
+    right: 44px;
+  }
+
+  body.phone .cap-wrap.is-compact .cap-alerts:not([hidden]),
+  body.phone .cap-wrap.is-compact .cap-storm:not([hidden]) {
+    top: 9px;
+  }
+
+  body.phone .cap-wrap.is-compact .cap-storm:not([hidden]) {
+    left: 46px;
+  }
+
+  body.phone .cap-wrap.is-compact:has(.cap-storm:not([hidden])) {
+    padding-left: 84px;
+  }
+
+  /* Each number beside its line, not over it: there's room across. */
+  body.phone .cap-wrap.is-compact .spark {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+
+  body.phone .cap-wrap.is-compact .spark-line {
+    flex: 1;
+    min-width: 0;
+    height: 16px;
+    margin: 0;
+  }
+
+  /* Full panel: one row, the map buttons, play, the time, the timeline, the legend, and search. */
+  body.phone .timeline:not(.is-mid):not(.is-minimal) {
+    display: grid;
+    grid-template-columns: auto auto minmax(88px, auto) minmax(160px, 1fr) clamp(200px, 22vw, 300px);
+    grid-template-areas:
+      'handle handle handle handle handle'
+      'site site site site site'
+      'ctrl play label range search'
+      'ctrl play label scale search'
+      'map map map map map';
+    column-gap: 14px;
+    align-items: center;
+    padding-bottom: 8px;
+  }
+
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .tl-row {
+    display: contents;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) > .dock-handle {
+    grid-area: handle;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .site-bar {
+    grid-area: site;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .tl-play {
+    grid-area: play;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .tl-label {
+    grid-area: label;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .tl-range {
+    grid-area: range;
+    margin: 0;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .tl-scale {
+    grid-area: scale;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .radar-legend {
+    grid-area: legend;
+    width: 180px;
+    margin: 0;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .map-legend {
+    grid-area: map;
+  }
+
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .top {
+    grid-area: search;
+    margin: 0;
+  }
+
+  /* Middle panel: the map buttons, then play, the time, and the timeline, all on one line. */
+  body.phone .timeline.is-mid {
+    grid-template-columns: auto auto auto minmax(0, 1fr);
+  }
+
+  body.phone .timeline:not(.is-minimal) .controls {
+    grid-area: ctrl;
+    margin: 0;
+    padding: 0 12px 0 0;
+    border-bottom: 0;
+    border-right: 1px solid var(--hairline);
+  }
+
+  body.phone .timeline.is-mid .controls {
+    grid-area: auto;
+    grid-column: auto;
+  }
+}
+
+@media (min-width: 1280px) {
+  body.phone .timeline:not(.is-mid):not(.is-minimal) {
+    grid-template-columns: auto auto minmax(88px, auto) minmax(220px, 1fr) auto clamp(220px, 20vw, 300px);
+    grid-template-areas:
+      'handle handle handle handle handle handle'
+      'site site site site site site'
+      'ctrl play label range legend search'
+      'ctrl play label scale legend search'
+      'map map map map map map';
+  }
+}
+
+/* Till then the row has no room for the radar's color key. */
+@media (min-width: 1000px) and (max-width: 1279px) {
+  body.phone .timeline:not(.is-mid):not(.is-minimal) .radar-legend {
+    display: none;
   }
 }
 
