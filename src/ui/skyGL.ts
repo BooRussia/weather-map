@@ -467,6 +467,20 @@ export class SkyGL {
     return `#${rgb.map((v) => Math.round(Math.min(1, v * k) * 255).toString(16).padStart(2, '0')).join('')}`;
   }
 
+  /**
+   * How bright the sky is behind the page's cards, 0 (night) to about 0.7 (a bright overcast day): the
+   * sky's own colors, and its clouds by how much of it they cover. The cards darken with it (owner,
+   * 2026-10-26: white type on light cards over white clouds was hard to read).
+   */
+  brightness(): number {
+    const t = this.target;
+    const lum = (c: RGB) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const sky = (lum(t.top) + lum(t.bottom)) / 2;
+    const cover = Math.max(0, Math.min(1, t.cloud)) * t.cloudAlpha * 0.7;
+    const clouds = (lum(t.lit) + lum(t.shade)) / 2;
+    return sky * (1 - cover) + clouds * cover;
+  }
+
   set(state: SkyState): void {
     const first = !this.w;
     this.state = state;

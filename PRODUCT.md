@@ -66,3 +66,5 @@ Open the app and see the weather moving over a satellite map right away. Your lo
 - No user research yet. Unknown: real usage split between phone and desktop; assumed phone-first.
 
 The iPhone app (owner, 2026-10-24: get it on the App Store): this same site wrapped with Capacitor (`ios/`), iPhone only and portrait like Apple Weather, dark, edge to edge like the home-screen app, with location from iOS (one permission prompt, not the web view's two). A privacy policy page (`public/privacy.html`) is linked from Layers → Settings and is the listing's privacy URL. README → iPhone app has the build steps.
+
+The weather page's cards darken with the sky behind them (owner, 2026-10-26: white type on light cards over bright clouds was hard to read): the sky reports how bright it is (its own colors, and its clouds by how much they cover), and the cards go from a light tint at night to a deeper blue-gray under a bright overcast, the gray type brightening with them, so text stays readable on any sky.

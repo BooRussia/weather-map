@@ -333,6 +333,9 @@ export class WeatherPage {
     }
     const { scene, clouds, intensity } = sceneFor(code, phase >= 0 && phase <= 1);
     this.sky.setScene(scene, clouds, intensity, s.theme === 'classic', phase);
+    // The cards darken over a bright sky, so their white type keeps its contrast (styles.css --sky-light).
+    const light = this.sky.brightness();
+    if (light != null) this.el.style.setProperty('--sky-light', light.toFixed(2));
     if (this.isOpen) this.onTop?.(this.sky.topColor());
 
     const keep = this.scroller.scrollTop;

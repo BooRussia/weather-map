@@ -4858,9 +4858,17 @@ body.map-only .temp-bubble {
 
 /* ---------- weather page, Apple's way (owner, 2026-10-23) ---------- */
 
-/* Cards: flat panels tinted with the sky, no bright rim, no rule under the heading. */
+/*
+ * Cards: flat panels tinted with the sky, no bright rim, no rule under the heading. Over a bright sky
+ * they darken, and the gray type brightens, so white type stays readable on white clouds (owner,
+ * 2026-10-26). --sky-light comes from the sky (page.ts): 0 at night, about 0.7 under a bright overcast.
+ */
 :root[data-theme='liquid'] .page {
-  --card-fill: rgba(8, 40, 96, 0.24);
+  --sky-light: 0;
+  --card-dim: clamp(0, calc((var(--sky-light) - 0.25) / 0.35), 1);
+  --card-fill: rgba(8, 32, 76, calc(0.24 + var(--card-dim) * 0.34));
+  --muted: rgba(235, 240, 250, calc(0.62 + var(--card-dim) * 0.16));
+  --faint: rgba(235, 240, 250, calc(0.32 + var(--card-dim) * 0.18));
 }
 
 :root[data-theme='liquid'] .page .card {
@@ -4876,7 +4884,7 @@ body.map-only .temp-bubble {
   margin-bottom: 8px;
   padding-bottom: 0;
   border-bottom: 0;
-  color: rgba(225, 240, 255, 0.72);
+  color: rgba(225, 240, 255, calc(0.72 + var(--card-dim) * 0.12));
 }
 
 /* The hourly card's top: what it shows, and the toggle that switches it. */

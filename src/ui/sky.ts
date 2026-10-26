@@ -86,6 +86,11 @@ export class SkyRenderer {
   }
 
   /** The color along the sky's top edge (null for the 2D fallback). */
+  /** How bright the sky is behind the cards (SkyGL.brightness), or null with the plain fallback sky. */
+  brightness(): number | null {
+    return this.gl?.brightness() ?? null;
+  }
+
   topColor(): string | null {
     return this.gl?.topColor() ?? null;
   }
