@@ -2,7 +2,8 @@ import { TrafficLayer } from '../map/trafficLayer';
 import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
-import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, hurricaneMark, layersIcon, outlookMark, rainMark, stormTrackMark, windIcon } from './icons';
+import type { ShortcutId } from './barShortcuts';
+import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, hurricaneMark, layersIcon, outlookMark, rainMark, stormTrackMark, tackIcon, windIcon } from './icons';
 import { mapThumb } from './mapThumbs';
 
 /** Where everything on the map comes from (the credits line under the map names them too). */
@@ -48,6 +49,8 @@ export function switchRow(opts: {
   sub?: string;
   mark?: string;
   markClass?: string;
+  /** Something between the label and the switch (a pin). */
+  extra?: HTMLElement | null;
   checked: boolean;
   onChange: (on: boolean) => void;
 }): HTMLElement {
@@ -59,6 +62,7 @@ export function switchRow(opts: {
     { class: 'row' },
     opts.mark ? h('span', { class: `row-mark ${opts.markClass ?? ''}` }, svg(opts.mark)) : null,
     h('span', { class: 'row-label' }, opts.label, opts.sub ? h('span', { class: 'row-sub' }, opts.sub) : null),
+    opts.extra ?? null,
     input,
   );
 }
@@ -119,6 +123,8 @@ export class LayersMenu {
     private readonly onLayer: (layer: LayerKey, on: boolean) => void,
     /** Weather maps that have data right now (others are left out of the picker). */
     private readonly mapAvailable: (id: WeatherMapId) => boolean = () => true,
+    /** The weather switches pinned to the bar (barShortcuts.ts). */
+    private readonly pins: { has(id: ShortcutId): boolean; toggle(id: ShortcutId): void } | null = null,
   ) {
     this.btn.append(svg(layersIcon));
     this.btn.addEventListener('click', () => this.toggle());
@@ -180,12 +186,31 @@ export class LayersMenu {
     );
   }
 
+  /**
+   * The thumbtack on a weather row (owner, 2026-10-26): pins that layer's switch to the bar, right of
+   * the timeline, or takes it off. Lightning's is the bar's lightning-only button.
+   */
+  private pin(id: ShortcutId, label: string): HTMLElement | null {
+    if (!this.pins) return null;
+    const on = this.pins.has(id);
+    const say = on ? `Take ${label} off the bar` : `Put ${label} on the bar`;
+    const b = h('button', { type: 'button', class: 'row-pin', 'aria-pressed': String(on), 'aria-label': say, title: say }, svg(tackIcon));
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.pins!.toggle(id);
+      this.render();
+    });
+    return b;
+  }
+
   private layer(key: LayerKey, label: string, mark: string, markClass: string, sub?: string): HTMLElement {
     return switchRow({
       label,
       sub,
       mark,
       markClass,
+      extra: this.pin(key as ShortcutId, key === 'thunder' ? 'Lightning only' : label),
       checked: this.store.get().layers[key],
       onChange: (on) => {
         this.store.set({ layers: { ...this.store.get().layers, [key]: on } });
@@ -229,6 +254,7 @@ export class LayersMenu {
       { class: 'row' },
       h('span', { class: 'row-mark is-alert' }, svg(hurricaneMark)),
       h('span', { class: 'row-label' }, 'Hurricanes', h('span', { class: 'row-sub' }, 'NHC and models')),
+      this.pin('tropics', 'the hurricane tracker'),
       more,
       input,
     );
@@ -313,6 +339,7 @@ export class LayersMenu {
       { class: 'row' },
       h('span', { class: 'row-mark is-precip' }, svg(rainMark)),
       h('span', { class: 'row-label' }, 'Radar', extras ? h('span', { class: 'row-sub' }, extras) : null),
+      this.pin('rain', 'Radar'),
       more,
       input,
     );
@@ -368,6 +395,7 @@ export class LayersMenu {
       { class: 'row' },
       h('span', { class: 'row-mark is-precip' }, svg(stormTrackMark)),
       h('span', { class: 'row-label' }, 'Storm tracks', h('span', { class: 'row-sub' }, 'Strong storms and where they’re headed')),
+      this.pin('cells', 'Storm tracks'),
       more,
       input,
     );
@@ -421,6 +449,7 @@ export class LayersMenu {
       { class: 'row' },
       h('span', { class: 'row-mark is-bolt' }, svg(outlookMark)),
       h('span', { class: 'row-label' }, 'Storm outlook', h('span', { class: 'row-sub' }, `${kindLabel} · ${dayLabel}`)),
+      this.pin('outlook', 'Storm outlook'),
       more,
       input,
     );
@@ -556,7 +585,7 @@ export class LayersMenu {
 
   /** Weather: the switches for what's drawn over the map, live weather then storm hazards (hurricanes last, its options run long). */
   private weatherTab(s: AppState): HTMLElement[] {
-    return [
+    const rows: HTMLElement[] = [
       h('p', { class: 'group-label' }, 'Live'),
       h(
         'div',
@@ -575,6 +604,7 @@ export class LayersMenu {
           label: 'Alert areas',
           mark: alertMark,
           markClass: 'is-alert',
+          extra: this.pin('alertAreas', 'Alert areas'),
           checked: s.alertAreas,
           onChange: (on) => this.store.set({ alertAreas: on }),
         }),
@@ -582,6 +612,8 @@ export class LayersMenu {
         ...this.tropicsRows(),
       ),
     ];
+    if (this.pins) rows.push(h('p', { class: 'group-note' }, svg(tackIcon), 'Pin a layer to keep its switch on the bar, right of the timeline.'));
+    return rows;
   }
 
   /**

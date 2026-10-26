@@ -91,6 +91,8 @@
     <button id="cap-alerts" class="cap-alerts" type="button" hidden></button>
     <!-- Phones: go to your location, from the banner; and active storms as a mark in the small banner. -->
     <button id="cap-locate" class="cap-locate" type="button" aria-label="Show my location" aria-pressed="false"></button>
+    <!-- Computers: search, opened in the middle of the screen. -->
+    <button id="cap-search" class="cap-search" type="button" aria-label="Search for a place" title="Search (/)"></button>
     <button id="cap-storm" class="cap-storm" type="button" hidden></button>
     <button id="cap-handle" class="cap-handle" type="button" aria-label="Make the banner smaller"></button>
     <button id="cap-pin" class="cap-pin" type="button" aria-pressed="false" aria-label="Pin the weather here" data-tip="Pin the weather here"></button>
@@ -111,11 +113,12 @@
       <span class="ctrl-sep" aria-hidden="true"></span>
       <button id="cams-btn" class="ctrl" type="button" aria-label="Traffic cameras" aria-pressed="false" title="Traffic cameras"></button>
       <span class="ctrl-sep" aria-hidden="true"></span>
-      <button id="tropics-btn" class="ctrl" type="button" aria-label="Hurricane tracker" aria-pressed="true" title="Hurricane tracker"></button>
-      <span class="ctrl-sep" aria-hidden="true"></span>
-      <button id="bolt-btn" class="ctrl" type="button" aria-label="Lightning only" aria-pressed="false" title="Lightning only"></button>
-      <span class="ctrl-sep" aria-hidden="true"></span>
       <button id="full-btn" class="ctrl" type="button" aria-label="Map only" aria-pressed="false" title="Map only (F)"></button>
+    </div>
+    <!-- Weather switches, on the right of the bar: the hurricane tracker, lightning only, and any layer pinned from Layers (barShortcuts.ts). -->
+    <div id="wx-btns" class="wx-btns" role="group" aria-label="Weather switches">
+      <button id="tropics-btn" class="ctrl" type="button" aria-label="Hurricane tracker" aria-pressed="true" title="Hurricane tracker"></button>
+      <button id="bolt-btn" class="ctrl" type="button" aria-label="Lightning only" aria-pressed="false" title="Lightning only"></button>
     </div>
     <button id="full-exit" class="full-exit glass" type="button" aria-label="Show controls" title="Show controls (Esc)" hidden></button>
     <div id="layers-menu" class="drawer glass-thick" role="dialog" aria-label="Map layers" inert></div>

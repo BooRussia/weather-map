@@ -4241,11 +4241,11 @@ body.phone .timeline:is(.is-mid, .is-minimal) {
 }
 
 body.phone .timeline:is(.is-mid, .is-minimal) > .dock-handle,
-body.phone .timeline.is-mid .controls {
+body.phone .timeline.is-mid .ctrl-row {
   grid-column: 1 / -1;
 }
 
-body.phone .timeline.is-minimal .controls,
+body.phone .timeline.is-minimal .ctrl-row,
 body.phone .timeline:is(.is-mid, .is-minimal) .top,
 body.phone .timeline:is(.is-mid, .is-minimal) .radar-legend,
 body.phone .timeline:is(.is-mid, .is-minimal) .tl-kind,
@@ -4292,6 +4292,69 @@ body.phone .controls {
 body.phone .controls::before,
 body.phone .ctrl-sep {
   display: none;
+}
+
+/* The bar's buttons in one row (owner, 2026-10-26): tools on the left (layers, alerts, trips, cameras,
+   map only), weather switches on the right (the hurricane tracker, lightning only, and what's pinned
+   from Layers; barShortcuts.ts). Too many for a phone's row and the switches scroll sideways. */
+.wx-btns {
+  display: none;
+}
+
+body.phone .ctrl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 -6px 6px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+body.phone .ctrl-row .controls {
+  flex: none;
+  justify-content: flex-start;
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+body.phone .wx-btns {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+body.phone .wx-btns::-webkit-scrollbar {
+  display: none;
+}
+
+body.phone .wx-btns[hidden] {
+  display: none;
+}
+
+body.phone .wx-btns .ctrl {
+  flex: none;
+}
+
+/* A pinned switch that's on shows in its layer's color. */
+.wx-btns .ctrl[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.wx-btns .ctrl[data-shortcut='rain'][aria-pressed='true'],
+.wx-btns .ctrl[data-shortcut='cells'][aria-pressed='true'] {
+  color: var(--c-precip);
+}
+
+.wx-btns .ctrl[data-shortcut='alertAreas'][aria-pressed='true'] {
+  color: var(--c-alert);
+}
+
+.wx-btns .ctrl[data-shortcut='outlook'][aria-pressed='true'] {
+  color: var(--c-bolt);
 }
 
 body.phone .ctrl {
@@ -5522,16 +5585,61 @@ body.phone .dock {
      map's key under it when one is on. */
   body.phone .timeline:not(.is-mid):not(.is-minimal) {
     display: grid;
-    grid-template-columns: auto auto minmax(88px, 120px) minmax(140px, 1fr) auto;
+    grid-template-columns: auto auto minmax(72px, 120px) minmax(140px, 1fr) auto auto;
     grid-template-areas:
-      'handle handle handle handle handle'
-      'site site site site site'
-      'ctrl play label range legend'
-      'ctrl play label scale legend'
-      'map map map map map';
+      'handle handle handle handle handle handle'
+      'site site site site site site'
+      'ctrl play label range legend wx'
+      'ctrl play label scale legend wx'
+      'map map map map map map';
     column-gap: 14px;
     align-items: center;
     padding-bottom: 8px;
+  }
+
+  /* Too crowded for the key beside the timeline (phoneLayout.ts measures): it gets its own line under it. */
+  body.phone .timeline.is-tight:not(.is-mid):not(.is-minimal) {
+    grid-template-columns: auto auto minmax(72px, 120px) minmax(80px, 1fr) auto;
+    grid-template-areas:
+      'handle handle handle handle handle'
+      'site site site site site'
+      'ctrl play label range wx'
+      'ctrl play label scale wx'
+      'legend legend legend legend legend'
+      'map map map map map';
+  }
+
+  body.phone .timeline.is-tight:not(.is-mid):not(.is-minimal) .radar-legend {
+    justify-self: center;
+    width: auto;
+    margin-top: 4px;
+  }
+
+  body.phone .timeline.is-tight:not(.is-mid):not(.is-minimal) .radar-legend.is-types {
+    grid-template-columns: repeat(4, auto);
+    column-gap: 16px;
+  }
+
+  /* On its own line the key's bars get a set length (beside the timeline they share a cell). */
+  body.phone .timeline.is-tight:not(.is-mid):not(.is-minimal) .radar-legend i {
+    flex: none;
+    width: 56px;
+  }
+
+  body.phone .timeline.is-tight:not(.is-mid):not(.is-minimal) .radar-legend:not(.is-types) i {
+    width: 140px;
+  }
+
+  /* The two button groups take their places in the row, either side of the timeline. */
+  body.phone .timeline:not(.is-minimal) .ctrl-row {
+    display: contents;
+  }
+
+  body.phone .timeline:not(.is-minimal) .wx-btns {
+    grid-area: wx;
+    padding-left: 12px;
+    border-left: 1px solid var(--hairline);
+    overflow: visible;
   }
 
 
@@ -5582,9 +5690,28 @@ body.phone .dock {
   }
 
 
-  /* Middle panel: the map buttons, then play, the time, and the timeline, all on one line. */
+  /* Middle panel: the tools, play, the time, the timeline, and the weather switches, all on one line. */
   body.phone .timeline.is-mid {
-    grid-template-columns: auto auto auto minmax(0, 1fr);
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'handle handle handle handle handle'
+      'ctrl play label range wx';
+  }
+
+  body.phone .timeline.is-mid > .dock-handle {
+    grid-area: handle;
+  }
+
+  body.phone .timeline.is-mid .tl-play {
+    grid-area: play;
+  }
+
+  body.phone .timeline.is-mid .tl-label {
+    grid-area: label;
+  }
+
+  body.phone .timeline.is-mid .tl-range {
+    grid-area: range;
   }
 
   body.phone .timeline:not(.is-minimal) .controls {
@@ -5595,35 +5722,155 @@ body.phone .dock {
     border-right: 1px solid var(--hairline);
   }
 
-  body.phone .timeline.is-mid .controls {
-    grid-area: auto;
-    grid-column: auto;
-  }
 }
 
 /*
- * Computers: search in the full banner (phoneLayout.ts moves it there once the banner lays out sideways),
- * centered on the banner under the place and the days; its results drop down over the map. The
- * small banner leaves it out.
+ * Computers: search opens in the middle of the screen (owner, 2026-10-26: a search row in the banner was
+ * too bulky), from the magnifier in the banner's corner or /. Picking a place, Escape, or a click
+ * anywhere else closes it (phoneLayout.ts).
  */
-body.phone .cap-wrap .top {
-  grid-column: 1 / -1;
-  justify-self: center;
-  width: min(100%, 460px);
-  margin: 12px 0 0;
-  /* The pin's column on the right would pull it 18 px off the banner's center. */
-  left: 18px;
+.search-pop {
+  position: fixed;
+  z-index: 12;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: calc(var(--safe-t) + 18vh) 16px 0;
+  background: rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
 }
 
-body.phone .cap-wrap.is-compact .top {
+.search-pop[hidden] {
   display: none;
 }
 
-body.phone .cap-wrap .search-results {
+.search-pop.open {
+  opacity: 1;
+}
+
+.search-pop-box {
+  width: min(560px, 100%);
+  transform: translateY(-8px) scale(0.98);
+  transition: transform var(--dur) var(--ease);
+}
+
+.search-pop.open .search-pop-box {
+  transform: none;
+}
+
+body.phone .search-pop .top {
+  margin: 0;
+}
+
+body.phone .search-pop .search {
+  height: 50px;
+  border-radius: 14px;
+  background: rgba(28, 28, 32, 0.94);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+body.phone .search-pop .search input {
+  font-size: 17px;
+}
+
+body.phone .search-pop .search-results {
   top: calc(100% + 8px);
   bottom: auto;
-  max-height: min(420px, calc(var(--vvh, 100dvh) - 300px));
-  text-align: left;
+  max-height: min(440px, calc(100dvh - var(--safe-t) - 18vh - 100px));
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+/* The magnifier, under the location arrow in the full banner; beside it in the one-line small one. */
+.cap-search {
+  display: none;
+}
+
+body.phone.search-up .cap-wrap:not(.is-compact) .cap-search {
+  position: absolute;
+  top: 74px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+}
+
+.cap-search .icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+}
+
+@container head (min-width: 840px) {
+  body.phone.search-up .cap-wrap.is-compact {
+    padding-right: 118px;
+  }
+
+  body.phone.search-up .cap-wrap.is-compact .cap-search {
+    position: absolute;
+    top: 11px;
+    right: 78px;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--fg);
+  }
+}
+
+/* The thumbtack on a weather row in Layers: pins its switch to the bar. */
+.row-pin {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.row-pin .icon {
+  width: 17px;
+  height: 17px;
+}
+
+.row-pin[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.row-pin[aria-pressed='true'] .icon {
+  fill: currentColor;
+}
+
+.group-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 4px 0;
+  font-size: var(--fs-foot);
+  color: var(--muted);
+}
+
+.group-note .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
 }
 
 /* A mouse drags the banner and the panel too: no text selection along the way (fields still type). */

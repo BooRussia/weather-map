@@ -36,25 +36,86 @@ export function phoneLayout(): void {
   const pills = h('div', { class: 'head-pills' }, $('#alert-pill'), $('#storm-pill'));
   document.body.classList.add('phone');
   timeline.prepend($('#dock-handle'), $('.controls'));
+  // The bar's buttons in one row: tools on the left, weather switches on the right (owner, 2026-10-26).
+  timeline.prepend($('#dock-handle'), h('div', { class: 'ctrl-row' }, $('.controls'), $('#wx-btns')));
   const search = $('.top');
   timeline.append(search);
   cap.append(pills, $('#cap-handle'));
   head.append(cap);
   document.body.append(head);
 
-  // Computers (owner, 2026-10-26): once the banner lays out sideways, search moves up into the full
-  // banner, centered, and the full panel shows the color keys instead. Narrower, it stays in the panel.
+  // Computers (owner, 2026-10-26: a search row in the banner was too bulky): once the banner lays out
+  // sideways, search is a button in its corner that opens the field in the middle of the screen, and
+  // the full panel shows the color keys instead. Narrower, and on phones, it stays at the panel's foot.
+  pop = h('div', { class: 'search-pop', hidden: '' });
+  const box = h('div', { class: 'search-pop-box' });
+  pop.append(box);
+  document.body.append(pop);
+  // Picking a place, Escape, or a click anywhere else lets go of the field: the box goes with it.
+  pop.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (pop && !pop.contains(document.activeElement)) closeSearchPop();
+    }, 0);
+  });
+  pop.addEventListener('pointerdown', (e) => {
+    if (e.target === pop) closeSearchPop();
+  });
+  // And directly, not only through focus: Escape, a place picked from the list, or Enter.
+  pop.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSearchPop();
+  });
+  pop.addEventListener('click', (e) => {
+    if ((e.target as Element).closest('.result')) closeSearchPop();
+  });
+  pop.addEventListener('submit', () => setTimeout(closeSearchPop, 0));
   const place = () => {
     const up = head.clientWidth >= SEARCH_UP_PX;
-    if (up === (search.parentElement === cap)) return;
+    if (up === (search.parentElement === box)) return;
     const typing = search.contains(document.activeElement);
-    if (up) cap.insertBefore(search, pills);
-    else timeline.append(search);
+    if (up) box.append(search);
+    else {
+      closeSearchPop();
+      timeline.append(search);
+    }
     document.body.classList.toggle('search-up', up);
-    if (typing) search.querySelector('input')?.focus({ preventScroll: true });
+    if (typing && !up) search.querySelector('input')?.focus({ preventScroll: true });
   };
   new ResizeObserver(place).observe(head);
   place();
+
+  // The full panel in one row: once it's too crowded for the color key beside the timeline (many
+  // pinned switches, or a narrower window), the key drops to its own line under it.
+  const fit = () => {
+    timeline.classList.remove('is-tight');
+    if (timeline.scrollWidth > timeline.clientWidth + 1) timeline.classList.add('is-tight');
+  };
+  new ResizeObserver(fit).observe(timeline);
+  fitBar = fit;
+}
+
+/** The middle-of-the-screen search (computers). */
+let pop: HTMLElement | null = null;
+let fitBar: () => void = () => {};
+
+/** Lay the bar out again (its switches changed). */
+export function refitBar(): void {
+  fitBar();
+}
+
+/** Computers: show the search field in the middle of the screen. False where it lives in the panel (phones). */
+export function openSearchPop(): boolean {
+  if (!pop || !document.body.classList.contains('search-up')) return false;
+  pop.hidden = false;
+  void pop.offsetWidth;
+  pop.classList.add('open');
+  return true;
+}
+
+function closeSearchPop(): void {
+  if (!pop || pop.hidden) return;
+  if (pop.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+  pop.classList.remove('open');
+  pop.hidden = true;
 }
 
 /** A press turns into a drag once it has moved this far, mostly up or down; till then it's a tap. A mouse is steadier than a finger. */

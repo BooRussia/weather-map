@@ -63,7 +63,8 @@ import { wrapLon } from './util/geo';
 import { $, h, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule, setSparkOpen } from './ui/capsule';
 import type { Metric } from './data/dayDetail';
-import { alertMark, boltMark, cameraIcon, hurricaneMark, locateIcon, routeIcon, warningIcon } from './ui/icons';
+import { alertMark, boltMark, cameraIcon, hurricaneMark, locateIcon, routeIcon, searchIcon, warningIcon } from './ui/icons';
+import { BarShortcuts } from './ui/barShortcuts';
 import { LayersMenu } from './ui/layersMenu';
 import { alertDetail, alertsList, alertsOfType, type AlertsHooks } from './ui/alertsPanel';
 import { getAlert, type Alert } from './data/nws';
@@ -71,7 +72,7 @@ import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
 import { tempColor, WeatherPage } from './ui/page';
-import { bannerHandle, dockHandle, phoneLayout } from './ui/phoneLayout';
+import { bannerHandle, dockHandle, openSearchPop, phoneLayout, refitBar } from './ui/phoneLayout';
 import { PIN, SearchBox } from './ui/search';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
@@ -1219,6 +1220,9 @@ async function main(): Promise<void> {
     primeAudio();
     void loadLightning(true);
   });
+  // The weather switches on the bar: these two, and whatever's pinned from Layers.
+  const shortcuts = new BarShortcuts($('#wx-btns'), store, { tropics: tropicsBtn, thunder: boltBtn });
+  shortcuts.onChange = refitBar;
   // Any other change to the layers ends lightning-only (the button lets go; nothing is put back).
   store.subscribe((s) => {
     if (beforeBolt && !boltOnly(s)) {
@@ -1338,6 +1342,7 @@ async function main(): Promise<void> {
       }
     },
     (id) => mapSource.supports(id),
+    shortcuts,
   );
 
   // Map only (last button on the right): every control hides; the docked weather page's padding goes too.
@@ -1474,7 +1479,7 @@ async function main(): Promise<void> {
   }
   // Phones: the banner's handle (pull down from full size for the whole weather), and its alert triangle.
   let pageDrag = false;
-  const bannerSize = bannerHandle({
+  bannerHandle({
     isOpen: () => page.open,
     drag: (dy) => {
       if (!pageDrag && !page.open) page.render(conditions, store.get());
@@ -1496,6 +1501,11 @@ async function main(): Promise<void> {
   capLocate.append(svg(locateIcon));
   capStorm.append(svg(hurricaneMark));
   capLocate.addEventListener('click', () => $('#locate-btn').click());
+  // Computers: search from the banner's corner, in the middle of the screen.
+  $('#cap-search').append(svg(searchIcon));
+  $('#cap-search').addEventListener('click', () => {
+    if (openSearchPop()) search.focus();
+  });
   capStorm.addEventListener('click', () => $('#storm-pill').click());
   const mirrorBanner = () => {
     const loc = $('#locate-btn');
@@ -1555,9 +1565,8 @@ async function main(): Promise<void> {
     }
     if (e.key === '/' && !typing && !mapOnly.on) {
       e.preventDefault();
-      // Search shows only at full size, in the banner (computers) or the panel: open the one it's in.
-      if ($('.cap-wrap').contains($('.top'))) bannerSize.full();
-      else dockSize.full();
+      // Computers: the field in the middle of the screen. Phones: the panel's foot, at full size.
+      if (!openSearchPop()) dockSize.full();
       search.focus();
       return;
     }

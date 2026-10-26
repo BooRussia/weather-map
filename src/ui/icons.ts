@@ -48,6 +48,8 @@ export const boltMark = `${open('i-bolt')}<path d="M13.2 2.5 5 13.6h6l-1.2 7.9 8
 export const cloudMark = `${open('i-cloud')}<path d="M6.6 18.5h10.6a4 4 0 0 0 .5-7.97 5.7 5.7 0 0 0-11-1.2A4.6 4.6 0 0 0 6.6 18.5z" /></svg>`;
 /** The hurricane symbol: an eye with two curled arms. */
 export const hurricaneMark = `${open('i-hurricane')}<circle cx="12" cy="12" r="3" /><path d="M12 9c-.9-3.6 1.6-6 6.2-6.4" /><path d="M12 15c.9 3.6-1.6 6-6.2 6.4" /></svg>`;
+/** A thumbtack: pin a layer's switch to the bar. */
+export const tackIcon = `${open('i-tack')}<path d="M9.2 3.5h5.6l-.9 5.6 3.1 3.4H7l3.1-3.4z" /><path d="M12 12.5v8" /></svg>`;
 /** Storm tracks: a storm cell heading right, its forecast positions as dots, then an arrowhead. */
 export const stormTrackMark = `${open('i-stormtrack')}<circle cx="6" cy="12" r="3.3" /><path stroke-width="2.4" d="M11.6 12h.01M15.2 12h.01" /><path d="m18 8.5 3.5 3.5-3.5 3.5" /></svg>`;
 /** Storm outlook: a calendar with a bolt, the storm risk by day (today, tomorrow, day 3). */
