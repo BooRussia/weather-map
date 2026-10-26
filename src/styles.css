@@ -5516,17 +5516,18 @@ body.phone .dock {
 }
 
 /* And the panel, once it's wide enough for one row. */
-@container dock (min-width: 840px) {
-  /* Full panel: one row, the map buttons, play, the time, the timeline, and search (the radar's color
-     key is in the stacked panel; in the row it would leave the timeline too short). */
+@container dock (min-width: 780px) {
+  /* Full panel: one row, the map buttons, play, the time, the timeline, and the radar's color key (owner,
+     2026-10-26: the key, not search, when it's made bigger; search is up in the banner), the weather
+     map's key under it when one is on. */
   body.phone .timeline:not(.is-mid):not(.is-minimal) {
     display: grid;
-    grid-template-columns: auto auto minmax(88px, 120px) minmax(140px, 1fr) clamp(180px, 20cqw, 260px);
+    grid-template-columns: auto auto minmax(88px, 120px) minmax(140px, 1fr) auto;
     grid-template-areas:
       'handle handle handle handle handle'
       'site site site site site'
-      'ctrl play label range search'
-      'ctrl play label scale search'
+      'ctrl play label range legend'
+      'ctrl play label scale legend'
       'map map map map map';
     column-gap: 14px;
     align-items: center;
@@ -5571,17 +5572,15 @@ body.phone .dock {
   }
 
   body.phone .timeline:not(.is-mid):not(.is-minimal) .radar-legend {
-    display: none;
+    grid-area: legend;
+    width: 172px;
+    margin: 0;
   }
 
   body.phone .timeline:not(.is-mid):not(.is-minimal) .map-legend {
     grid-area: map;
   }
 
-  body.phone .timeline:not(.is-mid):not(.is-minimal) .top {
-    grid-area: search;
-    margin: 0;
-  }
 
   /* Middle panel: the map buttons, then play, the time, and the timeline, all on one line. */
   body.phone .timeline.is-mid {
@@ -5600,6 +5599,31 @@ body.phone .dock {
     grid-area: auto;
     grid-column: auto;
   }
+}
+
+/*
+ * Computers: search in the full banner (phoneLayout.ts moves it there once the banner lays out sideways),
+ * centered on the banner under the place and the days; its results drop down over the map. The
+ * small banner leaves it out.
+ */
+body.phone .cap-wrap .top {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: min(100%, 460px);
+  margin: 12px 0 0;
+  /* The pin's column on the right would pull it 18 px off the banner's center. */
+  left: 18px;
+}
+
+body.phone .cap-wrap.is-compact .top {
+  display: none;
+}
+
+body.phone .cap-wrap .search-results {
+  top: calc(100% + 8px);
+  bottom: auto;
+  max-height: min(420px, calc(var(--vvh, 100dvh) - 300px));
+  text-align: left;
 }
 
 /* A mouse drags the banner and the panel too: no text selection along the way (fields still type). */

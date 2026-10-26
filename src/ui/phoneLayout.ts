@@ -17,6 +17,12 @@ function trackKeyboard(): void {
  * centered. body.phone marks it (the name is older than the layout's reach). The elements move rather
  * than being copied, so their listeners come with them.
  */
+/**
+ * How wide the banner is when it lays out sideways (styles.css, @container head (min-width: 760px)):
+ * from there, on computers, search lives in the banner.
+ */
+const SEARCH_UP_PX = 760;
+
 export function phoneLayout(): void {
   trackKeyboard();
   addEventListener('resize', trackKeyboard);
@@ -30,10 +36,25 @@ export function phoneLayout(): void {
   const pills = h('div', { class: 'head-pills' }, $('#alert-pill'), $('#storm-pill'));
   document.body.classList.add('phone');
   timeline.prepend($('#dock-handle'), $('.controls'));
-  timeline.append($('.top'));
+  const search = $('.top');
+  timeline.append(search);
   cap.append(pills, $('#cap-handle'));
   head.append(cap);
   document.body.append(head);
+
+  // Computers (owner, 2026-10-26): once the banner lays out sideways, search moves up into the full
+  // banner, centered, and the full panel shows the color keys instead. Narrower, it stays in the panel.
+  const place = () => {
+    const up = head.clientWidth >= SEARCH_UP_PX;
+    if (up === (search.parentElement === cap)) return;
+    const typing = search.contains(document.activeElement);
+    if (up) cap.insertBefore(search, pills);
+    else timeline.append(search);
+    document.body.classList.toggle('search-up', up);
+    if (typing) search.querySelector('input')?.focus({ preventScroll: true });
+  };
+  new ResizeObserver(place).observe(head);
+  place();
 }
 
 /** A press turns into a drag once it has moved this far, mostly up or down; till then it's a tap. A mouse is steadier than a finger. */
@@ -159,13 +180,19 @@ const COMPACT_KEY = 'weather-map:banner-compact';
  * into map only, every control hidden (owner, 2026-10-23). A tap otherwise switches sizes, which are
  * remembered.
  */
+/** What a sizing handle offers the rest of the app. */
+export interface Sizer {
+  /** Back to full size. */
+  full(): void;
+}
+
 export function bannerHandle(weather: {
   isOpen: () => boolean;
   drag: (dy: number) => void;
   release: (dy: number, speed: number) => void;
   close: () => void;
   mapOnly: () => void;
-}): void {
+}): Sizer {
   const cap = $('.cap-wrap');
   const handle = $('#cap-handle');
   let compact = false;
@@ -245,6 +272,11 @@ export function bannerHandle(weather: {
     if (weather.isOpen()) weather.close();
     else set(!compact);
   });
+  return {
+    full: () => {
+      if (compact) set(false);
+    },
+  };
 }
 
 const DOCK_KEY = 'weather-map:dock-minimal';
@@ -258,7 +290,7 @@ const DOCK_SIZES = ['full', 'mid', 'min'] as const;
  * and the buttons go too. Push it up a size at a time. A tap steps it smaller, and from the smallest
  * back to full; the size is remembered.
  */
-export function dockHandle(): void {
+export function dockHandle(): Sizer {
   const panel = $('#timeline');
   const handle = $('#dock-handle');
   let size = 0;
@@ -304,4 +336,9 @@ export function dockHandle(): void {
     },
   });
   handle.addEventListener('click', () => set((size + 1) % DOCK_SIZES.length));
+  return {
+    full: () => {
+      if (size) set(0);
+    },
+  };
 }

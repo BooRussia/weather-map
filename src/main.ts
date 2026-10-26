@@ -1474,7 +1474,7 @@ async function main(): Promise<void> {
   }
   // Phones: the banner's handle (pull down from full size for the whole weather), and its alert triangle.
   let pageDrag = false;
-  bannerHandle({
+  const bannerSize = bannerHandle({
     isOpen: () => page.open,
     drag: (dy) => {
       if (!pageDrag && !page.open) page.render(conditions, store.get());
@@ -1509,7 +1509,7 @@ async function main(): Promise<void> {
   mirror.observe($('#locate-btn'), { attributes: true });
   mirror.observe($('#storm-pill'), { attributes: true, childList: true, subtree: true, characterData: true });
   mirrorBanner();
-  dockHandle();
+  const dockSize = dockHandle();
   // Phones: the little graphs along the banner's foot do the same, one per metric.
   $('#cap-sparks').addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-metric]');
@@ -1555,6 +1555,9 @@ async function main(): Promise<void> {
     }
     if (e.key === '/' && !typing && !mapOnly.on) {
       e.preventDefault();
+      // Search shows only at full size, in the banner (computers) or the panel: open the one it's in.
+      if ($('.cap-wrap').contains($('.top'))) bannerSize.full();
+      else dockSize.full();
       search.focus();
       return;
     }
