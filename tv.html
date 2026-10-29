@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" class="tv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Weather Map banner for TV</title>
+  </head>
+  <!-- The weather banner alone, for a TV home screen to show at the top (owner, 2026-10-29): see src/tv.ts. -->
+  <body class="phone tv">
+    <div class="phone-head">
+      <div class="cap-wrap glass">
+        <div id="capsule" class="capsule">
+          <span id="cap-kicker" class="cap-kicker" hidden>My location</span>
+          <span class="cap-place-row"><span id="cap-gps" class="cap-gps" hidden></span><span id="cap-place" class="cap-place">Locating</span></span>
+          <span id="cap-temp" class="cap-temp">--°</span>
+          <span id="cap-cond" class="cap-cond"></span>
+          <span id="cap-hilo" class="cap-hilo"></span>
+          <span id="cap-soon" class="cap-soon" hidden></span>
+        </div>
+        <div id="cap-chips" class="cap-chips" hidden><span id="cap-wind" class="cap-chip"></span><span id="cap-rain" class="cap-chip"></span></div>
+        <div id="cap-week" class="cap-week" hidden></div>
+        <div id="cap-sparks" class="cap-sparks" hidden></div>
+        <div id="cap-trend" class="cap-sparks cap-trend" hidden></div>
+        <span id="cap-alerts" class="cap-alerts" hidden></span>
+        <span id="cap-storm" class="cap-storm" hidden></span>
+      </div>
+      <span id="alert-pill" hidden><span id="alert-pill-text"></span></span>
+    </div>
+    <script type="module" src="/src/tv.ts"></script>
+  </body>
+</html>

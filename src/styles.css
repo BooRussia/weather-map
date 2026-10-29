@@ -6367,3 +6367,63 @@ body.is-gripping * {
     text-align: left;
   }
 }
+
+/*
+ * ---------- the banner alone, for a TV home screen (tv.html; owner, 2026-10-29) ----------
+ * Transparent, so the launcher's wallpaper shows around it; laid out at the desktop banner's widest
+ * (src/tv.ts scales it to the width it's given), sideways, nothing to drag or press.
+ */
+html.tv,
+html.tv body {
+  height: auto;
+  background: transparent;
+  transition: none;
+}
+
+body.tv {
+  position: static;
+  overflow: hidden;
+  cursor: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.tv .phone-head {
+  position: static;
+  width: 1040px;
+  margin: 0;
+  pointer-events: none;
+}
+
+body.tv .cap-handle,
+body.tv .cap-pin,
+body.tv .cap-locate,
+body.tv .cap-search,
+body.tv #alert-pill {
+  display: none !important;
+}
+
+/* With no map under it, there's no temperature sign on the map: it's here, large, under the place. */
+body.tv .cap-temp {
+  display: block;
+  flex-basis: 100%;
+  margin: 2px 0 4px;
+  font-size: 52px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+@container head (min-width: 760px) {
+  /* No handle in the bottom padding: as even as the top. */
+  body.tv .cap-wrap:not(.is-compact) {
+    padding-bottom: 14px;
+  }
+
+  /* No buttons under it either: where you are, centered down the left beside the days and graphs. */
+  body.tv .cap-wrap:not(.is-compact) .capsule {
+    grid-row: 1 / span 2;
+    align-self: center;
+    padding-top: 0;
+  }
+}

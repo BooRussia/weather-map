@@ -14,7 +14,7 @@ import { tempColor } from './page';
  * the place, the temperature, the condition, Apple's H:/L: line, and chips for today's highest
  * wind and chance of rain.
  */
-export function renderCapsule(c: Conditions | null, s: AppState): void {
+export function renderCapsule(c: Conditions | null, s: AppState, opts: { fullGraphs?: 'today' | 'week' } = {}): void {
   $('#cap-kicker').hidden = !s.gps;
   $('#cap-gps').hidden = !s.gps;
   const place = $('#cap-place');
@@ -34,7 +34,7 @@ export function renderCapsule(c: Conditions | null, s: AppState): void {
   renderWeek(c, s);
   // Which graphs show (styles.css): the full banner's follow its strip, the small banner's the setting.
   const wrap = $('.cap-wrap');
-  wrap.dataset.fullGraphs = s.bannerForecast === 'daily' ? 'week' : 'today';
+  wrap.dataset.fullGraphs = opts.fullGraphs ?? (s.bannerForecast === 'daily' ? 'week' : 'today');
   wrap.dataset.smallGraphs = s.bannerGraphs;
   wrap.dataset.smallView = s.smallBanner;
   if (!c) {
