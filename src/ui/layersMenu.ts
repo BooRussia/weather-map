@@ -663,6 +663,14 @@ export class LayersMenu {
         'div',
         { class: 'group' },
         this.layer('airports', 'Airport weather', planeMark, 'is-blue', 'METARs and TAFs · VFR green, MVFR blue, IFR red, LIFR magenta'),
+        switchRow({
+          label: 'Winds aloft and sounding',
+          sub: 'On the weather page: winds by altitude, cloudbase, thermals, freezing level',
+          mark: windIcon,
+          markClass: 'is-blue',
+          checked: s.pilotCards,
+          onChange: (on) => this.store.set({ pilotCards: on }),
+        }),
       ),
     ];
     if (this.pins) rows.push(h('p', { class: 'group-note' }, svg(tackIcon), 'Pin a layer to keep its switch on the bar, right of the timeline.'));

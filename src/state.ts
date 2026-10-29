@@ -114,6 +114,8 @@ export interface AppState {
   smallBanner: SmallBanner;
   /** Notifications for where you are (owner, 2026-10-29): new warnings and watches, and rain about to start. */
   notify: boolean;
+  /** The weather page's pilot cards (winds aloft and the sounding), off by default so it stays simple. */
+  pilotCards: boolean;
   /**
    * Moving the map moves the readout to the center cross. Off (the default, the pin on the weather
    * card): the readout stays on your location, or the place it shows, while you look around.
@@ -160,6 +162,7 @@ interface Prefs {
   bannerGraphs?: BannerGraphs;
   smallBanner?: SmallBanner;
   notify?: boolean;
+  pilotCards?: boolean;
   /** The weather card's pin (2026-10-09: pinned by default; replaces the old followMap key). */
   pinned?: boolean;
   /** Which hurricane defaults `tropics` and `modelGroups` were saved under (TROPICS_PREFS_V). */
@@ -204,6 +207,7 @@ function writePrefs(s: AppState): void {
       bannerGraphs: s.bannerGraphs,
       smallBanner: s.smallBanner,
       notify: s.notify,
+      pilotCards: s.pilotCards,
       pinned: !s.followMap,
       tropicsV: TROPICS_PREFS_V,
       tropics: s.tropics,
@@ -246,6 +250,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     bannerGraphs: prefs.bannerGraphs === 'week' ? 'week' : 'today',
     smallBanner: prefs.smallBanner === 'forecast' ? 'forecast' : 'graphs',
     notify: prefs.notify === true,
+    pilotCards: prefs.pilotCards === true,
     followMap: prefs.pinned === false,
     tropics: { ...DEFAULT_TROPICS, ...(tropicsCurrent ? prefs.tropics : {}) },
     modelGroups: tropicsCurrent && Array.isArray(prefs.modelGroups) ? prefs.modelGroups : DEFAULT_MODEL_GROUPS,
@@ -280,6 +285,7 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.bannerGraphs !== undefined ||
         patch.smallBanner !== undefined ||
         patch.notify !== undefined ||
+        patch.pilotCards !== undefined ||
         patch.followMap !== undefined ||
         patch.tropics !== undefined ||
         patch.modelGroups !== undefined ||

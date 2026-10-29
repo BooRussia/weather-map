@@ -6562,3 +6562,168 @@ body.tv .cap-temp {
   margin-top: 8px;
   font-style: italic;
 }
+
+/* ---------- winds aloft (owner, 2026-10-29: pilot features) ---------- */
+
+/* The hour shown, with a step back and forward. */
+.aloft-hour {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: -2px 0 6px;
+}
+
+.aloft-when {
+  min-width: 96px;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.aloft-step {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+}
+
+.aloft-step .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.aloft-step.is-prev .icon {
+  transform: rotate(180deg);
+}
+
+.aloft-step:disabled {
+  opacity: 0.35;
+}
+
+.aloft-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 2px 0 4px;
+}
+
+.aloft-grid {
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 1;
+}
+
+.aloft-axis {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.aloft-note {
+  fill: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.aloft-note.is-freeze {
+  fill: #64d2ff;
+}
+
+.aloft-mix {
+  fill: rgba(255, 214, 10, 0.12);
+}
+
+.aloft-zero {
+  stroke: rgba(100, 210, 255, 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.aloft-freeze {
+  stroke: #64d2ff;
+  stroke-width: 1;
+  stroke-dasharray: 5 3;
+}
+
+.aloft-base {
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 1;
+  stroke-dasharray: 5 3;
+}
+
+.aloft-temp,
+.aloft-dew {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.aloft-temp {
+  stroke: #ff6961;
+}
+
+.aloft-dew {
+  stroke: #30d158;
+}
+
+.aloft-arrow {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The chart's key: a swatch before each name. */
+.aloft-key {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: var(--fs-foot);
+}
+
+.aloft-key i {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: -6px;
+  border-radius: 2px;
+}
+
+.aloft-key i.is-temp {
+  background: #ff6961;
+}
+
+.aloft-key i.is-dew {
+  background: #30d158;
+}
+
+.aloft-key i.is-mix {
+  height: 10px;
+  background: rgba(255, 214, 10, 0.3);
+}
+
+.aloft-table {
+  margin-bottom: 6px;
+}
+
+/* Names on one line, values wrapping on the right. */
+.aloft-stats {
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 16px;
+  margin-bottom: 8px;
+}
+
+.aloft-stats dt {
+  white-space: nowrap;
+}

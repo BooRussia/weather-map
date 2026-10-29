@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { csvFields, parseMetars, parseTafs, stationNames } from '../scripts/aviation.mjs';
 import { ago, ceilingFt, tafLines, windText, zulu } from '../src/data/aviation';
+import { atAltitude, capeWord, cloudbaseFt, lapseRate, lapseWord, windsAloft } from '../src/data/aloft';
 
 const HEAD =
   'raw_text,station_id,observation_time,latitude,longitude,temp_c,dewpoint_c,wind_dir_degrees,wind_speed_kt,wind_gust_kt,visibility_statute_mi,altim_in_hg,sea_level_pressure_mb,corrected,auto,auto_station,maintenance_indicator_on,no_signal,lightning_sensor_off,freezing_rain_sensor_off,present_weather_sensor_off,wx_string,sky_cover,cloud_base_ft_agl,sky_cover,cloud_base_ft_agl,sky_cover,cloud_base_ft_agl,sky_cover,cloud_base_ft_agl,flight_category,three_hr_pressure_tendency_mb,maxT_c,minT_c,maxT24hr_c,minT24hr_c,precip_in,pcp3hr_in,pcp6hr_in,pcp24hr_in,snow_in,vert_vis_ft,metar_type,elevation_m';
@@ -58,5 +59,46 @@ describe('reading a METAR', () => {
     expect(zulu(t)).toBe('18:49Z');
     expect(ago(t, t + 14 * 60_000)).toBe('14 min ago');
     expect(ago(t, t + 125 * 60_000)).toBe('2 h 5 min ago');
+  });
+});
+
+describe('the air above', () => {
+  const hour = {
+    time: '2026-10-29T14:00',
+    surface: { tempC: 25, dewC: 20.5, pressureHpa: 1014 },
+    levels: [
+      { hpa: 1000, ft: 495, tempC: 24.4, dewC: 19.9, dir: 47, kt: 16.9 },
+      { hpa: 925, ft: 2723, tempC: 18.4, dewC: 17.4, dir: 55, kt: 20.1 },
+      { hpa: 850, ft: 5089, tempC: 14.1, dewC: 13, dir: 69, kt: 17.4 },
+      { hpa: 700, ft: 10413, tempC: 8.2, dewC: -5.4, dir: 53, kt: 7.4 },
+      { hpa: 500, ft: 19324, tempC: -6.3, dewC: -30.4, dir: 268, kt: 9.9 },
+    ],
+    freezingFt: 16700,
+    mixingFt: 3445,
+    cape: 350,
+    liftedIndex: -0.9,
+    cin: 56,
+  };
+
+  it('reads the wind between levels as a turning vector', () => {
+    const at = atAltitude(hour.levels, 6000)!;
+    expect(at.kt).toBeGreaterThan(14);
+    expect(at.dir).toBeGreaterThan(60);
+    expect(at.dir).toBeLessThan(70);
+    expect(atAltitude(hour.levels, 30000)).toBeNull();
+  });
+
+  it('gives the standard altitudes at least 1,500 ft above the ground', () => {
+    expect(windsAloft(hour, 98).map((r) => r.ft)).toEqual([3000, 6000, 9000, 12000, 18000]);
+    expect(windsAloft(hour, 2000).map((r) => r.ft)).toEqual([6000, 9000, 12000, 18000]);
+  });
+
+  it('puts cloudbase about 400 ft per degree of spread, and words the lapse rate', () => {
+    expect(cloudbaseFt(25, 20.5)).toBeCloseTo(1845);
+    const rate = lapseRate(hour, 98)!;
+    expect(rate).toBeGreaterThan(1.5);
+    expect(rate).toBeLessThan(3);
+    expect(lapseWord(3)).toMatch(/Unstable/);
+    expect(capeWord(350)).toBe('Marginal');
   });
 });

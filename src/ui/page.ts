@@ -2,6 +2,8 @@ import type { Conditions } from '../data/conditions';
 import { aqiNote, aqiWord, getAirQuality, pollenWord, type AirQuality } from '../data/airQuality';
 import { getNormal, getOutlooks, MODELS, NORMAL_YEARS, type Normal, type Outlooks } from '../data/climate';
 import { getTides, tideAt, type Tides } from '../data/tides';
+import { getAloft, type Aloft } from '../data/aloft';
+import { aloftCard } from './aloftCard';
 import { cloudWord, dayHours, hourOfDay, type Metric } from '../data/dayDetail';
 import { moonPhase, moonTimes } from '../data/moon';
 import type { Alert } from '../data/nws';
@@ -84,6 +86,8 @@ export class WeatherPage {
   private last: { c: Conditions | null; s: AppState } | null = null;
   /** What loads when the page shows a place (air, averages, tides, the models), by kind and place: null, none there. */
   private readonly extras = new Map<string, { at: number; v: unknown }>();
+  /** Hours from now the winds-aloft card shows (its ‹ › buttons). */
+  private aloftOffset = 0;
   private readonly loading = new Set<string>();
   /** Told the sky's top color while the page is open, null when it closes (the browser's status-bar strip follows it). */
   onTop: ((color: string | null) => void) | null = null;
@@ -325,6 +329,17 @@ export class WeatherPage {
     return had?.v as T | null | undefined;
   }
 
+  /** The winds-aloft card at the hour it's on, now plus its offset, stepping keeps it in the two days. */
+  private aloft(c: Conditions, om: PointForecast): HTMLElement | null {
+    const aloft = this.later<Aloft>('aloft', c, () => getAloft(c.point));
+    const now = aloft ? Math.max(0, aloft.hours.findIndex((x) => x.time.slice(0, 13) === om.current.time.slice(0, 13))) : 0;
+    return aloftCard(aloft, now + this.aloftOffset, now, (by) => {
+      if (!aloft) return;
+      this.aloftOffset = Math.max(-now, Math.min(aloft.hours.length - 1 - now, this.aloftOffset + by));
+      if (this.last) this.render(this.last.c, this.last.s);
+    });
+  }
+
   render(c: Conditions | null, s: AppState): void {
     this.last = { c, s };
     $('#page-kicker').hidden = !s.gps;
@@ -369,6 +384,7 @@ export class WeatherPage {
             }),
             tidesCard(this.later('tides', c!, () => (yesterday ? getTides(c!.point, yesterday) : Promise.resolve(null))), om, s),
             modelsCard(outlooks, s),
+            s.pilotCards ? this.aloft(c!, om) : null,
           ].filter((x): x is HTMLElement => x != null)
         : [loadingCard()]),
       sources(c),

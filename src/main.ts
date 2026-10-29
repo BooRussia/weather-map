@@ -1754,7 +1754,7 @@ async function main(): Promise<void> {
       tagsLayer.setAccent(token('--accent'));
       camerasLayer.setAccent(token('--accent'));
     }
-    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme || s.bannerForecast !== prev.bannerForecast || s.bannerGraphs !== prev.bannerGraphs || s.smallBanner !== prev.smallBanner) {
+    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme || s.bannerForecast !== prev.bannerForecast || s.bannerGraphs !== prev.bannerGraphs || s.smallBanner !== prev.smallBanner || s.pilotCards !== prev.pilotCards) {
       renderAll();
       trip?.refresh();
       rerenderStorm();
