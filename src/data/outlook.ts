@@ -62,6 +62,40 @@ export function nextRain(slots: MinutelyPoint[]): NextRain {
   return { sentence: `${word(start, end)} starting in about ${formatMinutes(start * 15)}.`, levels, rates };
 }
 
+const minutesOf = (isoLocal: string) => Date.parse(`${isoLocal}:00Z`) / 60_000;
+
+/**
+ * The banner's heads-up (owner, 2026-10-29; Dark Sky's and Apple's): rain starting or stopping in the
+ * next two hours, counted from `nowLocal` (the place's clock; the forecast may be minutes old), or
+ * null when it stays dry. `wet`: it's raining now.
+ */
+export function rainSoon(slots: MinutelyPoint[], nowLocal: string): { text: string; wet: boolean } | null {
+  const now = minutesOf(nowLocal);
+  const live = slots.filter((x) => minutesOf(x.time) + 15 > now);
+  const rates = live.map((x) => x.precipitation * 4);
+  const wet = rates.map((r) => r >= WET_MM_H);
+  if (!wet.some(Boolean)) return null;
+  const word = (from: number, to: number) => {
+    const max = Math.max(...rates.slice(from, to));
+    return max >= HEAVY_MM_H ? 'Heavy rain' : max < LIGHT_MM_H ? 'Light rain' : 'Rain';
+  };
+  const until = (i: number) => Math.max(0, minutesOf(live[i].time) - now);
+  const about = (min: number) => `about ${formatMinutes(Math.max(5, Math.round(min / 5) * 5))}`;
+  if (wet[0]) {
+    const stop = wet.indexOf(false);
+    if (stop === -1) {
+      const left = Math.round((minutesOf(live[live.length - 1].time) + 15 - now) / 15) * 15;
+      return { text: `${word(0, wet.length)} for the next ${formatMinutes(Math.max(15, left))}`, wet: true };
+    }
+    return { text: `${word(0, stop)} stopping in ${about(until(stop))}`, wet: true };
+  }
+  const start = wet.indexOf(true);
+  let end = wet.indexOf(false, start);
+  if (end === -1) end = wet.length;
+  const min = until(start);
+  return { text: `${word(start, end)} starting ${min < 5 ? 'in a few minutes' : `in ${about(min)}`}`, wet: false };
+}
+
 /* ---------- hourly strip ---------- */
 
 export type HourCell =

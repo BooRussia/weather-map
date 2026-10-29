@@ -61,7 +61,7 @@ import { createStore, type AppState } from './state';
 import { primeAudio, playCrackle } from './audio/crackle';
 import { wrapLon } from './util/geo';
 import { $, h, svg } from './ui/dom';
-import { renderAlertPill, renderCapsule, setSparkOpen } from './ui/capsule';
+import { renderAlertPill, renderCapsule, renderRainSoon, setSparkOpen } from './ui/capsule';
 import type { Metric } from './data/dayDetail';
 import { alertMark, boltMark, cameraIcon, hurricaneMark, locateIcon, routeIcon, searchIcon, warningIcon } from './ui/icons';
 import { BarShortcuts } from './ui/barShortcuts';
@@ -1252,7 +1252,10 @@ async function main(): Promise<void> {
     if (Date.now() - hrrrCheckedAt > 15 * 60_000) void refreshHrrr();
     if (Date.now() - tropicsAt > 10 * 60_000) void refreshTropics();
   };
-  setInterval(refreshIfStale, 60_000);
+  setInterval(() => {
+    refreshIfStale();
+    renderRainSoon(conditions);
+  }, 60_000);
   document.addEventListener('visibilitychange', refreshIfStale);
 
   /* ---------- layers popover + settings ---------- */

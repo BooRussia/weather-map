@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { clockLabel, formatMinutes, glyphFor, hourlyCells, nextRain, uvWord, weekRows } from '../src/data/outlook';
+import { clockLabel, formatMinutes, glyphFor, hourlyCells, nextRain, rainSoon, uvWord, weekRows } from '../src/data/outlook';
 import type { DailyPoint, HourlyPoint, MinutelyPoint } from '../src/data/openmeteo';
 
 const slots = (mm: number[]): MinutelyPoint[] =>
-  mm.map((precipitation, i) => ({ time: `2026-10-05T18:${String(i * 15).padStart(2, '0')}`, precipitation }));
+  mm.map((precipitation, i) => ({
+    time: `2026-10-05T${18 + Math.floor(i / 4)}:${String((i % 4) * 15).padStart(2, '0')}`,
+    precipitation,
+  }));
 
 describe('next 2 hours', () => {
   it('says so when it stays dry', () => {
@@ -29,6 +32,19 @@ describe('next 2 hours', () => {
     expect(r.levels[0]).toBe(0);
     expect(r.levels[1]).toBeGreaterThan(0);
     expect(r.levels[2]).toBe(1);
+  });
+
+  it('counts the banner heads-up from now, not from when the forecast was made', () => {
+    // Slots from 18:00; it's 18:10 now, rain from 18:45.
+    expect(rainSoon(slots([0, 0, 0, 0.3, 0.3, 0, 0, 0]), '2026-10-05T18:10')).toEqual({ text: 'Light rain starting in about 35 min', wet: false });
+    expect(rainSoon(slots([0, 0.3, 0.3, 0, 0, 0, 0, 0]), '2026-10-05T18:13')).toEqual({ text: 'Light rain starting in a few minutes', wet: false });
+    expect(rainSoon(slots([1, 1, 1, 0, 0, 0, 0, 0]), '2026-10-05T18:05')).toEqual({ text: 'Rain stopping in about 40 min', wet: true });
+    expect(rainSoon(slots([3, 3, 3, 3, 3, 3, 3, 3]), '2026-10-05T18:20')).toEqual({ text: 'Heavy rain for the next 1 hr 45 min', wet: true });
+  });
+
+  it('says nothing in the banner when it stays dry, or the rain has passed', () => {
+    expect(rainSoon(slots([0, 0, 0, 0, 0, 0, 0, 0]), '2026-10-05T18:00')).toBeNull();
+    expect(rainSoon(slots([1, 0, 0, 0, 0, 0, 0, 0]), '2026-10-05T18:20')).toBeNull();
   });
 
   it('formats minutes', () => {

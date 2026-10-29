@@ -1,6 +1,6 @@
 import type { Conditions } from '../data/conditions';
 import { dayHours, dayOutlook, hourOfDay, type Metric } from '../data/dayDetail';
-import { glyphFor, weekRows } from '../data/outlook';
+import { glyphFor, rainSoon, weekRows } from '../data/outlook';
 import type { Alert } from '../data/nws';
 import type { AppState } from '../state';
 import { formatTemp, formatWind, fToC, mphToKmh } from '../util/units';
@@ -21,6 +21,7 @@ export function renderCapsule(c: Conditions | null, s: AppState): void {
   const temp = $('#cap-temp');
   const cond = $('#cap-cond');
   const hilo = $('#cap-hilo');
+  renderRainSoon(c);
   renderChips(c, s);
   renderSparks(c, s);
   renderTrend(c, s);
@@ -50,6 +51,22 @@ export function renderCapsule(c: Conditions | null, s: AppState): void {
     'aria-label',
     `${s.gps ? 'My location, ' : ''}${c.place ?? 'Selected point'}, ${temp.textContent}, ${cond.textContent}, ${hilo.textContent}. Open weather details.`,
   );
+}
+
+/**
+ * Rain starting or stopping in the next two hours, under the place (owner, 2026-10-29: Dark Sky's
+ * "rain starting in 12 min"), in both sizes, only when there's some; counted from now, so it's redrawn
+ * every minute.
+ */
+export function renderRainSoon(c: Conditions | null): void {
+  const line = $('#cap-soon');
+  const om = c?.om;
+  const now = om ? new Date(Date.now() + om.utcOffsetSeconds * 1000).toISOString().slice(0, 16) : '';
+  const soon = om ? rainSoon(om.minutely, now) : null;
+  line.hidden = !soon;
+  if (!soon) return;
+  line.replaceChildren(svg(umbrellaIcon), h('span', {}, soon.text));
+  line.classList.toggle('is-wet', soon.wet);
 }
 
 /** The alert pill: the most severe alert's name, plus a count when there are more. */

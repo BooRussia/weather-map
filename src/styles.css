@@ -5312,6 +5312,41 @@ body.phone .cap-wrap.is-compact[data-small-graphs='today'] #cap-trend {
   display: none;
 }
 
+/* Rain starting or stopping soon: its own line under the place, in the rain's color. */
+.cap-soon {
+  display: none;
+}
+
+body.phone .cap-soon:not([hidden]) {
+  flex-basis: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 4px;
+  font-size: var(--fs-foot);
+  font-weight: 600;
+  color: var(--c-precip);
+  white-space: nowrap;
+}
+
+body.phone .cap-soon .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+}
+
+body.phone .cap-soon > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.phone .cap-wrap.is-compact .cap-soon:not([hidden]) {
+  margin-top: 1px;
+}
+
 /*
  * The small banner's forecast (owner, 2026-10-29: swap the graphs for the days or the hours, a sideways
  * swipe on the banner): one row of as many as fit, not scrolling, since sideways is the swipe's.
@@ -5563,7 +5598,8 @@ body.phone .dock {
     text-align: left;
   }
 
-  body.phone .cap-wrap:not(.is-compact) .cap-place-row {
+  body.phone .cap-wrap:not(.is-compact) .cap-place-row,
+  body.phone .cap-wrap:not(.is-compact) .cap-soon {
     justify-content: flex-start;
   }
 
@@ -5633,6 +5669,15 @@ body.phone .dock {
     grid-row: 1;
     margin: 0;
     padding: 0;
+  }
+
+  /* Rain coming: its own line under the place, the one line becoming two only then. */
+  body.phone .cap-wrap.is-compact .capsule:has(.cap-soon:not([hidden])) {
+    flex-wrap: wrap;
+  }
+
+  body.phone .cap-wrap.is-compact .cap-soon:not([hidden]) {
+    justify-content: flex-start;
   }
 
   /* The corner buttons side by side: the slim banner is one line tall. */
