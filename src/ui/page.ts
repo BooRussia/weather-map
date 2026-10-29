@@ -1,9 +1,11 @@
 import type { Conditions } from '../data/conditions';
-import { aqiNote, aqiWord, getAirQuality, type AirQuality } from '../data/airQuality';
+import { aqiNote, aqiWord, getAirQuality, pollenWord, type AirQuality } from '../data/airQuality';
+import { getNormal, getOutlooks, MODELS, NORMAL_YEARS, type Normal, type Outlooks } from '../data/climate';
+import { getTides, tideAt, type Tides } from '../data/tides';
 import { cloudWord, dayHours, hourOfDay, type Metric } from '../data/dayDetail';
 import { moonPhase, moonTimes } from '../data/moon';
 import type { Alert } from '../data/nws';
-import type { HourDetail, PointForecast } from '../data/openmeteo';
+import type { DailyPoint, HourDetail, PointForecast } from '../data/openmeteo';
 import { clockLabel, hourlyCells, nextRain, uvWord, weekRows } from '../data/outlook';
 import type { AppState } from '../state';
 import { sentenceCase } from '../util/text';
@@ -16,7 +18,10 @@ import {
   cloudMark,
   dropIcon,
   eyeIcon,
+  flowerIcon,
   gaugeIcon,
+  modelsIcon,
+  tideIcon,
   GLYPHS,
   sunMark,
   sunsetIcon,
@@ -31,6 +36,8 @@ import { paintMoon } from './moonRender';
 import { sceneFor, SkyRenderer } from './sky';
 
 const DOCK_KEY = 'weather-map:page-docked';
+/** How long the page's extras (air, averages, tides, the models) are kept before loading again. */
+const EXTRAS_MS = 60 * 60_000;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** Temperature ramp (DESIGN.md): °F stops → color. */
@@ -75,9 +82,9 @@ export class WeatherPage {
   /** What the hourly card and the 7-day list show (owner, 2026-10-23: Apple's toggles, plus humidity). */
   private mode: PageMode = readMode();
   private last: { c: Conditions | null; s: AppState } | null = null;
-  /** Air quality by place (null: none there), fetched when the page shows a place the first time. */
-  private readonly air = new Map<string, AirQuality | null>();
-  private readonly airLoading = new Set<string>();
+  /** What loads when the page shows a place (air, averages, tides, the models), by kind and place: null, none there. */
+  private readonly extras = new Map<string, { at: number; v: unknown }>();
+  private readonly loading = new Set<string>();
   /** Told the sky's top color while the page is open, null when it closes (the browser's status-bar strip follows it). */
   onTop: ((color: string | null) => void) | null = null;
 
@@ -297,20 +304,25 @@ export class WeatherPage {
     if (this.last) this.render(this.last.c, this.last.s);
   }
 
-  /** The place's air quality: known, null (none there), or undefined while it loads (then a redraw). */
-  private airFor(c: Conditions): AirQuality | null | undefined {
-    const key = `${c.point.lat.toFixed(2)},${c.point.lon.toFixed(2)}`;
-    if (!this.air.has(key) && !this.airLoading.has(key)) {
-      this.airLoading.add(key);
-      void getAirQuality(c.point)
-        .then((v) => this.air.set(key, v))
-        .catch(() => this.air.set(key, null))
+  /**
+   * Something extra for the place, loaded the first time the page shows it: known, null (none there),
+   * or undefined while it loads (then a redraw). Kept an hour, then loaded again behind what's shown.
+   */
+  private later<T>(kind: string, c: Conditions, load: () => Promise<T | null>): T | null | undefined {
+    const key = `${kind}:${c.point.lat.toFixed(2)},${c.point.lon.toFixed(2)}`;
+    const had = this.extras.get(key);
+    if ((!had || Date.now() - had.at > EXTRAS_MS) && !this.loading.has(key)) {
+      this.loading.add(key);
+      void load()
+        .then((v) => this.extras.set(key, { at: Date.now(), v }))
+        // A failed load keeps what was there (or none) for another hour, rather than trying on every redraw.
+        .catch(() => this.extras.set(key, { at: Date.now(), v: had?.v ?? null }))
         .finally(() => {
-          this.airLoading.delete(key);
+          this.loading.delete(key);
           if (this.isOpen && this.last) this.render(this.last.c, this.last.s);
         });
     }
-    return this.air.get(key);
+    return had?.v as T | null | undefined;
   }
 
   render(c: Conditions | null, s: AppState): void {
@@ -339,6 +351,9 @@ export class WeatherPage {
     if (this.isOpen) this.onTop?.(this.sky.topColor());
 
     const keep = this.scroller.scrollTop;
+    const air = c ? this.later('air', c, () => getAirQuality(c.point)) : undefined;
+    const outlooks = c ? this.later('outlooks', c, () => getOutlooks(c.point)) : undefined;
+    const yesterday = om?.daily[0] ? new Date(Date.parse(`${om.daily[0].date}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10) : null;
     $('#page-body').replaceChildren(
       ...(c?.alerts.map((a) => alertCard(a)) ?? []),
       ...(om
@@ -346,9 +361,15 @@ export class WeatherPage {
             nextRainCard(om, s),
             hourlyCard(c!, om, s, this.mode, (m) => this.setMode(m)),
             weekCard(c!, om, s, this.mode),
-            ...longCards(c!, om, s, this.airFor(c!)),
-            tiles(c!, om, s),
-          ]
+            ...longCards(c!, om, s, air),
+            tiles(c!, om, s, {
+              air,
+              normal: this.later('normal', c!, () => (om.daily[0] ? getNormal(c!.point, om.daily[0].date) : Promise.resolve(null))),
+              outlooks,
+            }),
+            tidesCard(this.later('tides', c!, () => (yesterday ? getTides(c!.point, yesterday) : Promise.resolve(null))), om, s),
+            modelsCard(outlooks, s),
+          ].filter((x): x is HTMLElement => x != null)
         : [loadingCard()]),
       sources(c),
     );
@@ -930,7 +951,59 @@ function longCards(c: Conditions, om: PointForecast, s: AppState, air: AirQualit
   return out;
 }
 
-function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
+/** The degrees between two temperatures in the chosen unit, signed. */
+const degreesApart = (aF: number, bF: number, s: AppState) => Math.round((aF - bF) * (s.tempUnit === 'C' ? 5 / 9 : 1));
+
+/**
+ * Apple's Averages, and yesterday (owner, 2026-10-29): today's high against the average high around
+ * this date over the last ten years, and how it compares with yesterday's.
+ */
+function averagesTile(today: DailyPoint, normal: Normal, yesterday: Normal | null, s: AppState): HTMLElement {
+  const d = degreesApart(today.hiF, normal.hiF, s);
+  const t = (f: number) => formatTemp(f, s.tempUnit);
+  return opens(
+    tile(
+      calendarIcon,
+      'Averages',
+      h('div', { class: 'tile-value' }, `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d)}°`),
+      h('p', { class: 'tile-note avg-note' }, `${d === 0 ? 'same as' : d > 0 ? 'above' : 'below'} the ${NORMAL_YEARS}-year average high for the date`),
+      h(
+        'dl',
+        { class: 'avg-rows' },
+        h('dt', {}, 'Today'),
+        h('dd', {}, `H:${t(today.hiF)}`),
+        h('dt', {}, 'Average'),
+        h('dd', {}, `H:${t(normal.hiF)}`),
+        ...(yesterday ? [h('dt', {}, 'Yesterday'), h('dd', {}, `H:${t(yesterday.hiF)}`)] : []),
+      ),
+    ),
+    'conditions',
+  );
+}
+
+/** Pollen where it's forecast (Europe): the worst kind's level, then the others. */
+function pollenTile(pollen: { name: string; grains: number }[]): HTMLElement {
+  const [top, ...rest] = pollen;
+  const others = rest.filter((p) => p.grains > 0);
+  return tile(
+    flowerIcon,
+    'Pollen',
+    h('div', { class: 'tile-value' }, pollenWord(top.grains)),
+    h('div', { class: 'tile-sub' }, top.grains > 0 ? top.name : 'Little in the air'),
+    h(
+      'p',
+      { class: 'tile-note' },
+      [`${top.name} ${top.grains}`, ...others.map((p) => `${p.name} ${p.grains}`)].join(' · ') + ' grains/m³.',
+    ),
+  );
+}
+
+function tiles(
+  c: Conditions,
+  om: PointForecast,
+  s: AppState,
+  extra: { air: AirQuality | null | undefined; normal: Normal | null | undefined; outlooks: Outlooks | null | undefined },
+): HTMLElement {
   const cur = om.current;
   const today = om.daily[0];
   const tomorrow = om.daily[1];
@@ -980,6 +1053,7 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
     opens(tile(thermoIcon, 'Feels like', h('div', { class: 'tile-value' }, formatTemp(cur.feelsF, s.tempUnit)), h('p', { class: 'tile-note' }, feelsNote)), 'conditions', {
       feels: true,
     }),
+    today && extra.normal ? averagesTile(today, extra.normal, extra.outlooks?.yesterday ?? null, s) : null,
     opens(tile(
       sunMark,
       'UV index',
@@ -1020,6 +1094,93 @@ function tiles(c: Conditions, om: PointForecast, s: AppState): HTMLElement {
       ),
       'clouds',
     ),
+    extra.air?.pollen ? pollenTile(extra.air.pollen) : null,
+  );
+}
+
+/**
+ * Tides at the nearest NOAA station (owner, 2026-10-29), on the coast only: the next high and low, the
+ * water now, and today's curve with a dot at now.
+ */
+function tidesCard(tides: Tides | null | undefined, om: PointForecast, s: AppState): HTMLElement | null {
+  if (!tides) return null;
+  const now = om.current.time;
+  const ahead = tides.events.filter((e) => e.time > now);
+  const nextHigh = ahead.find((e) => e.high);
+  const nextLow = ahead.find((e) => !e.high);
+  const level = tideAt(tides.events, now);
+  const ft = (v: number) => (s.tempUnit === 'C' ? `${(v * 0.3048).toFixed(1)} m` : `${v.toFixed(1)} ft`);
+  const when = (e: { time: string }) => `${e.time.slice(0, 10) === now.slice(0, 10) ? '' : 'Tomorrow '}${clockLabel(e.time)}`;
+  const rising = ahead[0]?.high ?? false;
+  return card(
+    { icon: tideIcon, label: `Tides · ${tides.station}` },
+    h(
+      'div',
+      { class: 'long-body' },
+      rows(
+        ...([
+          level != null ? ['Now', `${ft(level)}, ${rising ? 'rising' : 'falling'}`] : null,
+          nextHigh ? ['High tide', `${when(nextHigh)} · ${ft(nextHigh.ft)}`] : null,
+          nextLow ? ['Low tide', `${when(nextLow)} · ${ft(nextLow.ft)}`] : null,
+        ].filter((r): r is [string, string] => r != null)),
+      ),
+      tideCurve(tides, now),
+    ),
+  );
+}
+
+/** Today's tide, midnight to midnight, the highs and lows marked and a dot at now. */
+function tideCurve(tides: Tides, now: string): SVGSVGElement {
+  const W = 124;
+  const H = 72;
+  const day = now.slice(0, 10);
+  const at = (m: number) => `${day}T${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const levels = Array.from({ length: 49 }, (_, i) => tideAt(tides.events, at(Math.min(1439, i * 30))));
+  const known = levels.filter((v): v is number => v != null);
+  const lo = Math.min(...known);
+  const hi = Math.max(...known);
+  const x = (m: number) => (m / 1440) * W;
+  const y = (v: number) => 8 + (1 - (v - lo) / Math.max(0.1, hi - lo)) * (H - 16);
+  const svgEl = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'viz tide-viz', role: 'img', 'aria-label': 'Today’s tide' });
+  const d = levels.map((v, i) => (v == null ? '' : `${i ? 'L' : 'M'}${x(i * 30).toFixed(1)} ${y(v).toFixed(1)}`)).join('');
+  svgEl.append(el('path', { d: `${d}L${W} ${H}L0 ${H}Z`, class: 'tide-fill' }), el('path', { d, class: 'tide-line' }));
+  for (const e of tides.events.filter((e) => e.time.slice(0, 10) === day)) {
+    const m = Number(e.time.slice(11, 13)) * 60 + Number(e.time.slice(14, 16));
+    svgEl.append(el('circle', { cx: x(m), cy: y(e.ft), r: 2, class: 'tide-mark' }));
+  }
+  const nowM = Number(now.slice(11, 13)) * 60 + Number(now.slice(14, 16));
+  const v = tideAt(tides.events, now);
+  if (v != null) svgEl.append(el('circle', { cx: x(nowM), cy: y(v), r: 4, class: 'tide-now' }));
+  return svgEl;
+}
+
+/**
+ * The forecast models side by side (owner, 2026-10-29: Windy's hallmark): the European, American, and
+ * German models' highs and chances of rain for the ten days, so you can see where they agree.
+ */
+function modelsCard(outlooks: Outlooks | null | undefined, s: AppState): HTMLElement | null {
+  if (!outlooks?.days.length) return null;
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const head = h('tr', {}, h('th', {}), ...MODELS.map((m) => h('th', { scope: 'col', title: `${m.name} model` }, m.short)));
+  const body = outlooks.days.map((d, i) =>
+    h(
+      'tr',
+      {},
+      h('th', { scope: 'row' }, i === 0 ? 'Today' : DOW[new Date(`${d.date}T12:00:00Z`).getUTCDay()]),
+      ...d.models.map((m) =>
+        h(
+          'td',
+          {},
+          m ? h('span', { class: 'mdl-hi' }, formatTemp(m.hiF, s.tempUnit)) : '–',
+          m && m.pop != null ? h('span', { class: 'mdl-pop' }, `${Math.round(m.pop)}%`) : null,
+        ),
+      ),
+    ),
+  );
+  return card(
+    { icon: modelsIcon, label: 'Forecast models' },
+    h('p', { class: 'card-text mdl-note' }, 'Each model’s high and chance of rain. Where they agree, the forecast is surer.'),
+    h('table', { class: 'mdl-table' }, h('thead', {}, head), h('tbody', {}, ...body)),
   );
 }
 

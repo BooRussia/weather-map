@@ -5216,6 +5216,97 @@ body.map-only .temp-bubble {
   height: auto;
 }
 
+/* Averages: today's high, the average, and yesterday's, label and value a line each. */
+.avg-note {
+  margin-top: 2px;
+}
+
+.avg-rows {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  margin: auto 0 0;
+  padding-top: 8px;
+  font-size: var(--fs-foot);
+  font-variant-numeric: tabular-nums;
+}
+
+.avg-rows dt {
+  color: var(--muted);
+}
+
+.avg-rows dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Tides: today's water, midnight to midnight, the highs and lows marked, a dot at now. */
+.tide-fill {
+  fill: rgba(100, 210, 255, 0.16);
+}
+
+.tide-line {
+  fill: none;
+  stroke: var(--c-precip);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.tide-mark {
+  fill: var(--c-precip);
+}
+
+.tide-now {
+  fill: #ffffff;
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 1;
+}
+
+/* Forecast models: a day a row, each model's high and chance of rain. */
+.mdl-note {
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
+.mdl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.mdl-table th,
+.mdl-table td {
+  padding: 7px 0;
+  border-top: 1px solid var(--hairline);
+  font-size: var(--fs-callout);
+  text-align: right;
+}
+
+.mdl-table thead th {
+  border-top: 0;
+  font-size: var(--fs-cap);
+  font-weight: var(--cap-weight);
+  letter-spacing: var(--cap-track);
+  color: var(--muted);
+}
+
+.mdl-table tbody th {
+  font-weight: 600;
+  text-align: left;
+}
+
+.mdl-hi {
+  font-weight: 600;
+}
+
+.mdl-pop {
+  display: inline-block;
+  min-width: 3.2em;
+  color: var(--c-precip);
+  font-size: var(--fs-foot);
+}
+
 .aqi-bar {
   position: relative;
   height: 5px;

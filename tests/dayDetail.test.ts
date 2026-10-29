@@ -119,7 +119,7 @@ describe('moon and air for the long cards', () => {
 
   it('words the air quality like Apple', () => {
     expect(aqiWord(54)).toBe('Moderate');
-    expect(aqiNote({ aqi: 54, yesterday: 50 })).toBe('Air quality index is 54, which is similar to yesterday at about this time.');
-    expect(aqiNote({ aqi: 120, yesterday: 60 })).toContain('worse than yesterday');
+    expect(aqiNote({ aqi: 54, yesterday: 50, pollen: null })).toBe('Air quality index is 54, which is similar to yesterday at about this time.');
+    expect(aqiNote({ aqi: 120, yesterday: 60, pollen: null })).toContain('worse than yesterday');
   });
 });

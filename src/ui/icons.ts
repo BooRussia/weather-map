@@ -38,6 +38,12 @@ export const thermoIcon = `${open('i-thermo')}<path d="M10 14.2V5a2 2 0 0 1 4 0v
 export const sunMark = `${open('i-sun')}<circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" /></svg>`;
 export const windIcon = `${open('i-wind')}<path d="M3 8.5h10.5a3 3 0 1 0-3-3" /><path d="M3 12.5h15a3 3 0 1 1-3 3" /><path d="M3 16.5h6.5" /></svg>`;
 export const dropIcon = `${open('i-drop')}<path d="M12 3.2c-2.6 3.6-5.6 6.6-5.6 10a5.6 5.6 0 0 0 11.2 0c0-3.4-3-6.4-5.6-10z" /></svg>`;
+/** Pollen: a flower. */
+export const flowerIcon = `${open('i-flower')}<circle cx="12" cy="10" r="2.2" /><path d="M12 7.8c-1.6-2.6-.6-4.6 0-5 .6.4 1.6 2.4 0 5zM14.2 10c2.6-1.6 4.6-.6 5 0-.4.6-2.4 1.6-5 0zM12 12.2c1.6 2.6.6 4.6 0 5-.6-.4-1.6-2.4 0-5zM9.8 10c-2.6 1.6-4.6.6-5 0 .4-.6 2.4-1.6 5 0zM12 17.2V21.5M12 19.5c1.5-1.6 3.2-2 4.5-1.6M12 20.5c-1.3-1.2-2.8-1.5-4-1.1" /></svg>`;
+/** Tides: water rising and falling. */
+export const tideIcon = `${open('i-tide')}<path d="M2.5 9.5c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.7 0 3.2-1.6 4.8 0 3.1 1.6 4.7 0M2.5 14.5c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.7 0 3.2-1.6 4.8 0 3.1 1.6 4.7 0M12 3v3.5M10.2 4.8 12 3l1.8 1.8M12 21v-3.5M10.2 19.2 12 21l1.8-1.8" /></svg>`;
+/** Forecast models: three lines that agree, then part ways. */
+export const modelsIcon = `${open('i-models')}<path d="M3 12h6c3 0 4.5-6 12-6M9 12h12M9 12c3 0 4.5 6 12 6" /><circle cx="3.5" cy="12" r="1" /></svg>`;
 export const sunsetIcon = `${open('i-sunset')}<path d="M3 18.5h18M7 18.5a5 5 0 0 1 10 0M12 4v5M9.5 6.5 12 9l2.5-2.5" /></svg>`;
 /** Air quality: a round cloud of dots, like Apple's. */
 export const airIcon = `${open('i-air')}<path stroke-width="2.6" d="M12 4.5h.01M7.5 6.5h.01M16.5 6.5h.01M5 11h.01M9.5 9.5h.01M14.5 9.5h.01M19 11h.01M12 12h.01M7 15.5h.01M17 15.5h.01M9.5 14.5h.01M14.5 14.5h.01M12 19.5h.01" /></svg>`;
