@@ -205,8 +205,10 @@ interface Spark {
   color: string;
   line: SVGSVGElement;
   say: string;
-  /** The ten days': the peak day's name, date (its chart opens on that day), and place along the line, 0..1. */
-  day?: { name: string; date: string; at: number };
+  /** The ten days': the peak day's name and date (its chart opens on that day). */
+  day?: { name: string; date: string };
+  /** The ten days': each dot's day as its first letter, and which is the peak. */
+  letters?: { all: string[]; peak: number | null };
 }
 
 function sparkButtons(cells: Spark[]): HTMLElement[] {
@@ -226,13 +228,25 @@ function sparkButtons(cells: Spark[]): HTMLElement[] {
       // The icon tells the numbers apart in the small banner, where the labels go.
       h('span', { class: 'spark-value' }, svg(k.icon), k.value),
       k.line,
-      // The peak day's name under its white dot.
-      k.day ? h('span', { class: 'spark-peak', 'aria-hidden': 'true' }, h('span', {}, k.day.name)) : null,
+      // Under each dot its day's first letter (owner, 2026-10-29: so you can tell without counting), the peak's in white.
+      k.letters ? days(k.letters) : null,
     );
     (b.querySelector('.spark-value') as HTMLElement).style.color = k.color;
-    if (k.day) (b.querySelector('.spark-peak') as HTMLElement).style.setProperty('--at', k.day.at.toFixed(3));
     return b;
   });
+}
+
+function days(letters: { all: string[]; peak: number | null }): HTMLElement {
+  const n = letters.all.length;
+  return h(
+    'span',
+    { class: 'spark-days', 'aria-hidden': 'true' },
+    ...letters.all.map((l, i) => {
+      const e = h('span', { class: i === letters.peak ? 'is-peak' : '' }, l);
+      e.style.left = `${((i / Math.max(1, n - 1)) * 100).toFixed(2)}%`;
+      return e;
+    }),
+  );
 }
 
 const unitsFor = (s: AppState) => ({
@@ -312,8 +326,9 @@ function peakOf(values: number[]): number | null {
 }
 
 /**
- * The same four over the ten days (owner, 2026-10-29), a dot a day, the peak day's white, so you can
- * see which day is the warmest, the windiest, the likeliest to rain. Each opens its chart on that day.
+ * The same four over the ten days (owner, 2026-10-29), a dot a day with its day's letter under it, the
+ * peak day's white, each named for what it shows (Warmest, Windiest, Rainiest, Most humid) so the white
+ * dot explains itself. Each opens its chart on that day.
  */
 function renderTrend(c: Conditions | null, s: AppState): void {
   const box = $('#cap-trend');
@@ -339,7 +354,9 @@ function renderTrend(c: Conditions | null, s: AppState): void {
   const winds = days.map((x) => x.wind);
   const pops = days.map((x) => x.d.precipProbability);
   const humid = days.map((x) => x.humidity);
-  const at = (i: number | null) => (i == null ? undefined : { name: days[i].name, date: days[i].d.date, at: i / (days.length - 1) });
+  const at = (i: number | null) => (i == null ? undefined : { name: days[i].name, date: days[i].d.date });
+  const initials = days.map((x) => DOW[new Date(`${x.d.date}T12:00:00Z`).getUTCDay()][0]);
+  const letters = (peak: number | null) => ({ all: initials, peak });
   const hot = peakOf(his.map((f) => f - Math.min(...his) + 1));
   const windy = peakOf(winds);
   const wet = peakOf(pops);
@@ -350,7 +367,7 @@ function renderTrend(c: Conditions | null, s: AppState): void {
       {
         metric: 'conditions',
         icon: thermoIcon,
-        label: 'High',
+        label: 'Warmest',
         value: formatTemp(Math.max(...his), s.tempUnit),
         color: ink(tempColor(Math.max(...his))),
         line: sparkline(
@@ -361,36 +378,40 @@ function renderTrend(c: Conditions | null, s: AppState): void {
         ),
         say: `Warmest of the ten days: ${formatTemp(Math.max(...his), s.tempUnit)}${on(hot)}`,
         day: at(hot),
+        letters: letters(hot),
       },
       {
         metric: 'wind',
-        label: 'Wind',
+        label: 'Windiest',
         icon: windIcon,
         value: formatWind(Math.max(...winds), s.windUnit),
         color: ink('#64d2ff'),
         line: sparkline(winds.map(wind), ink('#64d2ff'), wind(8), { days: { peak: windy } }),
         say: `Windiest of the ten days: ${formatWind(Math.max(...winds), s.windUnit)}${on(windy)}`,
         day: at(windy),
+        letters: letters(windy),
       },
       {
         metric: 'precip',
-        label: 'Rain',
+        label: wet == null ? 'Rain' : 'Rainiest',
         icon: umbrellaIcon,
         value: `${Math.round(Math.max(...pops))}%`,
         color: ink('#7d7aff'),
         line: sparkline(pops, ink('#7d7aff'), 40, { days: { peak: wet } }),
         say: wet == null ? 'No rain in the ten days' : `Likeliest rain of the ten days: ${Math.round(Math.max(...pops))}%${on(wet)}`,
         day: at(wet),
+        letters: letters(wet),
       },
       {
         metric: 'humidity',
-        label: 'Humidity',
+        label: 'Most humid',
         icon: dropIcon,
         value: `${Math.round(Math.max(...humid))}%`,
         color: ink('#30d158'),
         line: sparkline(humid, ink('#30d158'), 40, { days: { peak: muggy } }),
         say: `Most humid of the ten days: ${Math.round(Math.max(...humid))}%${on(muggy)}`,
         day: at(muggy),
+        letters: letters(muggy),
       },
     ]),
   );

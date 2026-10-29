@@ -4576,6 +4576,7 @@ body.phone .cap-sparks:not([hidden]) {
   letter-spacing: var(--cap-track);
   text-transform: uppercase;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .spark-value {
@@ -5536,28 +5537,31 @@ body.phone .cap-wrap.is-compact .wk-hi {
   font-size: var(--fs-foot);
 }
 
-/* The ten days' graphs name their peak day under its white dot (left-aligned at the start, right at the end). */
-.spark-peak {
+/* The ten days' graphs: each dot's day as its first letter under it, the peak's in white. */
+.spark-days {
+  position: relative;
   display: block;
   width: 100%;
   height: 12px;
-  margin-top: 2px;
-  font-size: 9.5px;
-  font-weight: 650;
+  margin-top: 3px;
+  font-size: 9px;
+  font-weight: 600;
   line-height: 12px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  color: var(--faint, var(--muted));
+}
+
+.spark-days > span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.spark-days > .is-peak {
   color: var(--fg);
+  font-weight: 800;
 }
 
-.spark-peak > span {
-  display: inline-block;
-  margin-left: calc(var(--at, 0) * 100%);
-  transform: translateX(calc(var(--at, 0) * -100%));
-  white-space: nowrap;
-}
-
-body.phone .cap-wrap.is-compact .spark-peak {
+body.phone .cap-wrap.is-compact .spark-days {
   display: none;
 }
 
