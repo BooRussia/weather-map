@@ -1,7 +1,7 @@
 import type { StormCell, StormReport } from '../data/stormCells';
 import { REPORT_COLOR, THREAT_COLOR } from '../map/stormLayer';
 import type { AppState } from '../state';
-import { compass16 } from '../util/units';
+import { compass16, formatWind } from '../util/units';
 import { h } from './dom';
 
 const ago = (ms: number) => {
@@ -9,7 +9,7 @@ const ago = (ms: number) => {
   return min < 60 ? `${min} min ago` : `${Math.round(min / 60)} h ago`;
 };
 const feet = (kft: number, s: AppState) => (s.tempUnit === 'F' ? `${Math.round(kft).toLocaleString()},000 ft` : `${(kft * 0.3048).toFixed(1)} km`);
-const speed = (mph: number, s: AppState) => (s.windUnit === 'kmh' ? `${Math.round(mph * 1.609344)} km/h` : `${Math.round(mph)} mph`);
+const speed = (mph: number, s: AppState) => formatWind(mph, s.windUnit);
 const hail = (inches: number, s: AppState) => (s.tempUnit === 'F' ? `${inches.toFixed(2).replace(/0$/, '')} in` : `${Math.round(inches * 25.4)} mm`);
 
 const THREAT_TITLE = {

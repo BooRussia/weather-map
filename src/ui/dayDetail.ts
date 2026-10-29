@@ -3,7 +3,7 @@ import { cloudWord, dayHours, extremes, hourOfDay, meanDirection, METRICS, niceS
 import type { HourDetail, PointForecast } from '../data/openmeteo';
 import { clockLabel, glyphFor, uvWord } from '../data/outlook';
 import type { AppState } from '../state';
-import { compass8, cToF, fToC, mphToKmh } from '../util/units';
+import { compass8, cToF, fToC, windIn, windLabel } from '../util/units';
 import { h, svg } from './dom';
 import { chevronIcon, closeIcon, cloudMark, dropIcon, eyeIcon, gaugeIcon, GLYPHS, sunMark, thermoIcon, umbrellaIcon, windIcon } from './icons';
 import { segmented } from './layersMenu';
@@ -79,12 +79,12 @@ function specFor(m: Metric, s: AppState, feels: boolean): Spec {
         about: 'How strong the sun’s ultraviolet light is. At 3 and up, protect your skin.',
       };
     case 'wind': {
-      const kmh = s.windUnit === 'kmh';
+      const unit = s.windUnit;
       return {
-        value: (x) => (kmh ? mphToKmh(x.windMph) : x.windMph),
-        fmt: (v) => `${Math.round(v)} ${kmh ? 'km/h' : 'mph'}`,
+        value: (x) => windIn(x.windMph, unit),
+        fmt: (v) => `${Math.round(v)} ${windLabel(unit)}`,
         tick: (v) => String(Math.round(v)),
-        scale: (_lo, hi) => niceScale(0, Math.max(hi, kmh ? 15 : 10)),
+        scale: (_lo, hi) => niceScale(0, Math.max(hi, windIn(10, unit))),
         color: () => '#64d2ff',
         about: 'Sustained wind; the dotted line is gusts.',
       };
@@ -544,7 +544,7 @@ export class DayDetail {
     const day = values.slice(0, own);
     const e = extremes(day);
     const now = isToday ? hourOfDay(om.current.time, date) : null;
-    const dotted = this.metric === 'wind' ? hours.map((x) => (s.windUnit === 'kmh' ? mphToKmh(x.gustMph) : x.gustMph)) : undefined;
+    const dotted = this.metric === 'wind' ? hours.map((x) => windIn(x.gustMph, s.windUnit)) : undefined;
     const scale = spec.scale(e.lo, Math.max(e.hi, ...(dotted?.slice(0, own) ?? [])));
     const daily = om.daily.find((d) => d.date === date);
     const sun = daily
@@ -775,7 +775,7 @@ export class DayDetail {
       }
       case 'wind': {
         const g = now ? now.gustMph : gustMax;
-        const gust = `Gusts ${spec.fmt(s.windUnit === 'kmh' ? mphToKmh(g) : g)}`;
+        const gust = `Gusts ${spec.fmt(windIn(g, s.windUnit))}`;
         return [spec.fmt(now ? spec.value(now) : e.hi), now ? `${gust} · Max ${spec.fmt(e.hi)}` : gust];
       }
       case 'precip': {
@@ -810,7 +810,7 @@ export class DayDetail {
     const temp = (f: number) => `${Math.round(s.tempUnit === 'C' ? fToC(f) : f)}°`;
     const extra =
       this.metric === 'wind'
-        ? `Gusts ${spec.fmt(s.windUnit === 'kmh' ? mphToKmh(x.gustMph) : x.gustMph)} · from ${compass8(x.windFromDeg)}`
+        ? `Gusts ${spec.fmt(windIn(x.gustMph, s.windUnit))} · from ${compass8(x.windFromDeg)}`
         : this.metric === 'precip'
           ? amountSpec(s).fmt(amountSpec(s).value(x))
           : this.metric === 'conditions'
@@ -851,7 +851,7 @@ export class DayDetail {
       case 'wind': {
         const g = Math.max(...day.map((x) => x.gustMph));
         const dir = compass8(meanDirection(day.map((x) => x.windFromDeg)));
-        const gust = spec.fmt(s.windUnit === 'kmh' ? mphToKmh(g) : g);
+        const gust = spec.fmt(windIn(g, s.windUnit));
         return `${name}: wind ${spec.fmt(e.lo).replace(/ .*/, '')} to ${spec.fmt(e.hi)}, mostly from the ${dir}, with gusts up to ${gust}.`;
       }
       case 'precip': {

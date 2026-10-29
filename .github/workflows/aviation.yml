@@ -1,0 +1,41 @@
+name: Airport weather
+
+# aviationweather.gov's METARs and TAFs can't be read from a browser (no CORS), so this job fetches
+# its bulk files every 10 minutes and publishes compact JSON to the `aviation` branch, which the app
+# reads from raw.githubusercontent.com. (Its own branch: the tropical job replaces `data` each run.)
+# GitHub runs scheduled jobs late at busy times, so the app shows every report's own time and age.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aviation-data
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Build metars.json and tafs.json
+        run: node scripts/aviation.mjs out
+      - name: Publish to the aviation branch
+        run: |
+          cd out
+          git init -q -b aviation
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add metars.json tafs.json
+          git commit -q -m "Airport weather $(date -u +%Y-%m-%dT%H:%MZ)"
+          # One commit, replaced each run: the branch never grows.
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" aviation

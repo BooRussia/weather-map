@@ -70,6 +70,9 @@ import { askToNotify, notify } from './util/notify';
 import { getFires, getGauges } from './data/hazards';
 import { FiresLayer, GaugesLayer } from './map/hazardsLayer';
 import { firePanel, gaugePanel } from './ui/hazardPanel';
+import { getMetars, getTafs, type Metar, type Metars, type Taf } from './data/aviation';
+import { AirportsLayer } from './map/airportsLayer';
+import { airportPanel, airportTitle } from './ui/airportPanel';
 import { glyphFor, rainSoon } from './data/outlook';
 import { alertMark, boltMark, cameraIcon, GLYPHS, hurricaneMark, locateIcon, routeIcon, searchIcon, shareIcon, warningIcon } from './ui/icons';
 import { BarShortcuts } from './ui/barShortcuts';
@@ -156,6 +159,7 @@ async function main(): Promise<void> {
   // Dev only: the map, for poking at its layers from the console.
   if (import.meta.env.DEV) Object.assign(window, { __map: map });
   const firesLayer = new FiresLayer(map);
+  const airportsLayer = new AirportsLayer(map);
   const gaugesLayer = new GaugesLayer(map);
   const lightning = new LightningLayer(map);
   const borders = new Boundaries(map);
@@ -238,6 +242,7 @@ async function main(): Promise<void> {
     window.setTimeout(() => stormCells.set(s.layers.cells, s.stormReports), 600);
     firesLayer.install();
     gaugesLayer.install();
+    airportsLayer.install();
     // Tagged places over everything else.
     tagsLayer.install();
     renderTags();
@@ -719,7 +724,12 @@ async function main(): Promise<void> {
       if (tower.id !== chosenSite?.id) void chooseSite(tower, siteFrames?.product ?? 'N0B');
       return;
     }
-    // A wildfire or a river gauge opens its details.
+    // An airport opens its METAR and TAF; a wildfire or a river gauge its details.
+    const airport = airportsLayer.hit(e.point);
+    if (airport) {
+      openAirport(airport);
+      return;
+    }
     const fire = firesLayer.hit(e.point);
     if (fire) {
       sheet.open('fire', fire.name, firePanel(fire, store.get()), null);
@@ -1450,9 +1460,44 @@ async function main(): Promise<void> {
     }
   };
   map.on('moveend', () => void loadGauges());
+
+  // Airport weather: the relay's METARs when the switch goes on and every few minutes after (it
+  // publishes every 10); TAFs the first time an airport is opened.
+  const AIRPORTS_MS = 5 * 60_000;
+  let metars: Metars | null = null;
+  let metarsAt = 0;
+  let tafs: { generated: number; tafs: Record<string, Taf> } | null = null;
+  let tafsAt = 0;
+  const loadAirports = async () => {
+    if (!store.get().layers.airports || Date.now() - metarsAt < AIRPORTS_MS) return;
+    metarsAt = Date.now();
+    try {
+      metars = await getMetars();
+      airportsLayer.set(metars.metars);
+    } catch {
+      metarsAt = 0;
+      showNote('Airport weather is unavailable right now.');
+    }
+  };
+  const openAirport = (m: Metar) => {
+    const show = () => sheet.open('airport', airportTitle(m), airportPanel(m, tafs ? (tafs.tafs[m.id] ?? null) : undefined, metars?.generated ?? m.obs), null);
+    show();
+    if (tafs && Date.now() - tafsAt < AIRPORTS_MS * 2) return;
+    tafsAt = Date.now();
+    void getTafs()
+      .then((t) => {
+        tafs = t;
+        if (sheet.current === 'airport') show();
+      })
+      .catch(() => {
+        tafsAt = 0;
+      });
+  };
+
   setInterval(() => {
     void loadFires();
     void loadGauges();
+    void loadAirports();
   }, 5 * 60_000);
 
   /* ---------- alerts for your location ---------- */
@@ -1643,6 +1688,10 @@ async function main(): Promise<void> {
     if (s.layers.rivers !== prev.layers.rivers) {
       gaugesLayer.setVisible(s.layers.rivers);
       void loadGauges();
+    }
+    if (s.layers.airports !== prev.layers.airports) {
+      airportsLayer.setVisible(s.layers.airports);
+      void loadAirports();
     }
     if (s.layers.tropics !== prev.layers.tropics) {
       tropical.setVisible(s.layers.tropics);
@@ -1862,6 +1911,7 @@ function renderCredits(s: AppState): void {
   $('[data-credit="cams"]').hidden = !s.layers.cams;
   $('[data-credit="nifc"]').hidden = !s.layers.fires;
   $('[data-credit="nwps"]').hidden = !s.layers.rivers;
+  $('[data-credit="awc"]').hidden = !s.layers.airports;
   $('[data-credit="swpc"]').hidden = s.weatherMap !== 'aurora';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="glm"]').hidden = !s.layers.thunder;

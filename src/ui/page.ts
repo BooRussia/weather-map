@@ -9,7 +9,7 @@ import type { DailyPoint, HourDetail, PointForecast } from '../data/openmeteo';
 import { clockLabel, hourlyCells, nextRain, uvWord, weekRows } from '../data/outlook';
 import type { AppState } from '../state';
 import { sentenceCase } from '../util/text';
-import { compass8, formatTemp, formatWind, mphToKmh } from '../util/units';
+import { compass8, formatTemp, formatWind, windIn, windLabel } from '../util/units';
 import { $, h, svg } from './dom';
 import { amountText, conditionWord, hiLoLine, rateText, reflow, shortPeriodName, timeShort, visibilityText } from './format';
 import {
@@ -556,9 +556,8 @@ function hourLine(prev: number, cur: number, next: number, lo: number, hi: numbe
 
 function hourlyCard(c: Conditions, om: PointForecast, s: AppState, mode: PageMode, setMode: (m: PageMode) => void): HTMLElement {
   const first = c.periods[0];
-  const kmh = s.windUnit === 'kmh';
-  const unit = kmh ? 'km/h' : 'mph';
-  const wind = (mph: number) => (kmh ? mphToKmh(mph) : mph);
+  const unit = windLabel(s.windUnit);
+  const wind = (mph: number) => windIn(mph, s.windUnit);
   const [title, sub] =
     mode === 'precip'
       ? ['Precipitation', 'Intensity · Chance']
@@ -677,8 +676,7 @@ function weekCard(c: Conditions, om: PointForecast, s: AppState, mode: PageMode)
   const classic = s.theme === 'classic';
   const metric = modeOf(mode).metric;
   const color = classic ? '#f0f0fa' : modeOf(mode).color;
-  const kmh = s.windUnit === 'kmh';
-  const wind = (mph: number) => (kmh ? mphToKmh(mph) : mph);
+  const wind = (mph: number) => windIn(mph, s.windUnit);
   const list = h('ol', { class: `days is-${mode}` });
   weekRows(om.daily, c.tempF).forEach((d, i) => {
     const date = om.daily[i].date;
@@ -724,7 +722,7 @@ function weekCard(c: Conditions, om: PointForecast, s: AppState, mode: PageMode)
       const vals = day.map((x) => (mode === 'wind' ? wind(x.windMph) : x.humidity));
       const lo = Math.min(...vals);
       const hi = Math.max(...vals);
-      const text = mode === 'wind' ? `${Math.round(lo)}–${Math.round(hi)} ${kmh ? 'km/h' : 'mph'}` : `${Math.round(lo)}–${Math.round(hi)}%`;
+      const text = mode === 'wind' ? `${Math.round(lo)}–${Math.round(hi)} ${windLabel(s.windUnit)}` : `${Math.round(lo)}–${Math.round(hi)}%`;
       row = h(
         'li',
         { class: 'day', 'aria-label': `${d.label}: ${mode === 'wind' ? 'wind' : 'humidity'} ${text}` },
@@ -899,7 +897,7 @@ function longCards(c: Conditions, om: PointForecast, s: AppState, air: AirQualit
   }
 
   // Wind: speed, gusts, and direction beside the compass.
-  const windVal = s.windUnit === 'kmh' ? Math.round(cur.windMph * 1.609344) : Math.round(cur.windMph);
+  const windVal = Math.round(windIn(cur.windMph, s.windUnit));
   out.push(
     opens(
       card(
@@ -912,7 +910,7 @@ function longCards(c: Conditions, om: PointForecast, s: AppState, air: AirQualit
             ['Gusts', formatWind(cur.gustMph, s.windUnit)],
             ['Direction', `${Math.round(cur.windFromDeg)}° ${compass8(cur.windFromDeg)}`],
           ),
-          compass(cur.windFromDeg, String(windVal), s.windUnit === 'kmh' ? 'km/h' : 'mph'),
+          compass(cur.windFromDeg, String(windVal), windLabel(s.windUnit)),
         ),
       ),
       'wind',

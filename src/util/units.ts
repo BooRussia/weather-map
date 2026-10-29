@@ -1,10 +1,16 @@
 export type TempUnit = 'F' | 'C';
-export type WindUnit = 'mph' | 'kmh';
+/** Knots too (owner, 2026-10-29: pilot features). */
+export type WindUnit = 'mph' | 'kmh' | 'kt';
 
 export const fToC = (f: number) => ((f - 32) * 5) / 9;
 export const cToF = (c: number) => (c * 9) / 5 + 32;
 export const kmhToMph = (k: number) => k / 1.609344;
 export const mphToKmh = (m: number) => m * 1.609344;
+export const mphToKt = (m: number) => m / 1.150779;
+
+/** A speed in mph in the chosen unit. */
+export const windIn = (mph: number, unit: WindUnit) => (unit === 'kmh' ? mphToKmh(mph) : unit === 'kt' ? mphToKt(mph) : mph);
+export const windLabel = (unit: WindUnit) => (unit === 'kmh' ? 'km/h' : unit === 'kt' ? 'kt' : 'mph');
 
 export function formatTemp(tempF: number, unit: TempUnit): string {
   const v = unit === 'C' ? fToC(tempF) : tempF;
@@ -12,7 +18,7 @@ export function formatTemp(tempF: number, unit: TempUnit): string {
 }
 
 export function formatWind(mph: number, unit: WindUnit): string {
-  return unit === 'kmh' ? `${Math.round(mphToKmh(mph))} km/h` : `${Math.round(mph)} mph`;
+  return `${Math.round(windIn(mph, unit))} ${windLabel(unit)}`;
 }
 
 const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];

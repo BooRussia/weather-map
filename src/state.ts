@@ -68,7 +68,7 @@ export interface AppState {
   /** `outlook`: SPC severe-storm or WPC flash-flood outlook areas (`outlookKind`, `outlookDay`). */
   /** `cells`: strong storm cells and where they're headed (radar storm tracking). */
   /** `cams`: state DOTs' traffic cameras (off on first load; the camera button). */
-  /** `fires`: burning wildfires and their edges (NIFC); `rivers`: river gauges by flood status (NWS). */
+  /** `fires`: burning wildfires and their edges (NIFC); `rivers`: river gauges by flood status (NWS); `airports`: METAR flight categories (AWC). */
   layers: {
     wind: boolean;
     rain: boolean;
@@ -80,6 +80,7 @@ export interface AppState {
     cams: boolean;
     fires: boolean;
     rivers: boolean;
+    airports: boolean;
   };
   tempUnit: TempUnit;
   windUnit: WindUnit;
@@ -227,9 +228,9 @@ export function createStore(selected: LatLon, gps: boolean) {
   const linesCurrent = prefs.linesV === LINES_PREFS_V;
   let state: AppState = {
     // Hurricanes off on first load too (owner, 2026-10-23): the hurricane button turns them on.
-    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: false, outlook: false, cells: false, cams: false, fires: false, rivers: false },
+    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: false, outlook: false, cells: false, cams: false, fires: false, rivers: false, airports: false },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
-    windUnit: prefs.windUnit === 'kmh' ? 'kmh' : 'mph',
+    windUnit: prefs.windUnit === 'kmh' || prefs.windUnit === 'kt' ? prefs.windUnit : 'mph',
     sound: prefs.sound ?? true,
     basemap: prefs.basemap === 'dark' || prefs.basemap === 'standard' ? prefs.basemap : 'satellite',
     // On by default (owner, 2026-10-23); choices saved under the old off defaults start over, once.

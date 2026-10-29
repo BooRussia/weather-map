@@ -38,6 +38,8 @@ export const thermoIcon = `${open('i-thermo')}<path d="M10 14.2V5a2 2 0 0 1 4 0v
 export const sunMark = `${open('i-sun')}<circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" /></svg>`;
 export const windIcon = `${open('i-wind')}<path d="M3 8.5h10.5a3 3 0 1 0-3-3" /><path d="M3 12.5h15a3 3 0 1 1-3 3" /><path d="M3 16.5h6.5" /></svg>`;
 export const dropIcon = `${open('i-drop')}<path d="M12 3.2c-2.6 3.6-5.6 6.6-5.6 10a5.6 5.6 0 0 0 11.2 0c0-3.4-3-6.4-5.6-10z" /></svg>`;
+/** Airport weather: a plane from above. */
+export const planeMark = `${open('i-plane')}<path d="M12 2.8c.9 0 1.5 1 1.5 2.2v4.6l7 4.1v2l-7-2.2v4l2.3 1.8v1.6L12 19.8l-3.8 1.1v-1.6l2.3-1.8v-4l-7 2.2v-2l7-4.1V5c0-1.2.6-2.2 1.5-2.2z" /></svg>`;
 /** Wildfires: a flame. */
 export const fireMark = `${open('i-fire')}<path d="M12 21.5c-3.9 0-6.5-2.6-6.5-6.2 0-3.4 2.4-5.3 3.6-8.3.5 1.6 1.4 2.6 2.4 3.1C11.6 6.4 13 4 15.6 2.5c-.4 2.9.7 4.6 2 6.6 1 1.6 1.9 3.4 1.9 5.9 0 3.9-3 6.5-7.5 6.5z" /><path d="M12 21.5c-1.7 0-2.9-1.2-2.9-2.8 0-1.8 1.4-2.7 2.3-4.4.9 1.7 3.5 2.4 3.5 4.6 0 1.5-1.2 2.6-2.9 2.6z" /></svg>`;
 /** River gauges: a staff gauge standing in water. */

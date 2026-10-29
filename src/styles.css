@@ -6523,3 +6523,42 @@ body.tv .cap-temp {
     padding-top: 0;
   }
 }
+
+/* ---------- airport weather (owner, 2026-10-29: pilot features) ---------- */
+
+/* The reports as written, in a monospace block: METAR on one line, the TAF a change group a line. */
+.airport-raw {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--fg);
+  font: 500 13px/1.5 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.airport-head {
+  margin: 14px 0 6px;
+  font-size: var(--fs-cap);
+  font-weight: var(--cap-weight);
+  letter-spacing: var(--cap-track);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Something's old: the report, or the relay. */
+.airport-warn {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 159, 10, 0.16);
+  color: #ffb340;
+  font-size: var(--fs-foot);
+  font-weight: 600;
+}
+
+.airport-legal {
+  margin-top: 8px;
+  font-style: italic;
+}

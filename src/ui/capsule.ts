@@ -3,7 +3,7 @@ import { dayHours, dayOutlook, hourOfDay, type Metric } from '../data/dayDetail'
 import { glyphFor, rainSoon, weekRows } from '../data/outlook';
 import type { Alert } from '../data/nws';
 import type { AppState } from '../state';
-import { formatTemp, formatWind, fToC, mphToKmh } from '../util/units';
+import { formatTemp, formatWind, fToC, windIn } from '../util/units';
 import { $, h, svg } from './dom';
 import { conditionLine, conditionWord, hiLoLine } from './format';
 import { dropIcon, GLYPHS, thermoIcon, umbrellaIcon, windIcon } from './icons';
@@ -307,7 +307,7 @@ export function placePeakLetters(): void {
 const unitsFor = (s: AppState) => ({
   ink: (color: string) => (s.theme === 'classic' ? '#f0f0fa' : color),
   temp: (f: number) => (s.tempUnit === 'C' ? fToC(f) : f),
-  wind: (mph: number) => (s.windUnit === 'kmh' ? mphToKmh(mph) : mph),
+  wind: (mph: number) => windIn(mph, s.windUnit),
 });
 
 /**

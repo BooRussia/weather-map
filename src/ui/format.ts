@@ -1,7 +1,7 @@
 import type { Conditions } from '../data/conditions';
 import type { AppState } from '../state';
 import { limitWords, sentenceCase } from '../util/text';
-import { compass8, formatTemp, formatWind, mphToKmh, type WindUnit } from '../util/units';
+import { compass8, formatTemp, formatWind, windIn, type WindUnit } from '../util/units';
 
 const MAX_CONDITION_WORDS = 12;
 
@@ -17,7 +17,7 @@ export function conditionLine(
     else {
       let wind = `Wind ${c.windFromDeg != null ? `${compass8(c.windFromDeg)} ` : ''}${formatWind(c.windMph, unit)}`;
       if (c.gustMph != null && c.gustMph - c.windMph >= 8) {
-        const g = unit === 'kmh' ? mphToKmh(c.gustMph) : c.gustMph;
+        const g = windIn(c.gustMph, unit);
         wind += `, gusts ${Math.round(g)}`;
       }
       parts.push(wind);

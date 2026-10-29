@@ -1,9 +1,9 @@
 import type { AppState, Store } from '../state';
 import { h, svg } from './dom';
-import { alertMark, checkIcon, cloudMark, fireMark, gaugeMark, moreIcon, outlookMark, rainMark, stormTrackMark, windIcon } from './icons';
+import { alertMark, checkIcon, cloudMark, fireMark, gaugeMark, moreIcon, outlookMark, planeMark, rainMark, stormTrackMark, windIcon } from './icons';
 
 /** The weather switches that can sit on the bar, in the Layers drawer's order. */
-export type ShortcutId = 'rain' | 'clouds' | 'thunder' | 'wind' | 'cells' | 'alertAreas' | 'outlook' | 'tropics' | 'fires' | 'rivers';
+export type ShortcutId = 'rain' | 'clouds' | 'thunder' | 'wind' | 'cells' | 'alertAreas' | 'outlook' | 'tropics' | 'fires' | 'rivers' | 'airports';
 
 /** The switches drawn here; the hurricane tracker and lightning only are buttons of their own (main.ts). */
 const PLAIN: Partial<Record<ShortcutId, { label: string; icon: string }>> = {
@@ -15,9 +15,10 @@ const PLAIN: Partial<Record<ShortcutId, { label: string; icon: string }>> = {
   outlook: { label: 'Storm outlook', icon: outlookMark },
   fires: { label: 'Wildfires', icon: fireMark },
   rivers: { label: 'River flooding', icon: gaugeMark },
+  airports: { label: 'Airport weather', icon: planeMark },
 };
 
-const ORDER: ShortcutId[] = ['rain', 'clouds', 'thunder', 'wind', 'cells', 'alertAreas', 'outlook', 'tropics', 'fires', 'rivers'];
+const ORDER: ShortcutId[] = ['rain', 'clouds', 'thunder', 'wind', 'cells', 'alertAreas', 'outlook', 'tropics', 'fires', 'rivers', 'airports'];
 const PINS_KEY = 'weather-map:bar-pins';
 /** On the bar to start (owner, 2026-10-26): the hurricane tracker and lightning only. */
 const DEFAULT_PINS: ShortcutId[] = ['tropics', 'thunder'];

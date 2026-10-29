@@ -17,7 +17,8 @@ const BANDS: [number, string][] = [
   [137, '5'],
 ];
 
-const windText = (kt: number, s: AppState) => (s.windUnit === 'kmh' ? `${Math.round(kt * 1.852)} km/h` : `${Math.round(kt * 1.15078)} mph`);
+const windText = (kt: number, s: AppState) =>
+  s.windUnit === 'kt' ? `${Math.round(kt)} kt` : s.windUnit === 'kmh' ? `${Math.round(kt * 1.852)} km/h` : `${Math.round(kt * 1.15078)} mph`;
 const ago = (ms: number) => {
   const min = Math.round((Date.now() - ms) / 60_000);
   return min < 60 ? `${Math.max(1, min)} min ago` : `${Math.round(min / 60)} h ago`;
@@ -312,7 +313,7 @@ function intensityChart(storm: Storm, groups: Set<ModelGroup>, s: AppState): SVG
     );
   }
   const unit = el('text', { x: pad.l, y: pad.t + 8, class: 'chart-label' });
-  unit.textContent = s.windUnit === 'kmh' ? 'kt (×1.85 = km/h)' : 'kt (×1.15 = mph)';
+  unit.textContent = s.windUnit === 'kt' ? 'kt' : s.windUnit === 'kmh' ? 'kt (×1.85 = km/h)' : 'kt (×1.15 = mph)';
   svg.append(unit);
   return svg;
 }

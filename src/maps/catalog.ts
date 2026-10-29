@@ -72,7 +72,11 @@ const imperial = (u: Units) => u.temp === 'F';
 const tempUnit = (u: Units, fTicks: number[], cTicks: number[]) =>
   u.temp === 'F' ? unit('°F', (c) => (c * 9) / 5 + 32, (f) => ((f - 32) * 5) / 9, fTicks) : same('°C', cTicks);
 const speedUnit = (u: Units, mphTicks: number[], kmhTicks: number[]) =>
-  u.wind === 'mph' ? unit('mph', (ms) => ms * 2.236936, (m) => m / 2.236936, mphTicks) : unit('km/h', (ms) => ms * 3.6, (k) => k / 3.6, kmhTicks);
+  u.wind === 'mph'
+    ? unit('mph', (ms) => ms * 2.236936, (m) => m / 2.236936, mphTicks)
+    : u.wind === 'kt'
+      ? unit('kt', (ms) => ms * 1.943844, (k) => k / 1.943844, mphTicks.map((v) => Math.round(v * 0.868976)))
+      : unit('km/h', (ms) => ms * 3.6, (k) => k / 3.6, kmhTicks);
 
 /* ---------- ramps (base units) ---------- */
 

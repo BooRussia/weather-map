@@ -1,10 +1,11 @@
 import { TrafficLayer } from '../map/trafficLayer';
+import { windLabel } from '../util/units';
 import { canNotify } from '../util/notify';
 import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
 import type { ShortcutId } from './barShortcuts';
-import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, fireMark, gaugeMark, hurricaneMark, layersIcon, outlookMark, rainMark, stormTrackMark, tackIcon, windIcon } from './icons';
+import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, fireMark, gaugeMark, hurricaneMark, layersIcon, outlookMark, planeMark, rainMark, stormTrackMark, tackIcon, windIcon } from './icons';
 import { mapThumb } from './mapThumbs';
 
 /** Where everything on the map comes from (the credits line under the map names them too). */
@@ -279,14 +280,14 @@ export class LayersMenu {
     });
     members.classList.add('is-nested');
     // Wind-speed odds thresholds, in the user's unit: 34, 50, 64 kt.
-    const kmh = s.windUnit === 'kmh';
+    const at = (kt: number, kmh: number, mph: number) => `${s.windUnit === 'kt' ? kt : s.windUnit === 'kmh' ? kmh : mph}+`;
     const odds = segmented<'0' | '34' | '50' | '64'>(
       'Wind-speed odds',
       [
         { value: '0', label: 'Off' },
-        { value: '34', label: kmh ? '63+' : '39+' },
-        { value: '50', label: kmh ? '93+' : '58+' },
-        { value: '64', label: kmh ? '119+' : '74+' },
+        { value: '34', label: at(34, 63, 39) },
+        { value: '50', label: at(50, 93, 58) },
+        { value: '64', label: at(64, 119, 74) },
       ],
       String(t.windProb) as '0' | '34' | '50' | '64',
       (v) => set({ windProb: Number(v) as typeof t.windProb }),
@@ -295,7 +296,7 @@ export class LayersMenu {
     const oddsRow = h(
       'div',
       { class: 'row row-stack' },
-      h('span', { class: 'row-label' }, 'Wind-speed odds', h('span', { class: 'row-sub' }, `Chance of winds this strong (${kmh ? 'km/h' : 'mph'}), 5 days`)),
+      h('span', { class: 'row-label' }, 'Wind-speed odds', h('span', { class: 'row-sub' }, `Chance of winds this strong (${windLabel(s.windUnit)}), 5 days`)),
       odds,
     );
     return [
@@ -501,7 +502,7 @@ export class LayersMenu {
     const temp = segmented('Temperature', [{ value: 'F', label: '°F' }, { value: 'C', label: '°C' }], s.tempUnit, (v) =>
       this.store.set({ tempUnit: v }),
     );
-    const wind = segmented('Wind', [{ value: 'mph', label: 'mph' }, { value: 'kmh', label: 'km/h' }], s.windUnit, (v) =>
+    const wind = segmented('Wind', [{ value: 'mph', label: 'mph' }, { value: 'kmh', label: 'km/h' }, { value: 'kt', label: 'kt' }], s.windUnit, (v) =>
       this.store.set({ windUnit: v }),
     );
     temp.classList.add('seg-compact');
@@ -656,6 +657,12 @@ export class LayersMenu {
         { class: 'group' },
         this.layer('fires', 'Wildfires', fireMark, 'is-fire', 'Burning now, with their edges'),
         this.layer('rivers', 'River flooding', gaugeMark, 'is-precip', 'River gauges by flood stage'),
+      ),
+      h('p', { class: 'group-label' }, 'Aviation'),
+      h(
+        'div',
+        { class: 'group' },
+        this.layer('airports', 'Airport weather', planeMark, 'is-blue', 'METARs and TAFs · VFR green, MVFR blue, IFR red, LIFR magenta'),
       ),
     ];
     if (this.pins) rows.push(h('p', { class: 'group-note' }, svg(tackIcon), 'Pin a layer to keep its switch on the bar, right of the timeline.'));
