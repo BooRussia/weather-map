@@ -25,6 +25,12 @@ export function renderCapsule(c: Conditions | null, s: AppState): void {
   renderChips(c, s);
   renderSparks(c, s);
   renderTrend(c, s);
+  placePeakLetters();
+  // And again whenever the graphs change size or come into view (the banner's size, the window's).
+  if (!trendWatch) {
+    trendWatch = new ResizeObserver(() => placePeakLetters());
+    trendWatch.observe($('#cap-trend'));
+  }
   renderWeek(c, s);
   // Which graphs show (styles.css): the full banner's follow its strip, the small banner's the setting.
   const wrap = $('.cap-wrap');
@@ -188,8 +194,9 @@ function sparkline(values: number[], stroke: string | [string, string], minSpan:
     });
     if (days.peak != null) {
       s.append(dot(x(days.peak), y(values[days.peak]), '#ffffff', 6.5));
-      // Where the peak dot sits, down the graph, 0..1: its letter hangs just under it.
-      s.dataset.peakY = (y(values[days.peak]) / H).toFixed(3);
+      // The line's points and the peak, for setting its letter clear of the line once it's laid out.
+      s.dataset.points = values.map((v, i) => `${(x(i) / W).toFixed(4)},${(y(v) / H).toFixed(4)}`).join(' ');
+      s.dataset.peak = String(days.peak);
     }
   }
   const now = marks.now;
@@ -211,8 +218,8 @@ interface Spark {
   say: string;
   /** The ten days': the peak day's name and date (its chart opens on that day). */
   day?: { name: string; date: string };
-  /** The ten days': the peak day's first letter, and where its dot is along the line, 0..1. */
-  letter?: { text: string; at: number };
+  /** The ten days': the peak day's first letter (set under its dot by placePeakLetters). */
+  letter?: { text: string };
 }
 
 function sparkButtons(cells: Spark[]): HTMLElement[] {
@@ -233,18 +240,68 @@ function sparkButtons(cells: Spark[]): HTMLElement[] {
       h('span', { class: 'spark-value' }, svg(k.icon), k.value),
       // The peak day's first letter just under its white dot (owner, 2026-10-29: a letter under every dot
       // was too busy, and a row of them under the graph sat too far from their dots).
-      k.letter ? h('span', { class: 'spark-plot' }, k.line, peakLetter(k.letter, Number(k.line.dataset.peakY ?? 0))) : k.line,
+      k.letter ? h('span', { class: 'spark-plot' }, k.line, h('span', { class: 'spark-letter', 'aria-hidden': 'true' }, k.letter.text)) : k.line,
     );
     (b.querySelector('.spark-value') as HTMLElement).style.color = k.color;
     return b;
   });
 }
 
-function peakLetter(letter: { text: string; at: number }, y: number): HTMLElement {
-  const e = h('span', { class: 'spark-letter', 'aria-hidden': 'true' }, letter.text);
-  e.style.left = `${(letter.at * 100).toFixed(2)}%`;
-  e.style.top = `calc(${(y * 100).toFixed(1)}% + 4px)`;
-  return e;
+let trendWatch: ResizeObserver | null = null;
+
+/** Clear space between a letter and the line or dots above it, px. */
+const LETTER_GAP = 2;
+/** How far below its point the line (half its stroke) and a day's dot (its radius) reach, px; the peak dot is bigger. */
+const LINE_REACH = 1;
+const DOT_REACH = 2;
+const PEAK_REACH = 3.5;
+
+/**
+ * Where a peak's letter goes (owner, 2026-10-29: close under its dot, but never on the line): centered
+ * under the dot, its top just clear of the lowest part of the line or any dot across the letter's
+ * width. A steep drop beside the peak pushes it down; a gentle one keeps it close. In px, from the
+ * graph's top left, for a graph `w` by `h` px; `points` are 0..1 across and down.
+ */
+export function letterSpot(points: [number, number][], peak: number, w: number, h: number, halfWidth: number): { left: number; top: number } {
+  const px = points.map(([x, y]) => [x * w, y * h] as [number, number]);
+  const cx = px[peak][0];
+  const a = cx - halfWidth;
+  const b = cx + halfWidth;
+  let low = px[peak][1] + PEAK_REACH;
+  for (let i = 0; i < px.length; i++) {
+    const [x, y] = px[i];
+    if (x >= a && x <= b) low = Math.max(low, y + (i === peak ? PEAK_REACH : DOT_REACH));
+    const next = px[i + 1];
+    if (!next || next[0] < a || x > b) continue;
+    // A straight segment is lowest at one end of the stretch that's under the letter.
+    for (const at of [Math.max(a, x), Math.min(b, next[0])]) {
+      const f = next[0] > x ? (at - x) / (next[0] - x) : 0;
+      low = Math.max(low, y + (next[1] - y) * f + LINE_REACH);
+    }
+  }
+  return { left: cx, top: low + LETTER_GAP };
+}
+
+/** Sets each ten-day graph's peak letter clear of its line, and keeps room for it under the graph. Needs layout. */
+export function placePeakLetters(): void {
+  for (const plot of document.querySelectorAll<HTMLElement>('#cap-trend .spark-plot')) {
+    const line = plot.querySelector<SVGSVGElement>('.spark-line');
+    const letter = plot.querySelector<HTMLElement>('.spark-letter');
+    if (!line?.dataset.points || !letter) continue;
+    // Not shown (the small banner): no room kept.
+    if (!letter.offsetParent) {
+      plot.style.marginBottom = '';
+      continue;
+    }
+    const { width: w, height: h } = line.getBoundingClientRect();
+    if (!w || !h) continue;
+    const points = line.dataset.points.split(' ').map((p) => p.split(',').map(Number) as [number, number]);
+    const spot = letterSpot(points, Number(line.dataset.peak), w, h, letter.offsetWidth / 2 + 1);
+    letter.style.left = `${spot.left.toFixed(1)}px`;
+    letter.style.top = `${spot.top.toFixed(1)}px`;
+    // However far down the letter had to go, the graph keeps room for it.
+    plot.style.marginBottom = `${Math.max(0, spot.top + letter.offsetHeight - h).toFixed(1)}px`;
+  }
 }
 
 const unitsFor = (s: AppState) => ({
@@ -354,7 +411,7 @@ function renderTrend(c: Conditions | null, s: AppState): void {
   const humid = days.map((x) => x.humidity);
   const at = (i: number | null) => (i == null ? undefined : { name: days[i].name, date: days[i].d.date });
   const initials = days.map((x) => DOW[new Date(`${x.d.date}T12:00:00Z`).getUTCDay()][0]);
-  const letters = (peak: number | null) => (peak == null ? undefined : { text: initials[peak], at: peak / (days.length - 1) });
+  const letters = (peak: number | null) => (peak == null ? undefined : { text: initials[peak] });
   const hot = peakOf(his.map((f) => f - Math.min(...his) + 1));
   const windy = peakOf(winds);
   const wet = peakOf(pops);

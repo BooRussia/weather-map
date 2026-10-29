@@ -5536,14 +5536,14 @@ body.phone .cap-wrap.is-compact .wk-hi {
 }
 
 /*
- * The ten days' graphs: the peak day's first letter, white, a few px under its white dot. The peak is
- * the graph's highest point, so it's in the top half and the letter hangs at most a little below.
+ * The ten days' graphs: the peak day's first letter, white, just under its white dot but clear of the
+ * line (capsule.ts placePeakLetters sets where, and the room the graph keeps under itself for it).
  */
 .spark-plot {
   position: relative;
   display: block;
   width: 100%;
-  margin: 4px 0 5px;
+  margin-top: 4px;
 }
 
 .spark-plot .spark-line {

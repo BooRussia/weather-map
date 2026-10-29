@@ -5,6 +5,7 @@ import { pollenWord } from '../src/data/airQuality';
 import { fireName } from '../src/data/hazards';
 import { ovationGrid } from '../src/maps/auroraSource';
 import { whatToTell } from '../src/data/watch';
+import { letterSpot } from '../src/ui/capsule';
 
 describe('averages', () => {
   it('averages only real numbers', () => {
@@ -126,5 +127,26 @@ describe('alerts for my location', () => {
     expect(whatToTell([], null, a.memory).memory.rainTold).toBe(false);
     // Couldn't check: nothing changes.
     expect(whatToTell(null, undefined, a.memory).memory.rainTold).toBe(true);
+  });
+});
+
+describe('the ten-day graphs\' peak letter', () => {
+  // Ten points across a 100 × 22 px graph; the peak (index 4) at the top.
+  const across = (ys: number[]) => ys.map((y, i) => [i / 9, y] as [number, number]);
+
+  it('sits just under the dot when the line falls gently beside it', () => {
+    const spot = letterSpot(across([0.5, 0.45, 0.4, 0.3, 0.14, 0.3, 0.4, 0.45, 0.5, 0.5]), 4, 100, 22, 4);
+    expect(spot.left).toBeCloseTo(44.4, 1);
+    // The dot's bottom (3.1 + 3.5) and the gap.
+    expect(spot.top).toBeCloseTo(0.14 * 22 + 3.5 + 2, 1);
+  });
+
+  it('drops below a steep line that would cross the letter', () => {
+    // A spike: the neighbors are at the bottom, so the line plunges right beside the dot.
+    const steep = letterSpot(across([0.86, 0.86, 0.86, 0.86, 0.14, 0.86, 0.86, 0.86, 0.86, 0.86]), 4, 40, 22, 4);
+    const gentle = letterSpot(across([0.5, 0.45, 0.4, 0.3, 0.14, 0.3, 0.4, 0.45, 0.5, 0.5]), 4, 40, 22, 4);
+    expect(steep.top).toBeGreaterThan(gentle.top + 4);
+    // Under the line where it crosses the letter's edge: 4 px out on a segment 4.44 px wide.
+    expect(steep.top).toBeCloseTo((0.14 + (0.86 - 0.14) * (4 / 4.444)) * 22 + 1 + 2, 0);
   });
 });
