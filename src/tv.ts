@@ -1,4 +1,5 @@
 import './styles.css';
+import '@fontsource-variable/manrope';
 import { DEFAULT_LOCATION, type LatLon } from './config';
 import { loadConditions, type Conditions } from './data/conditions';
 import { createStore } from './state';
@@ -15,7 +16,9 @@ import { currentFix } from './util/position';
  *
  * The page is transparent and lays the banner out at DESIGN_WIDTH, then scales it to fill the width
  * it's given. Query: `lat` & `lon` set the place; otherwise the device's location, else the internet
- * connection's (GeoJS), else the default. `units=metric` for °C and km/h.
+ * connection's (GeoJS), else the default. `units=metric` for °C and km/h. `embed=glasshome`: inside
+ * Glass Home's glass top bar (Fire TV session, 2026-10-29), no panel of its own, Manrope, and the
+ * launcher's type hierarchy and accent colors (styles.css, html.embed-glasshome).
  */
 const DESIGN_WIDTH = 1040;
 /** New weather this often; where you are, less often. */
@@ -25,6 +28,7 @@ const RELOCATE_MS = 3 * 60 * 60_000;
 const IP_PLACE = 'https://get.geojs.io/v1/ip/geo.json';
 
 const q = new URLSearchParams(location.search);
+if (q.get('embed') === 'glasshome') document.documentElement.classList.add('embed-glasshome');
 
 async function whereAreYou(): Promise<LatLon> {
   const lat = Number(q.get('lat'));

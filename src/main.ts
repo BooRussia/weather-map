@@ -1550,27 +1550,18 @@ async function main(): Promise<void> {
       showNote('Aviation advisories are unavailable right now.');
     }
   };
-  const AIRSPACE_ZOOM = 7;
-  let airspaceKey = '';
-  let airspaceCtrl: AbortController | null = null;
+  // Class airspace: all of it, once a day (it changes on the 56-day chart cycle), drawn from zoom 7.
+  let airspaceAt = 0;
   const loadAirspace = async () => {
-    if (!store.get().layers.airspace || map.getZoom() < AIRSPACE_ZOOM) return;
-    // A one-degree grid around the view, so small pans reuse what's loaded (airspace doesn't change by the hour).
-    const b = map.getBounds();
-    const area = { west: Math.floor(b.getWest()) - 1, south: Math.floor(b.getSouth()) - 1, east: Math.ceil(b.getEast()) + 1, north: Math.ceil(b.getNorth()) + 1 };
-    const key = Object.values(area).join(',');
-    if (key === airspaceKey) return;
-    airspaceCtrl?.abort();
-    const ctrl = new AbortController();
-    airspaceCtrl = ctrl;
+    if (!store.get().layers.airspace || Date.now() - airspaceAt < 24 * 3_600_000) return;
+    airspaceAt = Date.now();
     try {
-      restrictionsLayer.setAirspace(await getAirspace(area, ctrl.signal));
-      airspaceKey = key;
+      restrictionsLayer.setAirspace(await getAirspace());
     } catch {
-      if (!ctrl.signal.aborted) showNote('Airspace is unavailable right now.');
+      airspaceAt = 0;
+      showNote('Airspace is unavailable right now.');
     }
   };
-  map.on('moveend', () => void loadAirspace());
 
   setInterval(() => {
     void loadFires();

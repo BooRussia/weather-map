@@ -175,6 +175,8 @@ function sparkline(values: number[], stroke: string | [string, string], minSpan:
   }
   const d = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
   const days = marks.days;
+  // The area under the line: unfilled except where a style asks for it (the TV's glass bar).
+  s.append(el('path', { d: `${d}L${W} ${H}L0 ${H}Z`, class: 'spark-area', fill: 'none', stroke: 'none' }));
   s.append(
     el('path', {
       d,

@@ -1,0 +1,40 @@
+name: Airspace
+
+# The FAA's class airspace service shares one request quota among all its users, so the app reads a
+# daily copy (scripts/airspace.mjs) from the `airspace` branch instead of asking per map view.
+# Airspace changes only on the 56-day chart cycle.
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: airspace-data
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Build airspace.json
+        run: node scripts/airspace.mjs out/airspace.json
+      - name: Publish to the airspace branch
+        run: |
+          cd out
+          git init -q -b airspace
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add airspace.json
+          git commit -q -m "Airspace $(date -u +%Y-%m-%d)"
+          # One commit, replaced each run: the branch never grows.
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" airspace

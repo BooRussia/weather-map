@@ -6900,3 +6900,107 @@ body.tv .cap-temp {
   color: var(--muted);
   font-weight: 500;
 }
+
+/*
+ * ---------- the TV banner inside Glass Home's glass top bar (tv.html?embed=glasshome) ----------
+ * Fire TV session, 2026-10-29: the launcher draws one frosted strip across the top and the banner sits
+ * in it, so no panel of its own; Manrope, and the launcher's own hierarchy and accents, which read on
+ * light glass.
+ */
+html.embed-glasshome {
+  --gh-1: #ffffff;
+  --gh-2: rgba(255, 255, 255, 0.7);
+  --gh-3: rgba(255, 255, 255, 0.46);
+  --gh-rule: rgba(255, 255, 255, 0.1);
+}
+
+html.embed-glasshome body.tv {
+  font-family: 'Manrope Variable', 'Manrope', sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--gh-1);
+}
+
+html.embed-glasshome body.tv .cap-wrap {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html.embed-glasshome body.tv .cap-wrap::before,
+html.embed-glasshome body.tv .cap-wrap::after {
+  display: none;
+}
+
+html.embed-glasshome body.tv .cap-place,
+html.embed-glasshome body.tv .wk-hi {
+  color: var(--gh-1);
+  font-weight: 700;
+}
+
+html.embed-glasshome body.tv .cap-temp {
+  color: var(--gh-1);
+  font-weight: 400;
+  letter-spacing: -0.045em;
+}
+
+html.embed-glasshome body.tv .cap-cond,
+html.embed-glasshome body.tv .cap-hilo,
+html.embed-glasshome body.tv .wk-lo,
+html.embed-glasshome body.tv .wk:not(:first-child) .wk-day {
+  color: var(--gh-2);
+}
+
+html.embed-glasshome body.tv .wk:first-child .wk-day {
+  color: var(--gh-1);
+}
+
+html.embed-glasshome body.tv .spark-label {
+  color: var(--gh-3);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+html.embed-glasshome body.tv .wk-pop,
+html.embed-glasshome body.tv .cap-soon {
+  color: #7cc4ff;
+}
+
+/* The rules: between the place and the days, and between the days and the graphs. */
+html.embed-glasshome body.tv .cap-week:not([hidden]),
+html.embed-glasshome body.tv .cap-sparks:not([hidden]) {
+  border-color: var(--gh-rule);
+}
+
+/* Each graph in its accent, line and number alike, over a faint fill. */
+html.embed-glasshome body.tv .spark[data-metric='conditions'] {
+  --gh-accent: #ffcf5c;
+}
+
+html.embed-glasshome body.tv .spark[data-metric='wind'] {
+  --gh-accent: #7cc4ff;
+}
+
+html.embed-glasshome body.tv .spark[data-metric='precip'] {
+  --gh-accent: #a78bfa;
+}
+
+html.embed-glasshome body.tv .spark[data-metric='humidity'] {
+  --gh-accent: #5ee6a8;
+}
+
+html.embed-glasshome body.tv .spark-value {
+  color: var(--gh-accent) !important;
+}
+
+html.embed-glasshome body.tv .spark-line path:not(.spark-area) {
+  stroke: var(--gh-accent);
+}
+
+html.embed-glasshome body.tv .spark-area {
+  fill: var(--gh-accent);
+  fill-opacity: 0.14;
+}

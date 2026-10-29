@@ -9,3 +9,6 @@ dist
 # Local hurricane and camera data for dev (scripts/tropical.mjs, scripts/cameras.mjs)
 public/tropical.dev.json
 public/cameras.dev.json
+
+# Screenshots and copy for the landing page (shared with the website session, not shipped)
+/marketing/

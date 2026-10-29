@@ -79,12 +79,13 @@ export function flyCard(
     // The hour's UTC instant, from the place's clock and its offset.
     const ms = Date.parse(`${x.time}:00Z`) - om.utcOffsetSeconds * 1000;
     const up = drone ? aloft?.hours.find((a) => a.time === x.time)?.wind120 : null;
-    const windKt = up ? up.kt : mphToKt(x.windMph);
+    // Whole knots, as shown, so a column reads the way it's judged.
+    const windKt = Math.round(up ? up.kt : mphToKt(x.windMph));
     const fromDeg = up ? up.dir : x.windFromDeg;
     const verdict = assess(
       {
         windKt,
-        gustKt: Math.max(windKt, mphToKt(x.gustMph)),
+        gustKt: Math.max(windKt, Math.round(mphToKt(x.gustMph))),
         fromDeg,
         rainPct: x.precipProbability,
         visSM: drone ? x.visibilityM / 1609.344 : null,
@@ -94,7 +95,7 @@ export function flyCard(
       profile,
       spot.facing,
     );
-    return { x, i, windKt, gustKt: mphToKt(x.gustMph), fromDeg, verdict };
+    return { x, i, windKt, gustKt: Math.round(mphToKt(x.gustMph)), fromDeg, verdict };
   });
   const pick = rows[Math.max(0, Math.min(rows.length - 1, chosen))];
 
