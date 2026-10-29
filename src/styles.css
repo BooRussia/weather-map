@@ -5461,30 +5461,28 @@ body.phone .cap-wrap.is-compact[data-small-graphs='today'] #cap-trend {
   display: none;
 }
 
+/* It wraps rather than cutting off (owner, 2026-10-29), the icon by its first line. */
 body.phone .cap-soon:not([hidden]) {
   flex-basis: 100%;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
   gap: 5px;
   min-width: 0;
   margin-top: 4px;
   font-size: var(--fs-foot);
   font-weight: 600;
+  line-height: 1.3;
   color: var(--c-precip);
-  white-space: nowrap;
+  text-wrap: balance;
 }
 
 body.phone .cap-soon .icon {
   flex: none;
   width: 14px;
   height: 14px;
+  margin-top: 1px;
   stroke-width: 2.2;
-}
-
-body.phone .cap-soon > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 body.phone .cap-wrap.is-compact .cap-soon:not([hidden]) {
@@ -5537,28 +5535,23 @@ body.phone .cap-wrap.is-compact .wk-hi {
   font-size: var(--fs-foot);
 }
 
-/* The ten days' graphs: each dot's day as its first letter under it, the peak's in white. */
+/* The ten days' graphs: the peak day's first letter, white, under its white dot. */
 .spark-days {
   position: relative;
   display: block;
   width: 100%;
-  height: 12px;
+  height: 13px;
   margin-top: 3px;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 12px;
-  color: var(--faint, var(--muted));
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 13px;
+  color: var(--fg);
 }
 
 .spark-days > span {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
-}
-
-.spark-days > .is-peak {
-  color: var(--fg);
-  font-weight: 800;
 }
 
 body.phone .cap-wrap.is-compact .spark-days {
@@ -6302,5 +6295,46 @@ body.is-gripping * {
 @keyframes ctrl-busy {
   to {
     opacity: 0.35;
+  }
+}
+
+/*
+ * The full banner laid out sideways (owner, 2026-10-29): the left panel has room to spare, so the pin,
+ * the location arrow, and search sit in a row at its foot, under the place, and the days and graphs
+ * run all the way to the right edge.
+ */
+@container head (min-width: 760px) {
+  body.phone .cap-wrap:not(.is-compact) {
+    padding-right: 16px;
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .capsule {
+    grid-row: 1;
+    align-self: center;
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .cap-pin,
+  body.phone .cap-wrap:not(.is-compact) .cap-locate,
+  body.phone.search-up .cap-wrap:not(.is-compact) .cap-search {
+    position: static;
+    grid-column: 1;
+    grid-row: 2;
+    align-self: end;
+    justify-self: start;
+    width: 30px;
+    height: 30px;
+    margin-bottom: 2px;
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .cap-locate {
+    margin-left: 40px;
+  }
+
+  body.phone.search-up .cap-wrap:not(.is-compact) .cap-search {
+    margin-left: 80px;
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .cap-soon:not([hidden]) {
+    text-align: left;
   }
 }

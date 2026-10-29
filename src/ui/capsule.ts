@@ -207,8 +207,8 @@ interface Spark {
   say: string;
   /** The ten days': the peak day's name and date (its chart opens on that day). */
   day?: { name: string; date: string };
-  /** The ten days': each dot's day as its first letter, and which is the peak. */
-  letters?: { all: string[]; peak: number | null };
+  /** The ten days': the peak day's first letter, and where its dot is along the line, 0..1. */
+  letter?: { text: string; at: number };
 }
 
 function sparkButtons(cells: Spark[]): HTMLElement[] {
@@ -228,25 +228,18 @@ function sparkButtons(cells: Spark[]): HTMLElement[] {
       // The icon tells the numbers apart in the small banner, where the labels go.
       h('span', { class: 'spark-value' }, svg(k.icon), k.value),
       k.line,
-      // Under each dot its day's first letter (owner, 2026-10-29: so you can tell without counting), the peak's in white.
-      k.letters ? days(k.letters) : null,
+      // The peak day's first letter under its white dot (owner, 2026-10-29: a letter under every dot was too busy).
+      k.letter ? peakLetter(k.letter) : null,
     );
     (b.querySelector('.spark-value') as HTMLElement).style.color = k.color;
     return b;
   });
 }
 
-function days(letters: { all: string[]; peak: number | null }): HTMLElement {
-  const n = letters.all.length;
-  return h(
-    'span',
-    { class: 'spark-days', 'aria-hidden': 'true' },
-    ...letters.all.map((l, i) => {
-      const e = h('span', { class: i === letters.peak ? 'is-peak' : '' }, l);
-      e.style.left = `${((i / Math.max(1, n - 1)) * 100).toFixed(2)}%`;
-      return e;
-    }),
-  );
+function peakLetter(letter: { text: string; at: number }): HTMLElement {
+  const e = h('span', {}, letter.text);
+  e.style.left = `${(letter.at * 100).toFixed(2)}%`;
+  return h('span', { class: 'spark-days', 'aria-hidden': 'true' }, e);
 }
 
 const unitsFor = (s: AppState) => ({
@@ -326,8 +319,8 @@ function peakOf(values: number[]): number | null {
 }
 
 /**
- * The same four over the ten days (owner, 2026-10-29), a dot a day with its day's letter under it, the
- * peak day's white, each named for what it shows (Warmest, Windiest, Rainiest, Most humid) so the white
+ * The same four over the ten days (owner, 2026-10-29), a dot a day, the peak day's white with its first
+ * letter under it, each named for what it shows (Warmest, Windiest, Rainiest, Most humid) so the white
  * dot explains itself. Each opens its chart on that day.
  */
 function renderTrend(c: Conditions | null, s: AppState): void {
@@ -356,7 +349,7 @@ function renderTrend(c: Conditions | null, s: AppState): void {
   const humid = days.map((x) => x.humidity);
   const at = (i: number | null) => (i == null ? undefined : { name: days[i].name, date: days[i].d.date });
   const initials = days.map((x) => DOW[new Date(`${x.d.date}T12:00:00Z`).getUTCDay()][0]);
-  const letters = (peak: number | null) => ({ all: initials, peak });
+  const letters = (peak: number | null) => (peak == null ? undefined : { text: initials[peak], at: peak / (days.length - 1) });
   const hot = peakOf(his.map((f) => f - Math.min(...his) + 1));
   const windy = peakOf(winds);
   const wet = peakOf(pops);
@@ -378,7 +371,7 @@ function renderTrend(c: Conditions | null, s: AppState): void {
         ),
         say: `Warmest of the ten days: ${formatTemp(Math.max(...his), s.tempUnit)}${on(hot)}`,
         day: at(hot),
-        letters: letters(hot),
+        letter: letters(hot),
       },
       {
         metric: 'wind',
@@ -389,7 +382,7 @@ function renderTrend(c: Conditions | null, s: AppState): void {
         line: sparkline(winds.map(wind), ink('#64d2ff'), wind(8), { days: { peak: windy } }),
         say: `Windiest of the ten days: ${formatWind(Math.max(...winds), s.windUnit)}${on(windy)}`,
         day: at(windy),
-        letters: letters(windy),
+        letter: letters(windy),
       },
       {
         metric: 'precip',
@@ -400,7 +393,7 @@ function renderTrend(c: Conditions | null, s: AppState): void {
         line: sparkline(pops, ink('#7d7aff'), 40, { days: { peak: wet } }),
         say: wet == null ? 'No rain in the ten days' : `Likeliest rain of the ten days: ${Math.round(Math.max(...pops))}%${on(wet)}`,
         day: at(wet),
-        letters: letters(wet),
+        letter: letters(wet),
       },
       {
         metric: 'humidity',
@@ -411,7 +404,7 @@ function renderTrend(c: Conditions | null, s: AppState): void {
         line: sparkline(humid, ink('#30d158'), 40, { days: { peak: muggy } }),
         say: `Most humid of the ten days: ${Math.round(Math.max(...humid))}%${on(muggy)}`,
         day: at(muggy),
-        letters: letters(muggy),
+        letter: letters(muggy),
       },
     ]),
   );
