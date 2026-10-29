@@ -72,7 +72,7 @@ import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
 import { tempColor, WeatherPage } from './ui/page';
-import { bannerHandle, dockHandle, openSearchPop, phoneLayout, refitBar } from './ui/phoneLayout';
+import { bannerHandle, bannerSwipe, dockHandle, openSearchPop, phoneLayout, refitBar } from './ui/phoneLayout';
 import { PIN, SearchBox } from './ui/search';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
@@ -1457,7 +1457,7 @@ async function main(): Promise<void> {
       tagsLayer.setAccent(token('--accent'));
       camerasLayer.setAccent(token('--accent'));
     }
-    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme || s.bannerForecast !== prev.bannerForecast || s.bannerGraphs !== prev.bannerGraphs) {
+    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme || s.bannerForecast !== prev.bannerForecast || s.bannerGraphs !== prev.bannerGraphs || s.smallBanner !== prev.smallBanner) {
       renderAll();
       trip?.refresh();
       rerenderStorm();
@@ -1520,6 +1520,23 @@ async function main(): Promise<void> {
   mirror.observe($('#storm-pill'), { attributes: true, childList: true, subtree: true, characterData: true });
   mirrorBanner();
   const dockSize = dockHandle();
+  // The small banner's row swaps, graphs and forecast, with a sideways swipe; said once, the first
+  // time the banner is small.
+  bannerSwipe(() => store.set({ smallBanner: store.get().smallBanner === 'graphs' ? 'forecast' : 'graphs' }));
+  const SWIPE_HINT_KEY = 'weather-map:hint-banner-swipe';
+  const hintSwipe = () => {
+    if (!capWrap.classList.contains('is-compact')) return;
+    try {
+      if (localStorage.getItem(SWIPE_HINT_KEY)) return;
+      localStorage.setItem(SWIPE_HINT_KEY, '1');
+    } catch {
+      return;
+    }
+    showNote('Swipe sideways on the banner to switch between the graphs and the forecast.');
+    hintWatch.disconnect();
+  };
+  const hintWatch = new MutationObserver(hintSwipe);
+  hintWatch.observe(capWrap, { attributes: true, attributeFilter: ['class'] });
   // The little graphs along the banner's foot do the same, one per metric: today's, or the ten
   // days' on their peak day.
   for (const graphs of [$('#cap-sparks'), $('#cap-trend')]) {

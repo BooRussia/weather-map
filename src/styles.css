@@ -5312,6 +5312,52 @@ body.phone .cap-wrap.is-compact[data-small-graphs='today'] #cap-trend {
   display: none;
 }
 
+/*
+ * The small banner's forecast (owner, 2026-10-29: swap the graphs for the days or the hours, a sideways
+ * swipe on the banner): one row of as many as fit, not scrolling, since sideways is the swipe's.
+ */
+body.phone .cap-wrap.is-compact[data-small-view='forecast'] #cap-sparks,
+body.phone .cap-wrap.is-compact[data-small-view='forecast'] #cap-trend {
+  display: none;
+}
+
+body.phone .cap-wrap.is-compact[data-small-view='forecast'] .cap-week:not([hidden]) {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  /* The first row only: the rest wrap into rows of no height, out of sight. */
+  grid-template-rows: auto;
+  grid-auto-rows: 0;
+  gap: 0 2px;
+  overflow: hidden;
+  margin-top: 2px;
+  padding: 0 26px;
+  touch-action: none;
+}
+
+body.phone .cap-wrap.is-compact .wk {
+  padding: 2px 0 3px;
+}
+
+body.phone .cap-wrap.is-compact .wk-day {
+  font-size: 11px;
+}
+
+body.phone .cap-wrap.is-compact .wk-icon .glyph {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+body.phone .cap-wrap.is-compact .wk-pop,
+body.phone .cap-wrap.is-compact .wk-lo {
+  display: none;
+}
+
+body.phone .cap-wrap.is-compact .wk-hi {
+  font-size: var(--fs-foot);
+}
+
 /* The ten days' graphs name their peak day under its white dot (left-aligned at the start, right at the end). */
 .spark-peak {
   display: block;
@@ -5578,6 +5624,13 @@ body.phone .dock {
     grid-column: 2;
     grid-row: 1;
     gap: 24px;
+    margin: 0;
+    padding: 0;
+  }
+
+  body.phone .cap-wrap.is-compact[data-small-view='forecast'] .cap-week:not([hidden]) {
+    grid-column: 2;
+    grid-row: 1;
     margin: 0;
     padding: 0;
   }

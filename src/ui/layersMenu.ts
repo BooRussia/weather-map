@@ -539,6 +539,19 @@ export class LayersMenu {
       (v) => this.store.set({ bannerGraphs: v }),
     );
     graphs.classList.add('seg-compact');
+    const small = segmented<'graphs' | 'forecast'>(
+      'Small banner',
+      [
+        { value: 'graphs', label: 'Graphs' },
+        { value: 'forecast', label: 'Forecast' },
+      ],
+      s.smallBanner,
+      (v) => {
+        this.store.set({ smallBanner: v });
+        this.render();
+      },
+    );
+    small.classList.add('seg-compact');
     const phone = document.body.classList.contains('phone');
     return [
       h('p', { class: 'group-label' }, 'Look'),
@@ -549,7 +562,9 @@ export class LayersMenu {
         { class: 'group' },
         h('div', { class: 'row row-units' }, h('span', { class: 'row-label' }, 'Units'), temp, wind),
         phone ? segRow('Banner forecast', strip) : null,
-        phone ? segRow('Small banner graphs', graphs) : null,
+        // The small banner's row (a sideways swipe on it swaps them too), and which graphs.
+        phone ? segRow('Small banner', small) : null,
+        phone && s.smallBanner === 'graphs' ? segRow('Small banner graphs', graphs) : null,
         switchRow({ label: 'Thunder sound', checked: s.sound, onChange: (on) => this.store.set({ sound: on }) }),
         h('div', { class: 'row' }, h('span', { class: 'row-label' }, 'Where the data comes from'), more),
         this.dataOpen ? h('div', { id: 'data-note', class: 'pop-note data-note' }, h('p', {}, DATA_NOTE), creditsNow()) : null,

@@ -9,6 +9,8 @@ export type Theme = 'liquid' | 'classic';
 export type BannerForecast = 'daily' | 'hourly';
 /** What the small banner's graphs cover: today by the hour, or the ten days, a dot a day. */
 export type BannerGraphs = 'today' | 'week';
+/** What the small banner shows under the place: the graphs, or the strip (the days or the hours). */
+export type SmallBanner = 'graphs' | 'forecast';
 import type { TempUnit, WindUnit } from './util/units';
 
 /** What the Hurricanes layer shows (the dropdown under it in Layers). */
@@ -95,6 +97,8 @@ export interface AppState {
    * banner's graphs follow its strip instead: the days under the days, the hours under the hours.
    */
   bannerGraphs: BannerGraphs;
+  /** The small banner's row (owner, 2026-10-29): the graphs (default) or the forecast; a sideways swipe on it swaps them. */
+  smallBanner: SmallBanner;
   /**
    * Moving the map moves the readout to the center cross. Off (the default, the pin on the weather
    * card): the readout stays on your location, or the place it shows, while you look around.
@@ -139,6 +143,7 @@ interface Prefs {
   theme?: Theme;
   bannerForecast?: BannerForecast;
   bannerGraphs?: BannerGraphs;
+  smallBanner?: SmallBanner;
   /** The weather card's pin (2026-10-09: pinned by default; replaces the old followMap key). */
   pinned?: boolean;
   /** Which hurricane defaults `tropics` and `modelGroups` were saved under (TROPICS_PREFS_V). */
@@ -181,6 +186,7 @@ function writePrefs(s: AppState): void {
       theme: s.theme,
       bannerForecast: s.bannerForecast,
       bannerGraphs: s.bannerGraphs,
+      smallBanner: s.smallBanner,
       pinned: !s.followMap,
       tropicsV: TROPICS_PREFS_V,
       tropics: s.tropics,
@@ -221,6 +227,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     theme: prefs.theme === 'classic' ? 'classic' : 'liquid',
     bannerForecast: prefs.bannerForecast === 'hourly' ? 'hourly' : 'daily',
     bannerGraphs: prefs.bannerGraphs === 'week' ? 'week' : 'today',
+    smallBanner: prefs.smallBanner === 'forecast' ? 'forecast' : 'graphs',
     followMap: prefs.pinned === false,
     tropics: { ...DEFAULT_TROPICS, ...(tropicsCurrent ? prefs.tropics : {}) },
     modelGroups: tropicsCurrent && Array.isArray(prefs.modelGroups) ? prefs.modelGroups : DEFAULT_MODEL_GROUPS,
@@ -253,6 +260,7 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.theme !== undefined ||
         patch.bannerForecast !== undefined ||
         patch.bannerGraphs !== undefined ||
+        patch.smallBanner !== undefined ||
         patch.followMap !== undefined ||
         patch.tropics !== undefined ||
         patch.modelGroups !== undefined ||

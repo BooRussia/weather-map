@@ -29,6 +29,7 @@ export function renderCapsule(c: Conditions | null, s: AppState): void {
   const wrap = $('.cap-wrap');
   wrap.dataset.fullGraphs = s.bannerForecast === 'daily' ? 'week' : 'today';
   wrap.dataset.smallGraphs = s.bannerGraphs;
+  wrap.dataset.smallView = s.smallBanner;
   if (!c) {
     place.textContent = 'Locating';
     temp.textContent = '--°';

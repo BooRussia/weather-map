@@ -230,6 +230,95 @@ function grip(
   );
 }
 
+/** How far a sideways swipe on the small banner goes before it swaps the row. */
+const SWIPE_PX = 36;
+
+/**
+ * A sideways swipe on the small banner swaps its row, the graphs for the forecast and back (owner,
+ * 2026-10-29). The row follows the finger a little and fades; a mouse drags the same way, and a
+ * trackpad swipes sideways. Up and down stay the banner's own sizing drag.
+ */
+export function bannerSwipe(swap: () => void): void {
+  const cap = $('.cap-wrap');
+  let pointer: number | null = null;
+  let x0 = 0;
+  let y0 = 0;
+  let dx = 0;
+  let sideways = false;
+  let swallow = false;
+  const follow = (x: number, ease: boolean) => {
+    for (const row of cap.querySelectorAll<HTMLElement>('#cap-sparks, #cap-trend, #cap-week')) {
+      row.style.transition = ease ? 'transform 0.2s ease-out, opacity 0.2s ease-out' : 'none';
+      row.style.transform = x ? `translateX(${x.toFixed(1)}px)` : '';
+      row.style.opacity = x ? (1 - Math.min(0.6, Math.abs(x) / 100)).toFixed(2) : '';
+    }
+  };
+  const finish = (e: PointerEvent) => {
+    if (e.pointerId !== pointer) return;
+    pointer = null;
+    removeEventListener('pointermove', move, true);
+    removeEventListener('pointerup', finish, true);
+    removeEventListener('pointercancel', finish, true);
+    follow(0, true);
+    if (!sideways) return;
+    swallow = true;
+    setTimeout(() => (swallow = false), 0);
+    if (e.type === 'pointerup' && Math.abs(dx) >= SWIPE_PX) swap();
+  };
+  const move = (e: PointerEvent) => {
+    if (e.pointerId !== pointer) return;
+    dx = e.clientX - x0;
+    if (!sideways) {
+      const dy = e.clientY - y0;
+      // Mostly up or down is the sizing drag's, and once that has hold this lets go.
+      if (document.body.classList.contains('is-gripping')) return finish(new PointerEvent('pointercancel', { pointerId: e.pointerId }));
+      if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      sideways = true;
+    }
+    follow(Math.max(-60, Math.min(60, dx * 0.5)), false);
+  };
+  cap.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !cap.classList.contains('is-compact')) return;
+    if (pointer != null) return;
+    pointer = e.pointerId;
+    x0 = e.clientX;
+    y0 = e.clientY;
+    dx = 0;
+    sideways = false;
+    addEventListener('pointermove', move, true);
+    addEventListener('pointerup', finish, true);
+    addEventListener('pointercancel', finish, true);
+  });
+  // A swipe isn't a tap on the graph or day it started on.
+  cap.addEventListener(
+    'click',
+    (e) => {
+      if (!swallow) return;
+      swallow = false;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    true,
+  );
+  // Trackpads: one sideways swipe, one swap.
+  let sum = 0;
+  let rest = 0;
+  cap.addEventListener(
+    'wheel',
+    (e) => {
+      if (!cap.classList.contains('is-compact') || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      if (e.timeStamp < rest) return;
+      sum += e.deltaX;
+      if (Math.abs(sum) < 60) return;
+      sum = 0;
+      rest = e.timeStamp + 700;
+      swap();
+    },
+    { passive: false },
+  );
+}
+
 const COMPACT_KEY = 'weather-map:banner-compact';
 
 /**
