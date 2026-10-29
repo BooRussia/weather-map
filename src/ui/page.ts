@@ -6,6 +6,7 @@ import { getAloft, type Aloft } from '../data/aloft';
 import { aloftCard } from './aloftCard';
 import { getKp, type KpBlock } from '../data/flyability';
 import { flyCard } from './flyCard';
+import { Arranger, type CardSize } from './pageLayout';
 import { cloudWord, dayHours, hourOfDay, type Metric } from '../data/dayDetail';
 import { moonPhase, moonTimes } from '../data/moon';
 import type { Alert } from '../data/nws';
@@ -34,6 +35,7 @@ import {
   warningIcon,
   windIcon,
   airIcon,
+  slidersIcon,
 } from './icons';
 import { DayDetail } from './dayDetail';
 import { paintMoon } from './moonRender';
@@ -92,6 +94,10 @@ export class WeatherPage {
   private aloftOffset = 0;
   /** The flyability card's hour tapped, from now. */
   private flyHour = 0;
+  /** The cards' order and what's hidden, and Customize (pageLayout.ts). */
+  private readonly arranger: Arranger;
+  /** Something came in while a card was being dragged: draw it once it's dropped. */
+  private stale = false;
   private readonly loading = new Set<string>();
   /** Told the sky's top color while the page is open, null when it closes (the browser's status-bar strip follows it). */
   onTop: ((color: string | null) => void) | null = null;
@@ -99,6 +105,8 @@ export class WeatherPage {
   constructor(private readonly onLayout: (docked: boolean) => void) {
     const body = $('#page-body');
     const openDetail = (e: Event) => {
+      // Customizing: a tap is for moving and hiding, not for charts.
+      if (this.arranger.editing) return;
       const t = (e.target as Element).closest<HTMLElement>('[data-detail]');
       if (t) this.detail.open(t.dataset.detail as Metric, t.dataset.day ?? null, t, t.dataset.feels === '1');
     };
@@ -109,6 +117,16 @@ export class WeatherPage {
         openDetail(e);
       }
     });
+    this.arranger = new Arranger(body, this.scroller, () => this.last && this.render(this.last.c, this.last.s));
+    this.arranger.onDropped = () => {
+      if (!this.stale || !this.last) return;
+      this.stale = false;
+      this.render(this.last.c, this.last.s);
+    };
+    // Customize (owner, 2026-10-29): move and hide the cards; Done puts them back to work.
+    const editBtn = $<HTMLButtonElement>('#page-edit');
+    editBtn.prepend(svg(slidersIcon));
+    editBtn.addEventListener('click', () => this.customize(!this.arranger.editing));
     $('#page-close').append(svg(closeIcon));
     $('#page-close').addEventListener('click', () => this.setOpen(false));
     document.addEventListener('keydown', (e) => {
@@ -128,6 +146,14 @@ export class WeatherPage {
 
   get open(): boolean {
     return this.isOpen;
+  }
+
+  private customize(on: boolean): void {
+    if (this.arranger.editing === on) return;
+    this.arranger.editing = on;
+    $('#page-edit').setAttribute('aria-pressed', String(on));
+    $('#page-edit-text').textContent = on ? 'Done' : 'Customize';
+    if (this.last) this.render(this.last.c, this.last.s);
   }
 
   get docked(): boolean {
@@ -233,6 +259,8 @@ export class WeatherPage {
   setOpen(open: boolean, opener?: HTMLElement): void {
     if (open === this.isOpen) return;
     this.isOpen = open;
+    // Closing the page is done with customizing.
+    if (!open) this.customize(false);
     if (this.wide.matches && !this.drawer) writeFlag(DOCK_KEY, open);
     if (open) {
       // The page takes over from a chart hanging under the banner.
@@ -390,25 +418,34 @@ export class WeatherPage {
     const air = c ? this.later('air', c, () => getAirQuality(c.point)) : undefined;
     const outlooks = c ? this.later('outlooks', c, () => getOutlooks(c.point)) : undefined;
     const yesterday = om?.daily[0] ? new Date(Date.parse(`${om.daily[0].date}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10) : null;
-    $('#page-body').replaceChildren(
-      ...(c?.alerts.map((a) => alertCard(a)) ?? []),
-      ...(om
-        ? [
-            nextRainCard(om, s),
-            hourlyCard(c!, om, s, this.mode, (m) => this.setMode(m)),
-            weekCard(c!, om, s, this.mode),
+    if (this.arranger.dragging) {
+      this.stale = true;
+      return;
+    }
+    const alerts = c?.alerts.map((a) => alertCard(a)) ?? [];
+    if (!om) {
+      $('#page-body').replaceChildren(...alerts, loadingCard(), sources(c));
+      this.scroller.scrollTop = keep;
+      this.detail.update(c, s);
+      return;
+    }
+    this.arranger.place(
+      alerts,
+      [
+            tagged(nextRainCard(om, s), 'nextRain'),
+            tagged(hourlyCard(c!, om, s, this.mode, (m) => this.setMode(m)), 'hourly', 'full'),
+            tagged(weekCard(c!, om, s, this.mode), 'week'),
             ...longCards(c!, om, s, air),
-            tiles(c!, om, s, {
+            ...tiles(c!, om, s, {
               air,
               normal: this.later('normal', c!, () => (om.daily[0] ? getNormal(c!.point, om.daily[0].date) : Promise.resolve(null))),
               outlooks,
             }),
-            tidesCard(this.later('tides', c!, () => (yesterday ? getTides(c!.point, yesterday) : Promise.resolve(null))), om, s),
-            modelsCard(outlooks, s),
-            s.pilotCards ? this.aloft(c!, om) : null,
-            s.pilotCards ? this.fly(c!, om) : null,
-          ].filter((x): x is HTMLElement => x != null)
-        : [loadingCard()]),
+            tagged(tidesCard(this.later('tides', c!, () => (yesterday ? getTides(c!.point, yesterday) : Promise.resolve(null))), om, s), 'tides'),
+            tagged(modelsCard(outlooks, s), 'models'),
+            s.pilotCards ? tagged(this.aloft(c!, om), 'aloft') : null,
+            s.pilotCards ? tagged(this.fly(c!, om), 'fly') : null,
+      ].filter((x): x is HTMLElement => x != null),
       sources(c),
     );
     this.scroller.scrollTop = keep;
@@ -433,7 +470,8 @@ export class WeatherPage {
       'touchstart',
       (e) => {
         const s = this.scroller;
-        tracking = !this.docked && (this.drawer ? s.scrollTop + s.clientHeight >= s.scrollHeight - 2 : s.scrollTop <= 0);
+        // Dragging a card by its handle isn't pushing the page away.
+        tracking = !this.docked && !(e.target as Element).closest('.card-tools') && (this.drawer ? s.scrollTop + s.clientHeight >= s.scrollHeight - 2 : s.scrollTop <= 0);
         startY = e.touches[0].clientY;
       },
       { passive: true },
@@ -475,6 +513,15 @@ function card(head: { icon: string; label: string } | null, ...children: (Node |
     head ? h('h3', { class: 'card-head' }, svg(head.icon), head.label) : null,
     ...children,
   );
+}
+
+/** Names a card for the page's layout (pageLayout.ts): its id, and how much of a row it takes. */
+function tagged<T extends HTMLElement | null>(node: T, id: string, size: CardSize = 'wide'): T {
+  if (node) {
+    node.dataset.card = id;
+    node.dataset.size = size;
+  }
+  return node;
 }
 
 /** Make a card, tile, or row open the day-detail panel. */
@@ -916,7 +963,7 @@ function longCards(c: Conditions, om: PointForecast, s: AppState, air: AirQualit
   // Air quality: the U.S. AQI, its word, where it sits on the scale, and how it compares with yesterday.
   if (air !== null) {
     if (air === undefined) {
-      out.push(card({ icon: airIcon, label: 'Air quality' }, h('p', { class: 'card-text' }, 'Loading air quality')));
+      out.push(tagged(card({ icon: airIcon, label: 'Air quality' }, h('p', { class: 'card-text' }, 'Loading air quality')), 'air'));
     } else {
       const bar = h('div', { class: 'aqi-bar' });
       const dot = h('span', { class: 'range-now' });
@@ -984,6 +1031,9 @@ function longCards(c: Conditions, om: PointForecast, s: AppState, air: AirQualit
       'conditions',
     ),
   );
+  // Air (when there is any), wind, moon, in that order.
+  const ids = out.length === 3 ? ['air', 'wind', 'moon'] : ['wind', 'moon'];
+  out.forEach((el, k) => tagged(el, ids[k] ?? `long${k}`));
   return out;
 }
 
@@ -1039,7 +1089,7 @@ function tiles(
   om: PointForecast,
   s: AppState,
   extra: { air: AirQuality | null | undefined; normal: Normal | null | undefined; outlooks: Outlooks | null | undefined },
-): HTMLElement {
+): HTMLElement[] {
   const cur = om.current;
   const today = om.daily[0];
   const tomorrow = om.daily[1];
@@ -1083,44 +1133,42 @@ function tiles(
   const cloudsNext12 = next12.reduce((sum, hr) => sum + hr.cloudCover, 0) / Math.max(1, next12.length);
 
 
-  return h(
-    'div',
-    { class: 'tiles' },
-    opens(tile(thermoIcon, 'Feels like', h('div', { class: 'tile-value' }, formatTemp(cur.feelsF, s.tempUnit)), h('p', { class: 'tile-note' }, feelsNote)), 'conditions', {
+  return [
+    tagged(opens(tile(thermoIcon, 'Feels like', h('div', { class: 'tile-value' }, formatTemp(cur.feelsF, s.tempUnit)), h('p', { class: 'tile-note' }, feelsNote)), 'conditions', {
       feels: true,
-    }),
-    today && extra.normal ? averagesTile(today, extra.normal, extra.outlooks?.yesterday ?? null, s) : null,
-    opens(tile(
+    }), 'feels', 'tile'),
+    today && extra.normal ? tagged(averagesTile(today, extra.normal, extra.outlooks?.yesterday ?? null, s), 'averages', 'tile') : null,
+    tagged(opens(tile(
       sunMark,
       'UV index',
       h('div', { class: 'tile-value' }, String(uv)),
       h('div', { class: 'tile-sub' }, uvWord(cur.uv)),
       uvBar,
       today ? h('p', { class: 'tile-note' }, `Max today: ${Math.round(today.uvMax)}`) : null,
-    ), 'uv'),
-    opens(tile(
+    ), 'uv'), 'uv', 'tile'),
+    tagged(opens(tile(
       dropIcon,
       'Humidity',
       h('div', { class: 'tile-value' }, `${Math.round(cur.humidity)}%`),
       h('p', { class: 'tile-note' }, `The dew point is ${formatTemp(cur.dewF, s.tempUnit)} right now.`),
-    ), 'humidity'),
-    opens(tile(
+    ), 'humidity'), 'humidity', 'tile'),
+    tagged(opens(tile(
       sunsetIcon,
       nextLabel,
       h('div', { class: 'tile-value' }, nextTime ? clockLabel(nextTime) : '--'),
       sunArc(set > rise ? (nowMin - rise) / (set - rise) : -1),
       otherTime ? h('p', { class: 'tile-note' }, `${otherLabel}: ${clockLabel(otherTime)}`) : null,
-    ), 'uv'),
-    opens(tile(eyeIcon, 'Visibility', h('div', { class: 'tile-value' }, visibilityText(cur.visibilityM, s)), h('p', { class: 'tile-note' }, visNote)), 'visibility'),
-    opens(tile(gaugeIcon, 'Pressure', gauge(cur.pressureHpa, pressure.value, pressure.unit)), 'pressure'),
-    opens(tile(
+    ), 'uv'), 'sun', 'tile'),
+    tagged(opens(tile(eyeIcon, 'Visibility', h('div', { class: 'tile-value' }, visibilityText(cur.visibilityM, s)), h('p', { class: 'tile-note' }, visNote)), 'visibility'), 'visibility', 'tile'),
+    tagged(opens(tile(gaugeIcon, 'Pressure', gauge(cur.pressureHpa, pressure.value, pressure.unit)), 'pressure'), 'pressure', 'tile'),
+    tagged(opens(tile(
       umbrellaIcon,
       'Precipitation',
       h('div', { class: 'tile-value' }, amountText(rain24, s)),
       h('div', { class: 'tile-sub' }, 'Next 24 hours'),
       h('p', { class: 'tile-note' }, nextRain(om.minutely).sentence),
-    ), 'precip'),
-    opens(
+    ), 'precip'), 'precip', 'tile'),
+    tagged(opens(
       tile(
         cloudMark,
         'Cloud cover',
@@ -1129,9 +1177,9 @@ function tiles(
         h('p', { class: 'tile-note' }, `${cloudWord(cloudsNext12)} for the next 12 hours.`),
       ),
       'clouds',
-    ),
-    extra.air?.pollen ? pollenTile(extra.air.pollen) : null,
-  );
+    ), 'clouds', 'tile'),
+    extra.air?.pollen ? tagged(pollenTile(extra.air.pollen), 'pollen', 'tile') : null,
+  ].filter((x): x is HTMLElement => x != null);
 }
 
 /**

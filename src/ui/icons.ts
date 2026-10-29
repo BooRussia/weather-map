@@ -121,6 +121,10 @@ export const GLYPHS: Record<string, string> = {
 export const cameraIcon = `${open('i-camera')}<rect x="2.5" y="7" width="13.5" height="10" rx="2.4" /><path d="m16 10.6 5.2-2.9v8.6L16 13.4z" /></svg>`;
 
 /** Corners out: show only the map. */
+/** A handle to drag by: two columns of dots. */
+export const gripIcon = `${open('i-grip')}<circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>`;
+/** Customize: three sliders. */
+export const slidersIcon = `${open('i-sliders')}<path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h12M20 17h0" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="17" r="2" /></svg>`;
 /** More: three dots, for what didn't fit. */
 export const moreIcon = `${open('i-more')}<circle cx="5.5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="18.5" cy="12" r="1.6" /></svg>`;
 /** A check mark, for what's on in a list. */

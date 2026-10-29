@@ -1811,11 +1811,18 @@ body.phone.drawer-on .phone-head {
 }
 
 .page-body {
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row dense;
   gap: 10px;
   max-width: 560px;
   margin: 0 auto;
+}
+
+/* A phone: one column, the small tiles two across (pageLayout.ts sizes the cards). */
+.page-body > :not([data-size='tile']) {
+  grid-column: 1 / -1;
 }
 
 .page-close {
@@ -7003,4 +7010,147 @@ html.embed-glasshome body.tv .spark-line path:not(.spark-area) {
 html.embed-glasshome body.tv .spark-area {
   fill: var(--gh-accent);
   fill-opacity: 0.14;
+}
+
+/*
+ * ---------- the weather page, arranged your way (owner, 2026-10-29; pageLayout.ts) ----------
+ * Wide screens use the room across: as many 260 px columns as fit, tiles one column, the rest two,
+ * the hourly forecast the whole row; each card spans rows to its own height so the columns pack.
+ */
+@media (min-width: 900px) {
+  .page-body {
+    max-width: 1240px;
+    padding: 0 24px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-auto-rows: 4px;
+    column-gap: 12px;
+    row-gap: 0;
+  }
+
+  .page-body > * {
+    align-self: start;
+    margin-bottom: 12px;
+  }
+
+  .page-body > [data-size='tile'] {
+    grid-column: span 1;
+  }
+
+  .page-body > [data-size='wide'] {
+    grid-column: span 2;
+  }
+
+  .page-body > [data-size='full'],
+  .page-body > :not([data-size]) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Customize: each card a handle and a hide button in its corner, its insides resting so taps don't stray. */
+.card-tools {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.card-tools button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+}
+
+.card-tools .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.card-grip {
+  cursor: grab;
+  touch-action: none;
+}
+
+.card-grip .icon circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+.page-body.is-editing > [data-card] {
+  outline: 1.5px dashed rgba(255, 255, 255, 0.35);
+  outline-offset: -1.5px;
+}
+
+.page-body.is-editing > [data-card] > :not(.card-tools) {
+  pointer-events: none;
+}
+
+/* The card being dragged: lifted over the page, following the pointer. */
+.page-body > .is-lifted {
+  z-index: 20;
+  pointer-events: none;
+  margin: 0;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  transform: scale(1.02);
+  opacity: 0.96;
+}
+
+body:has(.page-body > .is-lifted) {
+  cursor: grabbing;
+}
+
+/* Where it'll land. */
+.card-placeholder {
+  border: 2px dashed rgba(255, 255, 255, 0.45);
+  border-radius: var(--r-card);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* The hidden cards, each with Show; and Reset. */
+.page-hidden-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--fs-callout);
+}
+
+.page-show,
+.page-reset {
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.page-show {
+  height: 30px;
+  padding: 0 14px;
+}
+
+.page-reset {
+  height: 36px;
+  margin-top: 6px;
+  padding: 0 16px;
+}
+
+/* Customize's sliders keep their knobs outlined while it's on (the tag's pressed style fills its pin). */
+.page-tag[aria-pressed='true'] .i-sliders circle {
+  fill: var(--accent);
+  stroke: currentColor;
+}
+
+/* Customizing: a card's own controls in the top corner step aside for its handle and hide button. */
+.page-body.is-editing .mode-seg {
+  visibility: hidden;
 }
