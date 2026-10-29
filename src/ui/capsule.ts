@@ -1,3 +1,4 @@
+import { briefing } from '../data/briefing';
 import type { Conditions } from '../data/conditions';
 import { dayHours, dayOutlook, hourOfDay, type Metric } from '../data/dayDetail';
 import { glyphFor, rainSoon, weekRows } from '../data/outlook';
@@ -21,6 +22,7 @@ export function renderCapsule(c: Conditions | null, s: AppState, opts: { fullGra
   const temp = $('#cap-temp');
   const cond = $('#cap-cond');
   const hilo = $('#cap-hilo');
+  const brief = $('#cap-brief');
   renderRainSoon(c);
   renderChips(c, s);
   renderSparks(c, s);
@@ -42,6 +44,7 @@ export function renderCapsule(c: Conditions | null, s: AppState, opts: { fullGra
     temp.textContent = '--°';
     cond.textContent = '';
     hilo.textContent = '';
+    brief.hidden = true;
     return;
   }
   place.textContent = c.place ?? 'Locating';
@@ -53,9 +56,13 @@ export function renderCapsule(c: Conditions | null, s: AppState, opts: { fullGra
       ? conditionLine(c, s.windUnit)
       : conditionWord(c);
   hilo.textContent = hiLoLine(c, s);
+  // The day in a sentence (owner, 2026-10-29: the TV's briefing, on the desktop banner too); styles.css
+  // shows it only where the wide banner's left side has room.
+  brief.textContent = c.om?.daily.length && !c.failed ? briefing(c.om, (f) => formatTemp(f, s.tempUnit)) : '';
+  brief.hidden = !brief.textContent;
   $('#capsule').setAttribute(
     'aria-label',
-    `${s.gps ? 'My location, ' : ''}${c.place ?? 'Selected point'}, ${temp.textContent}, ${cond.textContent}, ${hilo.textContent}. Open weather details.`,
+    `${s.gps ? 'My location, ' : ''}${c.place ?? 'Selected point'}, ${temp.textContent}, ${cond.textContent}, ${hilo.textContent}. ${brief.textContent ? `${brief.textContent} ` : ''}Open weather details.`,
   );
 }
 

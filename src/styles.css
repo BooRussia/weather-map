@@ -5539,7 +5539,8 @@ body.phone .cap-wrap.is-compact[data-small-graphs='today'] #cap-trend {
 }
 
 /* Rain starting or stopping soon: its own line under the place, in the rain's color. */
-.cap-soon {
+.cap-soon,
+.cap-brief {
   display: none;
 }
 
@@ -6417,11 +6418,15 @@ body.is-gripping * {
     transform: translateX(-50%);
   }
 
-  /* The place lines up with the days' names. */
+  /*
+   * The place lines up with the days' names; its lines (the day's briefing too) run on down beside
+   * the graphs, stopping short of the buttons under them, so the banner grows no taller.
+   */
   body.phone .cap-wrap:not(.is-compact) .capsule {
-    grid-row: 1;
+    grid-row: 1 / span 2;
     align-self: start;
     padding-top: 2px;
+    padding-bottom: 40px;
   }
 
   body.phone .cap-wrap:not(.is-compact) .cap-pin,
@@ -6447,6 +6452,21 @@ body.is-gripping * {
 
   body.phone .cap-wrap:not(.is-compact) .cap-soon:not([hidden]) {
     text-align: left;
+  }
+
+  /*
+   * The day in a sentence (owner, 2026-10-29), in the room under the place's lines. Not on the TV,
+   * whose launcher shows it by its clock.
+   */
+  body.phone:not(.tv) .cap-wrap:not(.is-compact) .cap-brief:not([hidden]) {
+    display: block;
+    flex-basis: 100%;
+    margin-top: 10px;
+    font-size: var(--fs-foot);
+    line-height: 1.4;
+    color: var(--muted);
+    text-align: left;
+    text-wrap: pretty;
   }
 }
 
@@ -6528,6 +6548,7 @@ body.tv .cap-temp {
     grid-row: 1 / span 2;
     align-self: center;
     padding-top: 0;
+    padding-bottom: 0;
   }
 }
 
