@@ -610,6 +610,38 @@ button {
   height: 15px;
 }
 
+/* My places: the sky, the name over its condition and high and low, the temperature on the right. */
+.place-row {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+}
+
+.place-text {
+  min-width: 0;
+}
+
+.place-row .result-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-temp {
+  font-size: 24px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.result-mark.is-sky {
+  background: none;
+  border: 0;
+}
+
+.result-mark.is-sky .glyph {
+  width: 28px;
+  height: 28px;
+}
+
 /* ---------- readout capsule + alert pill ---------- */
 
 .left-stack {

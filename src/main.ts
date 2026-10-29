@@ -63,7 +63,9 @@ import { wrapLon } from './util/geo';
 import { $, h, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule, renderRainSoon, setSparkOpen } from './ui/capsule';
 import type { Metric } from './data/dayDetail';
-import { alertMark, boltMark, cameraIcon, hurricaneMark, locateIcon, routeIcon, searchIcon, warningIcon } from './ui/icons';
+import { getPlacesNow, weatherCodeText, type PlaceNow } from './data/openmeteo';
+import { glyphFor } from './data/outlook';
+import { alertMark, boltMark, cameraIcon, GLYPHS, hurricaneMark, locateIcon, routeIcon, searchIcon, warningIcon } from './ui/icons';
 import { BarShortcuts } from './ui/barShortcuts';
 import { LayersMenu } from './ui/layersMenu';
 import { alertDetail, alertsList, alertsOfType, type AlertsHooks } from './ui/alertsPanel';
@@ -759,6 +761,8 @@ async function main(): Promise<void> {
 
   /* ---------- search ---------- */
 
+  /** My places' weather right now, by place, kept ten minutes. */
+  const placesNow = new Map<string, { at: number; now: PlaceNow }>();
   // A search is a deliberate choice: the readout goes there whether or not it follows the map.
   const search = new SearchBox(
     () => store.get().selected,
@@ -777,7 +781,33 @@ async function main(): Promise<void> {
         relabel(t, null);
         showNote(`Removed ${t.name}.`);
       },
-      hint: matchMedia('(hover: hover)').matches ? 'Right-click the map to tag a place.' : 'Press and hold the map to tag a place.',
+      here: () => (dot.position ? { name: mode === 'gps' ? (conditions?.place ?? '') : '', at: dot.position } : null),
+      pickHere: () => $('#locate-btn').click(),
+      weather: async (points) => {
+        const unit = store.get().tempUnit;
+        const key = (p: LatLon) => `${p.lat.toFixed(2)},${p.lon.toFixed(2)}`;
+        const fresh = (p: LatLon) => Date.now() - (placesNow.get(key(p))?.at ?? 0) < CONDITIONS_REFRESH_MS;
+        const stale = points.filter((p) => !fresh(p));
+        try {
+          const got = await getPlacesNow(stale);
+          stale.forEach((p, i) => got[i] && placesNow.set(key(p), { at: Date.now(), now: got[i] }));
+        } catch {
+          // What's cached, if anything.
+        }
+        return points.map((p) => {
+          const w = placesNow.get(key(p))?.now;
+          return w
+            ? {
+                temp: formatTemp(w.tempF, unit),
+                glyph: GLYPHS[glyphFor(w.weatherCode, w.isDay)],
+                line: `${weatherCodeText(w.weatherCode)} · H:${formatTemp(w.hiF, unit)} L:${formatTemp(w.loF, unit)}`,
+              }
+            : null;
+        });
+      },
+      hint: matchMedia('(hover: hover)').matches
+        ? 'Tag a place from its weather page, or right-click the map, and it will be listed here with its weather.'
+        : 'Tag a place from its weather page, or press and hold the map, and it will be listed here with its weather.',
     },
   );
 

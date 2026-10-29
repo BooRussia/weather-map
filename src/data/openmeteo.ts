@@ -374,6 +374,43 @@ export async function getStopForecasts(
   });
 }
 
+/** A place's weather right now, for the My places list. */
+export interface PlaceNow {
+  tempF: number;
+  weatherCode: number;
+  isDay: boolean;
+  hiF: number;
+  loF: number;
+}
+
+interface PlaceNowResponse {
+  current: { temperature_2m: number; weather_code: number; is_day: number };
+  daily: { temperature_2m_max: number[]; temperature_2m_min: number[] };
+}
+
+/** Right now at several places, in one request (Open-Meteo takes lists of coordinates). */
+export async function getPlacesNow(points: readonly LatLon[], signal?: AbortSignal): Promise<PlaceNow[]> {
+  if (!points.length) return [];
+  const q = new URLSearchParams({
+    latitude: points.map((p) => c4(p.lat)).join(','),
+    longitude: points.map((p) => c4(wrapLon(p.lon))).join(','),
+    current: 'temperature_2m,weather_code,is_day',
+    daily: 'temperature_2m_max,temperature_2m_min',
+    temperature_unit: 'fahrenheit',
+    timezone: 'auto',
+    forecast_days: '1',
+  });
+  const r = await fetchJson<PlaceNowResponse | PlaceNowResponse[]>(`${OPEN_METEO_FORECAST}?${q}`, { signal });
+  // One place comes back as an object, several as a list.
+  return (Array.isArray(r) ? r : [r]).map((x) => ({
+    tempF: x.current.temperature_2m,
+    weatherCode: x.current.weather_code,
+    isDay: x.current.is_day === 1,
+    hiF: x.daily.temperature_2m_max[0],
+    loF: x.daily.temperature_2m_min[0],
+  }));
+}
+
 /** WMO weather interpretation codes, as Open-Meteo documents them. */
 const WMO: Record<number, string> = {
   0: 'Clear',

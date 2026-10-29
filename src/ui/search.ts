@@ -8,11 +8,23 @@ export const PIN = `<svg class="icon" viewBox="0 0 24 24" width="24" height="24"
 export const HOUSE = `<svg class="icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20H4z" /><path d="M10 20v-5h4v5" /></svg>`;
 const DEBOUNCE_MS = 280;
 
-/** Tagged places, listed while the field is empty. */
+/** A place's weather as the list shows it: the temperature, the sky, and a line under the name. */
+export interface PlaceWeather {
+  temp: string;
+  glyph: string;
+  line: string;
+}
+
+/** My places, listed while the field is empty: where you are, then the places you've tagged. */
 export interface SavedPlaces {
   list(): readonly Tag[];
   pick(t: Tag): void;
   remove(t: Tag): void;
+  /** Where you are, first in the list, when it's known. */
+  here(): { name: string; at: LatLon } | null;
+  pickHere(): void;
+  /** Each point's weather now, in order (null where it can't be had). */
+  weather(points: readonly LatLon[]): Promise<(PlaceWeather | null)[]>;
   /** How to tag one, shown while there are none. */
   hint: string;
 }
@@ -105,43 +117,70 @@ export class SearchBox {
     this.show(true);
   }
 
-  /** The tagged places (tap one to go there, × to remove it), or how to tag one. */
+  /**
+   * My places (owner, 2026-10-29: Apple's list of your cities): where you are, then the tagged places,
+   * newest first, each with its temperature, sky, condition and high and low (filled in once they
+   * load, one request for all); tap one to go there, × to remove it. With none tagged, how to tag one.
+   */
   private renderSaved(): void {
     if (!this.saved) return;
-    const tags = this.saved.list();
+    const saved = this.saved;
+    const tags = [...saved.list()].reverse();
+    const here = saved.here();
     this.active = -1;
-    if (!tags.length) {
-      this.list.replaceChildren(h('li', { class: 'result-empty' }, this.saved.hint));
-      this.show(true);
-      return;
-    }
-    this.list.replaceChildren(
-      h('li', { class: 'result-head', role: 'presentation' }, 'Tagged places'),
-      ...[...tags].reverse().map((t) => {
-        const go = h(
-          'button',
-          { type: 'button', class: 'result', role: 'option', 'aria-selected': 'false' },
-          h('span', { class: 'result-mark' }, svg(PIN)),
-          h('span', {}, h('span', { class: 'result-title' }, t.name)),
-        );
-        // pointerdown keeps focus in the field (the list stays put); click works for keys too.
-        go.addEventListener('pointerdown', (e) => e.preventDefault());
-        go.addEventListener('click', () => {
-          this.input.value = '';
-          this.show(false);
-          this.input.blur();
-          this.saved!.pick(t);
-        });
-        const remove = h('button', { type: 'button', class: 'result-remove', 'aria-label': `Remove ${t.name}` }, svg(closeIcon));
-        remove.addEventListener('pointerdown', (e) => e.preventDefault());
-        remove.addEventListener('click', () => {
-          this.saved!.remove(t);
+    const row = (title: string, sub: string | null, go: () => void, remove: (() => void) | null, label: string) => {
+      const btn = h(
+        'button',
+        { type: 'button', class: 'result place-row', role: 'option', 'aria-selected': 'false', 'aria-label': label },
+        h('span', { class: 'result-mark' }, svg(PIN)),
+        h('span', { class: 'place-text' }, h('span', { class: 'result-title' }, title), h('span', { class: 'result-sub' }, sub ?? '')),
+        h('span', { class: 'place-temp' }),
+      );
+      // pointerdown keeps focus in the field (the list stays put); click works for keys too.
+      btn.addEventListener('pointerdown', (e) => e.preventDefault());
+      btn.addEventListener('click', () => {
+        this.input.value = '';
+        this.show(false);
+        this.input.blur();
+        go();
+      });
+      const li = h('li', { class: 'result-saved' }, btn);
+      if (remove) {
+        const x = h('button', { type: 'button', class: 'result-remove', 'aria-label': `Remove ${title}` }, svg(closeIcon));
+        x.addEventListener('pointerdown', (e) => e.preventDefault());
+        x.addEventListener('click', () => {
+          remove();
           this.renderSaved();
         });
-        return h('li', { class: 'result-saved' }, go, remove);
-      }),
+        li.append(x);
+      }
+      return { li, btn };
+    };
+    const rows = [
+      ...(here ? [{ at: here.at, ...row('My location', here.name, () => saved.pickHere(), null, `My location, ${here.name}`) }] : []),
+      ...tags.map((t) => ({ at: { lat: t.lat, lon: t.lon }, ...row(t.name, null, () => saved.pick(t), () => saved.remove(t), t.name) })),
+    ];
+    this.list.replaceChildren(
+      h('li', { class: 'result-head', role: 'presentation' }, 'My places'),
+      ...rows.map((r) => r.li),
+      ...(tags.length ? [] : [h('li', { class: 'result-empty' }, saved.hint)]),
     );
     this.show(true);
+    const drawn = this.list.firstElementChild;
+    void saved.weather(rows.map((r) => r.at)).then((found) => {
+      // Still this list (not search results, or a newer list).
+      if (this.list.firstElementChild !== drawn) return;
+      found.forEach((w, i) => {
+        if (!w) return;
+        const b = rows[i].btn;
+        b.querySelector('.result-mark')!.replaceChildren(svg(w.glyph));
+        b.querySelector('.result-mark')!.classList.add('is-sky');
+        b.querySelector('.place-temp')!.textContent = w.temp;
+        const sub = b.querySelector('.result-sub')!;
+        sub.textContent = sub.textContent ? `${sub.textContent} · ${w.line}` : w.line;
+        b.setAttribute('aria-label', `${b.getAttribute('aria-label')}, ${w.temp}, ${w.line}`);
+      });
+    });
   }
 
   private show(on: boolean): void {
