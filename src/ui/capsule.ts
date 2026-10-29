@@ -23,7 +23,12 @@ export function renderCapsule(c: Conditions | null, s: AppState): void {
   const hilo = $('#cap-hilo');
   renderChips(c, s);
   renderSparks(c, s);
+  renderTrend(c, s);
   renderWeek(c, s);
+  // Which graphs show (styles.css): the full banner's follow its strip, the small banner's the setting.
+  const wrap = $('.cap-wrap');
+  wrap.dataset.fullGraphs = s.bannerForecast === 'daily' ? 'week' : 'today';
+  wrap.dataset.smallGraphs = s.bannerGraphs;
   if (!c) {
     place.textContent = 'Locating';
     temp.textContent = '--°';
@@ -78,21 +83,24 @@ function renderChips(c: Conditions | null, s: AppState): void {
   rain.title = 'Chance of rain today';
 }
 
-/* ---------- little line graphs (phones) ---------- */
+/* ---------- little line graphs ---------- */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-/** Which graph's chart (today's), or which day's, is open under the banner, so a redraw keeps it pressed. */
-let sparkOpen: Metric | null = null;
-let dayOpen: string | null = null;
+/** Which chart is open under the banner, and for which day (null: today's, from the graphs), so a redraw keeps its button pressed. */
+let openMetric: Metric | null = null;
+let openDate: string | null = null;
 
 export function setSparkOpen(metric: Metric | null, date: string | null = null): void {
-  sparkOpen = date ? null : metric;
-  dayOpen = metric === 'conditions' ? date : null;
+  openMetric = metric;
+  openDate = metric ? date : null;
   for (const b of document.querySelectorAll<HTMLElement>('#cap-sparks [data-metric]')) {
-    b.setAttribute('aria-pressed', String(b.dataset.metric === sparkOpen));
+    b.setAttribute('aria-pressed', String(!openDate && b.dataset.metric === openMetric));
+  }
+  for (const b of document.querySelectorAll<HTMLElement>('#cap-trend [data-metric]')) {
+    b.setAttribute('aria-pressed', String(!!openDate && b.dataset.metric === openMetric && b.dataset.day === openDate));
   }
   for (const b of document.querySelectorAll<HTMLElement>('#cap-week .wk[data-day]')) {
-    b.setAttribute('aria-pressed', String(b.dataset.day === dayOpen));
+    b.setAttribute('aria-pressed', String(openMetric === 'conditions' && b.dataset.day === openDate));
   }
 }
 
@@ -102,13 +110,24 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
   return e;
 }
 
+/** A round dot however the graph stretches: a zero-length line with round caps. */
+const dot = (x: number, y: number, color: string, size: number) =>
+  el('line', { x1: x, y1: y, x2: x, y2: y, stroke: color, 'stroke-width': size, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' });
+
+interface LineMarks {
+  /** Today's graphs: a white dot at now (fractional index). */
+  now?: number | null;
+  /** The ten days': a dot a day, each in this color (or the line's), and the peak day's white and bigger. */
+  days?: { colors?: string[]; peak: number | null };
+}
+
 /**
- * A day's hours as one line, no axes or fill, with a dot at now. Each line fits its own day, but spans
- * at least `minSpan`, centered, so a day that barely changes stays a calm line through the middle,
- * level with the others (owner, 2026-10-24: a day with a few percent chance of rain drew its line
- * along the bottom, lower than the rest). `stroke` is a color, or a gradient (top, bottom) for temperature.
+ * Values as one line, no axes or fill. Each line fits its own values, but spans at least `minSpan`,
+ * centered, so one that barely changes stays a calm line through the middle, level with the others
+ * (owner, 2026-10-24: a day with a few percent chance of rain drew its line along the bottom, lower
+ * than the rest). `stroke` is a color, or a gradient (top, bottom) for temperature.
  */
-function sparkline(values: number[], now: number | null, stroke: string | [string, string], minSpan: number): SVGSVGElement {
+function sparkline(values: number[], stroke: string | [string, string], minSpan: number, marks: LineMarks): SVGSVGElement {
   const W = 64;
   const H = 22;
   const pad = 3;
@@ -121,24 +140,88 @@ function sparkline(values: number[], now: number | null, stroke: string | [strin
   const s = el('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', class: 'spark-line', 'aria-hidden': 'true' });
   let paint = typeof stroke === 'string' ? stroke : '';
   if (typeof stroke !== 'string') {
-    const g = el('linearGradient', { id: 'spark-temp', x1: 0, y1: pad, x2: 0, y2: H - pad, gradientUnits: 'userSpaceOnUse' });
+    // Each graph its own gradient: two temperature graphs share the banner.
+    const id = `spark-temp-${marks.days ? 'week' : 'day'}`;
+    const g = el('linearGradient', { id, x1: 0, y1: pad, x2: 0, y2: H - pad, gradientUnits: 'userSpaceOnUse' });
     g.append(el('stop', { offset: 0, 'stop-color': stroke[0] }), el('stop', { offset: 1, 'stop-color': stroke[1] }));
     const defs = el('defs', {});
     defs.append(g);
     s.append(defs);
-    paint = 'url(#spark-temp)';
+    paint = `url(#${id})`;
   }
   const d = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
-  s.append(el('path', { d, fill: 'none', stroke: paint, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
+  const days = marks.days;
+  s.append(
+    el('path', {
+      d,
+      fill: 'none',
+      stroke: paint,
+      'stroke-width': days ? 1.5 : 2,
+      'stroke-opacity': days ? 0.55 : 1,
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      'vector-effect': 'non-scaling-stroke',
+    }),
+  );
+  if (days) {
+    const flat = typeof stroke === 'string' ? stroke : stroke[0];
+    values.forEach((v, i) => {
+      if (i !== days.peak) s.append(dot(x(i), y(v), days.colors?.[i] ?? flat, 4));
+    });
+    if (days.peak != null) s.append(dot(x(days.peak), y(values[days.peak]), '#ffffff', 6.5));
+  }
+  const now = marks.now;
   if (now != null) {
     const i0 = Math.min(values.length - 1, Math.floor(now));
     const v = values[i0] + ((values[i0 + 1] ?? values[i0]) - values[i0]) * (now - i0);
-    const nx = (Math.min(now, values.length - 1) / Math.max(1, values.length - 1)) * W;
-    // A zero-length round-capped line: a round dot however the graph stretches.
-    s.append(el('line', { x1: nx, y1: y(v), x2: nx, y2: y(v), stroke: '#ffffff', 'stroke-width': 5, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
+    s.append(dot((Math.min(now, values.length - 1) / Math.max(1, values.length - 1)) * W, y(v), '#ffffff', 5));
   }
   return s;
 }
+
+interface Spark {
+  metric: Metric;
+  label: string;
+  icon: string;
+  value: string;
+  color: string;
+  line: SVGSVGElement;
+  say: string;
+  /** The ten days': the peak day's name, date (its chart opens on that day), and place along the line, 0..1. */
+  day?: { name: string; date: string; at: number };
+}
+
+function sparkButtons(cells: Spark[]): HTMLElement[] {
+  return cells.map((k) => {
+    const pressed = k.day ? !!openDate && openMetric === k.metric && openDate === k.day.date : !openDate && openMetric === k.metric;
+    const b = h(
+      'button',
+      {
+        type: 'button',
+        class: 'spark',
+        'data-metric': k.metric,
+        'data-day': k.day?.date ?? null,
+        'aria-pressed': String(pressed),
+        'aria-label': `${k.say}. Show the chart.`,
+      },
+      h('span', { class: 'spark-label' }, k.label),
+      // The icon tells the numbers apart in the small banner, where the labels go.
+      h('span', { class: 'spark-value' }, svg(k.icon), k.value),
+      k.line,
+      // The peak day's name under its white dot.
+      k.day ? h('span', { class: 'spark-peak', 'aria-hidden': 'true' }, h('span', {}, k.day.name)) : null,
+    );
+    (b.querySelector('.spark-value') as HTMLElement).style.color = k.color;
+    if (k.day) (b.querySelector('.spark-peak') as HTMLElement).style.setProperty('--at', k.day.at.toFixed(3));
+    return b;
+  });
+}
+
+const unitsFor = (s: AppState) => ({
+  ink: (color: string) => (s.theme === 'classic' ? '#f0f0fa' : color),
+  temp: (f: number) => (s.tempUnit === 'C' ? fToC(f) : f),
+  wind: (mph: number) => (s.windUnit === 'kmh' ? mphToKmh(mph) : mph),
+});
 
 /**
  * Today's temperature, wind, rain, and humidity, each as its peak in its own color over a line of the
@@ -154,67 +237,144 @@ function renderSparks(c: Conditions | null, s: AppState): void {
   const day = hours.slice(0, own);
   const now = hourOfDay(om.current.time, today.date);
   const classic = s.theme === 'classic';
-  const ink = (color: string) => (classic ? '#f0f0fa' : color);
-  const temp = (f: number) => (s.tempUnit === 'C' ? fToC(f) : f);
-  const wind = (mph: number) => (s.windUnit === 'kmh' ? mphToKmh(mph) : mph);
+  const { ink, temp, wind } = unitsFor(s);
   const maxWind = Math.max(...day.map((x) => x.windMph));
   const maxHumid = Math.max(...day.map((x) => x.humidity));
-  const cells: { metric: Metric; label: string; icon: string; value: string; color: string; line: SVGSVGElement; say: string }[] = [
-    {
-      metric: 'conditions',
-      icon: thermoIcon,
-      label: 'High',
-      value: formatTemp(today.hiF, s.tempUnit),
-      color: ink(tempColor(today.hiF)),
-      line: sparkline(
-        day.map((x) => temp(x.tempF)),
-        now,
-        classic ? '#f0f0fa' : [tempColor(Math.max(...day.map((x) => x.tempF))), tempColor(Math.min(...day.map((x) => x.tempF)))],
-        8,
-      ),
-      say: `High ${formatTemp(today.hiF, s.tempUnit)} today`,
-    },
-    {
-      metric: 'wind',
-      label: 'Wind',
-      icon: windIcon,
-      value: formatWind(maxWind, s.windUnit),
-      color: ink('#64d2ff'),
-      line: sparkline(day.map((x) => wind(x.windMph)), now, ink('#64d2ff'), wind(8)),
-      say: `Wind up to ${formatWind(maxWind, s.windUnit)} today`,
-    },
-    {
-      metric: 'precip',
-      label: 'Rain',
-      icon: umbrellaIcon,
-      value: `${Math.round(today.precipProbability)}%`,
-      color: ink('#7d7aff'),
-      line: sparkline(day.map((x) => x.precipProbability), now, ink('#7d7aff'), 40),
-      say: `${Math.round(today.precipProbability)}% chance of rain today`,
-    },
-    {
-      metric: 'humidity',
-      label: 'Humidity',
-      icon: dropIcon,
-      value: `${Math.round(maxHumid)}%`,
-      color: ink('#30d158'),
-      line: sparkline(day.map((x) => x.humidity), now, ink('#30d158'), 40),
-      say: `Humidity up to ${Math.round(maxHumid)}% today`,
-    },
-  ];
   box.replaceChildren(
-    ...cells.map((k) => {
-      const b = h(
-        'button',
-        { type: 'button', class: 'spark', 'data-metric': k.metric, 'aria-pressed': String(sparkOpen === k.metric), 'aria-label': `${k.say}. Show the chart.` },
-        h('span', { class: 'spark-label' }, k.label),
-        // The icon tells the numbers apart in the small banner, where the labels and lines go.
-        h('span', { class: 'spark-value' }, svg(k.icon), k.value),
-        k.line,
-      );
-      (b.querySelector('.spark-value') as HTMLElement).style.color = k.color;
-      return b;
-    }),
+    ...sparkButtons([
+      {
+        metric: 'conditions',
+        icon: thermoIcon,
+        label: 'High',
+        value: formatTemp(today.hiF, s.tempUnit),
+        color: ink(tempColor(today.hiF)),
+        line: sparkline(
+          day.map((x) => temp(x.tempF)),
+          classic ? '#f0f0fa' : [tempColor(Math.max(...day.map((x) => x.tempF))), tempColor(Math.min(...day.map((x) => x.tempF)))],
+          8,
+          { now },
+        ),
+        say: `High ${formatTemp(today.hiF, s.tempUnit)} today`,
+      },
+      {
+        metric: 'wind',
+        label: 'Wind',
+        icon: windIcon,
+        value: formatWind(maxWind, s.windUnit),
+        color: ink('#64d2ff'),
+        line: sparkline(day.map((x) => wind(x.windMph)), ink('#64d2ff'), wind(8), { now }),
+        say: `Wind up to ${formatWind(maxWind, s.windUnit)} today`,
+      },
+      {
+        metric: 'precip',
+        label: 'Rain',
+        icon: umbrellaIcon,
+        value: `${Math.round(today.precipProbability)}%`,
+        color: ink('#7d7aff'),
+        line: sparkline(day.map((x) => x.precipProbability), ink('#7d7aff'), 40, { now }),
+        say: `${Math.round(today.precipProbability)}% chance of rain today`,
+      },
+      {
+        metric: 'humidity',
+        label: 'Humidity',
+        icon: dropIcon,
+        value: `${Math.round(maxHumid)}%`,
+        color: ink('#30d158'),
+        line: sparkline(day.map((x) => x.humidity), ink('#30d158'), 40, { now }),
+        say: `Humidity up to ${Math.round(maxHumid)}% today`,
+      },
+    ]),
+  );
+}
+
+/** Where a series peaks (the first such day); null when it never rises above nothing. */
+function peakOf(values: number[]): number | null {
+  const top = Math.max(...values);
+  return top > 0 ? values.indexOf(top) : null;
+}
+
+/**
+ * The same four over the ten days (owner, 2026-10-29), a dot a day, the peak day's white, so you can
+ * see which day is the warmest, the windiest, the likeliest to rain. Each opens its chart on that day.
+ */
+function renderTrend(c: Conditions | null, s: AppState): void {
+  const box = $('#cap-trend');
+  const om = c?.om;
+  const days = (om?.daily ?? [])
+    .map((d, i) => {
+      const { hours, own } = dayHours(om!.week, d.date);
+      const day = hours.slice(0, own);
+      if (!own) return null;
+      return {
+        d,
+        name: i === 0 ? 'Today' : DOW[new Date(`${d.date}T12:00:00Z`).getUTCDay()],
+        wind: Math.max(...day.map((x) => x.windMph)),
+        humidity: Math.max(...day.map((x) => x.humidity)),
+      };
+    })
+    .filter((x) => x != null);
+  box.hidden = days.length < 2;
+  if (days.length < 2) return;
+  const classic = s.theme === 'classic';
+  const { ink, temp, wind } = unitsFor(s);
+  const his = days.map((x) => x.d.hiF);
+  const winds = days.map((x) => x.wind);
+  const pops = days.map((x) => x.d.precipProbability);
+  const humid = days.map((x) => x.humidity);
+  const at = (i: number | null) => (i == null ? undefined : { name: days[i].name, date: days[i].d.date, at: i / (days.length - 1) });
+  const hot = peakOf(his.map((f) => f - Math.min(...his) + 1));
+  const windy = peakOf(winds);
+  const wet = peakOf(pops);
+  const muggy = peakOf(humid);
+  const on = (i: number | null) => (i == null ? '' : ` on ${days[i].name === 'Today' ? 'today' : days[i].name}`);
+  box.replaceChildren(
+    ...sparkButtons([
+      {
+        metric: 'conditions',
+        icon: thermoIcon,
+        label: 'High',
+        value: formatTemp(Math.max(...his), s.tempUnit),
+        color: ink(tempColor(Math.max(...his))),
+        line: sparkline(
+          his.map(temp),
+          classic ? '#f0f0fa' : [tempColor(Math.max(...his)), tempColor(Math.min(...his))],
+          8,
+          { days: { colors: classic ? undefined : his.map(tempColor), peak: hot } },
+        ),
+        say: `Warmest of the ten days: ${formatTemp(Math.max(...his), s.tempUnit)}${on(hot)}`,
+        day: at(hot),
+      },
+      {
+        metric: 'wind',
+        label: 'Wind',
+        icon: windIcon,
+        value: formatWind(Math.max(...winds), s.windUnit),
+        color: ink('#64d2ff'),
+        line: sparkline(winds.map(wind), ink('#64d2ff'), wind(8), { days: { peak: windy } }),
+        say: `Windiest of the ten days: ${formatWind(Math.max(...winds), s.windUnit)}${on(windy)}`,
+        day: at(windy),
+      },
+      {
+        metric: 'precip',
+        label: 'Rain',
+        icon: umbrellaIcon,
+        value: `${Math.round(Math.max(...pops))}%`,
+        color: ink('#7d7aff'),
+        line: sparkline(pops, ink('#7d7aff'), 40, { days: { peak: wet } }),
+        say: wet == null ? 'No rain in the ten days' : `Likeliest rain of the ten days: ${Math.round(Math.max(...pops))}%${on(wet)}`,
+        day: at(wet),
+      },
+      {
+        metric: 'humidity',
+        label: 'Humidity',
+        icon: dropIcon,
+        value: `${Math.round(Math.max(...humid))}%`,
+        color: ink('#30d158'),
+        line: sparkline(humid, ink('#30d158'), 40, { days: { peak: muggy } }),
+        say: `Most humid of the ten days: ${Math.round(Math.max(...humid))}%${on(muggy)}`,
+        day: at(muggy),
+      },
+    ]),
   );
 }
 
@@ -290,7 +450,7 @@ function renderWeek(c: Conditions | null, s: AppState): void {
           type: 'button',
           class: 'wk',
           'data-day': date,
-          'aria-pressed': String(dayOpen === date),
+          'aria-pressed': String(openMetric === 'conditions' && openDate === date),
           'aria-label': `${d.label}: high ${hi}, low ${lo}, ${pop}% chance of rain. Show the day.`,
         },
         h('span', { class: 'wk-day' }, d.label),

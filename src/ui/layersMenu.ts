@@ -529,6 +529,16 @@ export class LayersMenu {
       (v) => this.store.set({ bannerForecast: v }),
     );
     strip.classList.add('seg-compact');
+    const graphs = segmented<'today' | 'week'>(
+      'Small banner graphs',
+      [
+        { value: 'today', label: 'Today' },
+        { value: 'week', label: '10 days' },
+      ],
+      s.bannerGraphs,
+      (v) => this.store.set({ bannerGraphs: v }),
+    );
+    graphs.classList.add('seg-compact');
     const phone = document.body.classList.contains('phone');
     return [
       h('p', { class: 'group-label' }, 'Look'),
@@ -539,6 +549,7 @@ export class LayersMenu {
         { class: 'group' },
         h('div', { class: 'row row-units' }, h('span', { class: 'row-label' }, 'Units'), temp, wind),
         phone ? segRow('Banner forecast', strip) : null,
+        phone ? segRow('Small banner graphs', graphs) : null,
         switchRow({ label: 'Thunder sound', checked: s.sound, onChange: (on) => this.store.set({ sound: on }) }),
         h('div', { class: 'row' }, h('span', { class: 'row-label' }, 'Where the data comes from'), more),
         this.dataOpen ? h('div', { id: 'data-note', class: 'pop-note data-note' }, h('p', {}, DATA_NOTE), creditsNow()) : null,

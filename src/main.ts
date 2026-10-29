@@ -1457,7 +1457,7 @@ async function main(): Promise<void> {
       tagsLayer.setAccent(token('--accent'));
       camerasLayer.setAccent(token('--accent'));
     }
-    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme || s.bannerForecast !== prev.bannerForecast) {
+    if (s.tempUnit !== prev.tempUnit || s.windUnit !== prev.windUnit || s.theme !== prev.theme || s.bannerForecast !== prev.bannerForecast || s.bannerGraphs !== prev.bannerGraphs) {
       renderAll();
       trip?.refresh();
       rerenderStorm();
@@ -1520,11 +1520,14 @@ async function main(): Promise<void> {
   mirror.observe($('#storm-pill'), { attributes: true, childList: true, subtree: true, characterData: true });
   mirrorBanner();
   const dockSize = dockHandle();
-  // Phones: the little graphs along the banner's foot do the same, one per metric.
-  $('#cap-sparks').addEventListener('click', (e) => {
-    const b = (e.target as Element).closest<HTMLElement>('[data-metric]');
-    if (b) page.toggleDetail(b.dataset.metric as Metric, b, capWrap);
-  });
+  // The little graphs along the banner's foot do the same, one per metric: today's, or the ten
+  // days' on their peak day.
+  for (const graphs of [$('#cap-sparks'), $('#cap-trend')]) {
+    graphs.addEventListener('click', (e) => {
+      const b = (e.target as Element).closest<HTMLElement>('[data-metric]');
+      if (b) page.toggleDetail(b.dataset.metric as Metric, b, capWrap, b.dataset.day ?? null);
+    });
+  }
   // And the medium banner's week: a day opens that day's chart.
   $('#cap-week').addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-day]');

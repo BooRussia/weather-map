@@ -5301,7 +5301,39 @@ body.phone .cap-wrap.is-compact .cap-storm:not([hidden]) {
   display: none;
 }
 
-body.phone .cap-wrap:not(.is-compact) .cap-sparks {
+/*
+ * Which graphs (owner, 2026-10-29): the full banner's sit under its strip and follow it, the ten days
+ * under the days, today's hours under the hours; the small banner's are the setting's (today by default).
+ */
+body.phone .cap-wrap:not(.is-compact)[data-full-graphs='week'] #cap-sparks,
+body.phone .cap-wrap:not(.is-compact)[data-full-graphs='today'] #cap-trend,
+body.phone .cap-wrap.is-compact[data-small-graphs='week'] #cap-sparks,
+body.phone .cap-wrap.is-compact[data-small-graphs='today'] #cap-trend {
+  display: none;
+}
+
+/* The ten days' graphs name their peak day under its white dot (left-aligned at the start, right at the end). */
+.spark-peak {
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.spark-peak > span {
+  display: inline-block;
+  margin-left: calc(var(--at, 0) * 100%);
+  transform: translateX(calc(var(--at, 0) * -100%));
+  white-space: nowrap;
+}
+
+body.phone .cap-wrap.is-compact .spark-peak {
   display: none;
 }
 
@@ -5495,6 +5527,20 @@ body.phone .dock {
     margin: 0;
     padding: 0 0 0 12px;
     border-top: 0;
+    border-left: 1px solid var(--hairline);
+  }
+
+  /* The graphs under the strip, the place beside both. */
+  body.phone .cap-wrap:not(.is-compact) .capsule {
+    grid-row: 1 / span 2;
+  }
+
+  body.phone .cap-wrap:not(.is-compact) .cap-sparks:not([hidden]) {
+    grid-column: 2;
+    grid-row: 2;
+    column-gap: 24px;
+    margin: 0;
+    padding: 10px 0 0 12px;
     border-left: 1px solid var(--hairline);
   }
 
