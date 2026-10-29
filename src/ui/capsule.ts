@@ -186,7 +186,11 @@ function sparkline(values: number[], stroke: string | [string, string], minSpan:
     values.forEach((v, i) => {
       if (i !== days.peak) s.append(dot(x(i), y(v), days.colors?.[i] ?? flat, 4));
     });
-    if (days.peak != null) s.append(dot(x(days.peak), y(values[days.peak]), '#ffffff', 6.5));
+    if (days.peak != null) {
+      s.append(dot(x(days.peak), y(values[days.peak]), '#ffffff', 6.5));
+      // Where the peak dot sits, down the graph, 0..1: its letter hangs just under it.
+      s.dataset.peakY = (y(values[days.peak]) / H).toFixed(3);
+    }
   }
   const now = marks.now;
   if (now != null) {
@@ -227,19 +231,20 @@ function sparkButtons(cells: Spark[]): HTMLElement[] {
       h('span', { class: 'spark-label' }, k.label),
       // The icon tells the numbers apart in the small banner, where the labels go.
       h('span', { class: 'spark-value' }, svg(k.icon), k.value),
-      k.line,
-      // The peak day's first letter under its white dot (owner, 2026-10-29: a letter under every dot was too busy).
-      k.letter ? peakLetter(k.letter) : null,
+      // The peak day's first letter just under its white dot (owner, 2026-10-29: a letter under every dot
+      // was too busy, and a row of them under the graph sat too far from their dots).
+      k.letter ? h('span', { class: 'spark-plot' }, k.line, peakLetter(k.letter, Number(k.line.dataset.peakY ?? 0))) : k.line,
     );
     (b.querySelector('.spark-value') as HTMLElement).style.color = k.color;
     return b;
   });
 }
 
-function peakLetter(letter: { text: string; at: number }): HTMLElement {
-  const e = h('span', {}, letter.text);
+function peakLetter(letter: { text: string; at: number }, y: number): HTMLElement {
+  const e = h('span', { class: 'spark-letter', 'aria-hidden': 'true' }, letter.text);
   e.style.left = `${(letter.at * 100).toFixed(2)}%`;
-  return h('span', { class: 'spark-days', 'aria-hidden': 'true' }, e);
+  e.style.top = `calc(${(y * 100).toFixed(1)}% + 4px)`;
+  return e;
 }
 
 const unitsFor = (s: AppState) => ({

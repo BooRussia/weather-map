@@ -5535,26 +5535,37 @@ body.phone .cap-wrap.is-compact .wk-hi {
   font-size: var(--fs-foot);
 }
 
-/* The ten days' graphs: the peak day's first letter, white, under its white dot. */
-.spark-days {
+/*
+ * The ten days' graphs: the peak day's first letter, white, a few px under its white dot. The peak is
+ * the graph's highest point, so it's in the top half and the letter hangs at most a little below.
+ */
+.spark-plot {
   position: relative;
   display: block;
   width: 100%;
-  height: 13px;
-  margin-top: 3px;
+  margin: 4px 0 5px;
+}
+
+.spark-plot .spark-line {
+  margin-top: 0;
+}
+
+.spark-letter {
+  position: absolute;
+  transform: translateX(-50%);
   font-size: 10px;
   font-weight: 800;
-  line-height: 13px;
+  line-height: 11px;
   color: var(--fg);
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
 }
 
-.spark-days > span {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
+body.phone .cap-wrap.is-compact .spark-plot {
+  margin: 2px 0 0;
 }
 
-body.phone .cap-wrap.is-compact .spark-days {
+body.phone .cap-wrap.is-compact .spark-letter {
   display: none;
 }
 
@@ -5854,11 +5865,16 @@ body.phone .dock {
     gap: 10px;
   }
 
-  body.phone .cap-wrap.is-compact .spark-line {
+  body.phone .cap-wrap.is-compact .spark-line,
+  body.phone .cap-wrap.is-compact .spark-plot {
     flex: 1;
     min-width: 0;
     height: 16px;
     margin: 0;
+  }
+
+  body.phone .cap-wrap.is-compact .spark-plot .spark-line {
+    width: 100%;
   }
 }
 
@@ -6304,13 +6320,26 @@ body.is-gripping * {
  * run all the way to the right edge.
  */
 @container head (min-width: 760px) {
+  /* No chin: the handle sits in the bottom padding rather than a row of its own. */
   body.phone .cap-wrap:not(.is-compact) {
     padding-right: 16px;
+    padding-bottom: 18px;
   }
 
+  body.phone .cap-wrap:not(.is-compact) .cap-handle {
+    position: absolute;
+    left: 50%;
+    bottom: 2px;
+    height: 14px;
+    margin: 0;
+    transform: translateX(-50%);
+  }
+
+  /* The place lines up with the days' names. */
   body.phone .cap-wrap:not(.is-compact) .capsule {
     grid-row: 1;
-    align-self: center;
+    align-self: start;
+    padding-top: 2px;
   }
 
   body.phone .cap-wrap:not(.is-compact) .cap-pin,
