@@ -6734,3 +6734,151 @@ body.tv .cap-temp {
   padding-top: 12px;
   border-top: 1px solid var(--hairline);
 }
+
+/* ---------- flyability (owner, 2026-10-29: pilot features) ---------- */
+
+.fly-seg {
+  margin: 0 0 10px;
+}
+
+/* Which way the launch faces: Any, then the eight points. */
+.fly-facing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 12px;
+}
+
+.fly-facing-label {
+  margin-right: 4px;
+  color: var(--muted);
+  font-size: var(--fs-foot);
+}
+
+.fly-facing button {
+  min-width: 34px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--fg);
+  font-size: var(--fs-foot);
+  font-weight: 600;
+}
+
+.fly-facing button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+/* The next 12 hours: a column each, its verdict a colored dot, the wind in knots under it. */
+.fly-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(44px, 1fr);
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -4px 8px;
+}
+
+.fly-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.fly-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.fly-hour[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.fly-time {
+  font-size: var(--fs-foot);
+  font-weight: 600;
+}
+
+.fly-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.fly-hour.is-go .fly-dot {
+  background: #30d158;
+}
+
+.fly-hour.is-marginal .fly-dot {
+  background: #ffd60a;
+}
+
+.fly-hour.is-no .fly-dot {
+  background: #ff453a;
+}
+
+.fly-wind {
+  font-size: var(--fs-callout);
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.fly-wind small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.fly-dir {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* Why, for the hour picked: its verdict in its color, then each reason. */
+.fly-why {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: var(--fs-callout);
+}
+
+.fly-why strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.fly-why.is-go strong {
+  color: #30d158;
+}
+
+.fly-why.is-marginal strong {
+  color: #ffd60a;
+}
+
+.fly-why.is-no strong {
+  color: #ff6961;
+}
+
+.fly-why ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.fly-why p {
+  margin: 0;
+  color: var(--muted);
+}

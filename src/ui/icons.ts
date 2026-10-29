@@ -40,6 +40,8 @@ export const windIcon = `${open('i-wind')}<path d="M3 8.5h10.5a3 3 0 1 0-3-3" />
 export const dropIcon = `${open('i-drop')}<path d="M12 3.2c-2.6 3.6-5.6 6.6-5.6 10a5.6 5.6 0 0 0 11.2 0c0-3.4-3-6.4-5.6-10z" /></svg>`;
 /** Airport weather: a plane from above. */
 export const planeMark = `${open('i-plane')}<path d="M12 2.8c.9 0 1.5 1 1.5 2.2v4.6l7 4.1v2l-7-2.2v4l2.3 1.8v1.6L12 19.8l-3.8 1.1v-1.6l2.3-1.8v-4l-7 2.2v-2l7-4.1V5c0-1.2.6-2.2 1.5-2.2z" /></svg>`;
+/** Flyability: a paraglider, its canopy over the pilot. */
+export const pgMark = `${open('i-pg')}<path d="M3 9.5C6 5.5 18 5.5 21 9.5c-2.5-1-5-1.2-9-1.2s-6.5.2-9 1.2z" /><path d="M4.5 9.2 11 17.5M19.5 9.2 13 17.5M9 8.6l2.4 8.9M15 8.6l-2.4 8.9" /><circle cx="12" cy="19" r="1.5" /></svg>`;
 /** Advisories: an area with a warning in it. */
 export const advisoryMark = `${open('i-advisory')}<path d="M4 7.5 9.5 4l9 2.5 1.5 8-5.5 5.5L5 18z" /><path d="M12 9v4M12 15.8v.2" /></svg>`;
 /** Pilot reports: a speech bubble. */

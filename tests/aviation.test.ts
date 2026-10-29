@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { csvFields, joinTfrs, parseGairmets, parseMetars, parsePireps, parseTafs, stationNames } from '../scripts/aviation.mjs';
 import { ago, ceilingFt, intensityRank, levelText, pirepColor, tafLines, windText, zulu } from '../src/data/aviation';
 import { atAltitude, capeWord, cloudbaseFt, lapseRate, lapseWord, windsAloft } from '../src/data/aloft';
+import { angleApart, assess, civilTwilight, kpAt, PROFILES } from '../src/data/flyability';
 
 const HEAD =
   'raw_text,station_id,observation_time,latitude,longitude,temp_c,dewpoint_c,wind_dir_degrees,wind_speed_kt,wind_gust_kt,visibility_statute_mi,altim_in_hg,sea_level_pressure_mb,corrected,auto,auto_station,maintenance_indicator_on,no_signal,lightning_sensor_off,freezing_rain_sensor_off,present_weather_sensor_off,wx_string,sky_cover,cloud_base_ft_agl,sky_cover,cloud_base_ft_agl,sky_cover,cloud_base_ft_agl,sky_cover,cloud_base_ft_agl,flight_category,three_hr_pressure_tendency_mb,maxT_c,minT_c,maxT24hr_c,minT24hr_c,precip_in,pcp3hr_in,pcp6hr_in,pcp24hr_in,snow_in,vert_vis_ft,metar_type,elevation_m';
@@ -78,6 +79,7 @@ describe('the air above', () => {
     cape: 350,
     liftedIndex: -0.9,
     cin: 56,
+    wind120: { dir: 60, kt: 20 },
   };
 
   it('reads the wind between levels as a turning vector', () => {
@@ -144,6 +146,44 @@ describe('advisories and pilot reports', () => {
     expect(levelText('090')).toBe('9,000 ft');
     expect(intensityRank('LGT-MOD')).toBe(2);
     expect(pirepColor({ turbulence: 'NEG', icing: 'MOD RIME' })).toBe('#ff9f0a');
+  });
+});
+
+describe('flyability', () => {
+  const calm = { windKt: 8, gustKt: 12, fromDeg: 270, rainPct: 0 };
+
+  it('says go, and why not when it isn\'t', () => {
+    expect(assess(calm, PROFILES.paraglider, 270)).toEqual({ level: 'go', reasons: [] });
+    expect(assess({ ...calm, fromDeg: 330 }, PROFILES.paraglider, 270).level).toBe('marginal');
+    expect(assess({ ...calm, fromDeg: 90 }, PROFILES.paraglider, 270).reasons[0]).toMatch(/behind the launch/);
+    expect(assess({ ...calm, gustKt: 22 }, PROFILES.paraglider, null).level).toBe('no');
+    expect(assess({ ...calm, windKt: 2, gustKt: 3 }, PROFILES.paraglider, null).reasons[0]).toMatch(/light/);
+  });
+
+  it('holds drones to Part 107 clouds and visibility, and notes GPS weather', () => {
+    expect(assess({ ...calm, visSM: 2, cloudbaseFt: 600 }, PROFILES.drone, null).reasons).toHaveLength(2);
+    expect(assess({ ...calm, kp: 6 }, PROFILES.drone, null).level).toBe('marginal');
+  });
+
+  it('measures angles the short way round', () => {
+    expect(angleApart(350, 10)).toBe(20);
+    expect(angleApart(90, 270)).toBe(180);
+  });
+
+  it('times civil twilight to within a few minutes', () => {
+    // Tampa, 29 Oct 2026: civil dawn about 11:16 UTC, dusk about 23:10 UTC.
+    const t = civilTwilight(27.95, -82.46, Date.parse('2026-10-29T12:00:00Z'));
+    expect(Math.abs(t.dawn! - Date.parse('2026-10-29T11:16:00Z'))).toBeLessThan(5 * 60_000);
+    expect(Math.abs(t.dusk! - Date.parse('2026-10-29T23:10:00Z'))).toBeLessThan(5 * 60_000);
+  });
+
+  it('reads the Kp for the 3-hour block a time is in', () => {
+    const blocks = [
+      { at: Date.parse('2026-10-29T12:00:00Z'), kp: 2.3, observed: true },
+      { at: Date.parse('2026-10-29T15:00:00Z'), kp: 5.7, observed: false },
+    ];
+    expect(kpAt(blocks, Date.parse('2026-10-29T16:30:00Z'))).toBe(5.7);
+    expect(kpAt(blocks, Date.parse('2026-10-29T19:30:00Z'))).toBeNull();
   });
 });
 

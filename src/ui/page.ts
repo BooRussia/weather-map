@@ -4,6 +4,8 @@ import { getNormal, getOutlooks, MODELS, NORMAL_YEARS, type Normal, type Outlook
 import { getTides, tideAt, type Tides } from '../data/tides';
 import { getAloft, type Aloft } from '../data/aloft';
 import { aloftCard } from './aloftCard';
+import { getKp, type KpBlock } from '../data/flyability';
+import { flyCard } from './flyCard';
 import { cloudWord, dayHours, hourOfDay, type Metric } from '../data/dayDetail';
 import { moonPhase, moonTimes } from '../data/moon';
 import type { Alert } from '../data/nws';
@@ -88,6 +90,8 @@ export class WeatherPage {
   private readonly extras = new Map<string, { at: number; v: unknown }>();
   /** Hours from now the winds-aloft card shows (its ‹ › buttons). */
   private aloftOffset = 0;
+  /** The flyability card's hour tapped, from now. */
+  private flyHour = 0;
   private readonly loading = new Set<string>();
   /** Told the sky's top color while the page is open, null when it closes (the browser's status-bar strip follows it). */
   onTop: ((color: string | null) => void) | null = null;
@@ -340,6 +344,23 @@ export class WeatherPage {
     });
   }
 
+  /** Flyability: shares the winds-aloft data (its 400 ft wind) and adds the Kp forecast. */
+  private fly(c: Conditions, om: PointForecast): HTMLElement {
+    const redraw = () => this.last && this.render(this.last.c, this.last.s);
+    return flyCard(
+      om,
+      c.point,
+      this.later<Aloft>('aloft', c, () => getAloft(c.point)),
+      this.later<KpBlock[]>('kp', c, () => getKp()),
+      this.flyHour,
+      (i) => {
+        this.flyHour = i;
+        redraw();
+      },
+      redraw,
+    );
+  }
+
   render(c: Conditions | null, s: AppState): void {
     this.last = { c, s };
     $('#page-kicker').hidden = !s.gps;
@@ -385,6 +406,7 @@ export class WeatherPage {
             tidesCard(this.later('tides', c!, () => (yesterday ? getTides(c!.point, yesterday) : Promise.resolve(null))), om, s),
             modelsCard(outlooks, s),
             s.pilotCards ? this.aloft(c!, om) : null,
+            s.pilotCards ? this.fly(c!, om) : null,
           ].filter((x): x is HTMLElement => x != null)
         : [loadingCard()]),
       sources(c),

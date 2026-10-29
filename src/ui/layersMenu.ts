@@ -667,8 +667,8 @@ export class LayersMenu {
         this.layer('pireps', 'Pilot reports', pirepMark, 'is-blue', 'PIREPs · worst of turbulence and icing, urgent ringed red'),
         this.layer('airspace', 'TFRs and airspace', airspaceMark, 'is-blue', 'TFRs in red; Class B, C, D from zoom 7'),
         switchRow({
-          label: 'Winds aloft and sounding',
-          sub: 'On the weather page: winds by altitude, cloudbase, thermals, freezing level',
+          label: 'Pilot cards',
+          sub: 'On the weather page: winds aloft and a sounding; flyability for paragliders, hang gliders, and drones',
           mark: windIcon,
           markClass: 'is-blue',
           checked: s.pilotCards,

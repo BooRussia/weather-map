@@ -39,6 +39,8 @@ export interface AloftHour {
   cape: number | null;
   liftedIndex: number | null;
   cin: number | null;
+  /** The wind 120 m up (about 400 ft, the drone ceiling), kt. */
+  wind120: { dir: number; kt: number } | null;
 }
 
 export interface Aloft {
@@ -74,6 +76,7 @@ export function parseAloft(r: { elevation: number; hourly: Hourly }): Aloft {
       cape: at('cape', i),
       liftedIndex: at('lifted_index', i),
       cin: at('convective_inhibition', i),
+      wind120: at('wind_speed_120m', i) != null && at('wind_direction_120m', i) != null ? { kt: at('wind_speed_120m', i)!, dir: at('wind_direction_120m', i)! } : null,
     };
   });
   return { elevationFt, hours };
@@ -138,7 +141,7 @@ export function capeWord(cape: number): string {
 }
 
 export async function getAloft({ lat, lon }: LatLon, signal?: AbortSignal): Promise<Aloft> {
-  const vars = ['temperature_2m', 'dew_point_2m', 'surface_pressure', 'freezing_level_height', 'boundary_layer_height', 'cape', 'lifted_index', 'convective_inhibition'];
+  const vars = ['temperature_2m', 'dew_point_2m', 'surface_pressure', 'freezing_level_height', 'boundary_layer_height', 'cape', 'lifted_index', 'convective_inhibition', 'wind_speed_120m', 'wind_direction_120m'];
   for (const p of LEVELS) vars.push(`temperature_${p}hPa`, `dew_point_${p}hPa`, `wind_speed_${p}hPa`, `wind_direction_${p}hPa`, `geopotential_height_${p}hPa`);
   const q = new URLSearchParams({
     latitude: lat.toFixed(4),
