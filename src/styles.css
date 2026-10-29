@@ -6388,11 +6388,32 @@ body.tv {
   -webkit-user-select: none;
 }
 
+/*
+ * A little room around the panel, and no drop shadow (Fire TV session, 2026-10-29): the launcher sizes
+ * its view to this box, so a shadow or a corner right at its edge was cut off and the corner looked square.
+ */
 body.tv .phone-head {
   position: static;
+  box-sizing: border-box;
   width: 1040px;
   margin: 0;
+  padding: 3px;
   pointer-events: none;
+}
+
+body.tv .cap-wrap {
+  box-shadow: none;
+}
+
+/*
+ * All ten days across (Fire TV session, 2026-10-29: only seven fit). The page is zoomed, so its window
+ * is narrower than the banner it lays out (576 px on the TV) and misses the wide screens' rule for this.
+ */
+body.tv .cap-wrap:not(.is-compact) .cap-week:not([hidden]) {
+  grid-auto-columns: minmax(0, 1fr);
+  overflow: hidden;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 body.tv .cap-handle,
