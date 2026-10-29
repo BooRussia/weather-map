@@ -1,5 +1,5 @@
 import { OPEN_METEO_FORECAST, type LatLon } from '../config';
-import { fetchJson } from '../util/http';
+import { fetchJson, fetchJsonSaved } from '../util/http';
 import { wrapLon } from '../util/geo';
 
 const c4 = (n: number) => n.toFixed(4);
@@ -155,7 +155,8 @@ export async function getPointForecast({ lat, lon }: LatLon, signal?: AbortSigna
     // Ten days, like Apple's (owner, 2026-10-24: scroll further into the week from the banner).
     forecast_days: '10',
   });
-  const r = await fetchJson<PointResponse>(`${OPEN_METEO_FORECAST}?${q}`, { signal });
+  // Kept for offline: the forecast is part of the last briefing.
+  const r = await fetchJsonSaved<PointResponse>(`${OPEN_METEO_FORECAST}?${q}`, `forecast:${lat.toFixed(2)},${lon.toFixed(2)}`, 'the forecast', { signal });
   const c = r.current;
   const h = r.hourly;
   const d = r.daily;

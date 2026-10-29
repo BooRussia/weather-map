@@ -25,6 +25,7 @@ import { Boundaries } from './map/boundaries';
 import { TempBubble } from './map/tempBubble';
 import { edgeTint } from './map/edgeTint';
 import { formatTemp } from './util/units';
+import { whenServedFromSaved } from './util/http';
 import { TrafficLayer } from './map/trafficLayer';
 import { OutlookLayer } from './map/outlookLayer';
 import { StormLayer, type StormHit } from './map/stormLayer';
@@ -827,6 +828,14 @@ async function main(): Promise<void> {
 
   /* ---------- search ---------- */
 
+  // Offline, the last briefing stands in: say so, once a minute at most, with when it was saved.
+  let staleSaid = 0;
+  whenServedFromSaved((what, savedAt) => {
+    if (Date.now() - staleSaid < 60_000) return;
+    staleSaid = Date.now();
+    const at = savedAt ? new Date(savedAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : 'earlier';
+    showNote(`Offline: showing ${what} saved ${at}. Times and ages on each report still apply.`);
+  });
   /** My places' weather right now, by place, kept ten minutes. */
   const placesNow = new Map<string, { at: number; now: PlaceNow }>();
   // A search is a deliberate choice: the readout goes there whether or not it follows the map.

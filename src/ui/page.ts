@@ -1194,14 +1194,28 @@ function tideCurve(tides: Tides, now: string): SVGSVGElement {
  * The forecast models side by side (owner, 2026-10-29: Windy's hallmark): the European, American, and
  * German models' highs and chances of rain for the ten days, so you can see where they agree.
  */
+/** The models disagree on a day when their highs are this far apart, °F, or their chances of rain this many points. */
+const SPLIT_HI_F = 6;
+const SPLIT_POP = 40;
+
 function modelsCard(outlooks: Outlooks | null | undefined, s: AppState): HTMLElement | null {
   if (!outlooks?.days.length) return null;
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // Where they part ways (owner, 2026-10-29: flag it when models disagree): those rows marked, and named below.
+  const split = outlooks.days.map((d) => {
+    const ms = d.models.filter((m): m is NonNullable<typeof m> => m != null);
+    if (ms.length < 2) return false;
+    const his = ms.map((m) => m.hiF);
+    const pops = ms.map((m) => m.pop).filter((p): p is number => p != null);
+    return Math.max(...his) - Math.min(...his) >= SPLIT_HI_F || (pops.length > 1 && Math.max(...pops) - Math.min(...pops) >= SPLIT_POP);
+  });
+  const dayName = (i: number, date: string) => (i === 0 ? 'today' : DOW[new Date(`${date}T12:00:00Z`).getUTCDay()]);
+  const splitDays = outlooks.days.map((d, i) => (split[i] ? dayName(i, d.date) : null)).filter((x): x is string => x != null);
   const head = h('tr', {}, h('th', {}), ...MODELS.map((m) => h('th', { scope: 'col', title: `${m.name} model` }, m.short)));
   const body = outlooks.days.map((d, i) =>
     h(
       'tr',
-      {},
+      { class: split[i] ? 'is-split' : null, title: split[i] ? 'The models disagree on this day' : null },
       h('th', { scope: 'row' }, i === 0 ? 'Today' : DOW[new Date(`${d.date}T12:00:00Z`).getUTCDay()]),
       ...d.models.map((m) =>
         h(
@@ -1217,6 +1231,9 @@ function modelsCard(outlooks: Outlooks | null | undefined, s: AppState): HTMLEle
     { icon: modelsIcon, label: 'Forecast models' },
     h('p', { class: 'card-text mdl-note' }, 'Each model’s high and chance of rain. Where they agree, the forecast is surer.'),
     h('table', { class: 'mdl-table' }, h('thead', {}, head), h('tbody', {}, ...body)),
+    splitDays.length
+      ? h('p', { class: 'mdl-split' }, `Less certain ${splitDays.length > 2 ? `on ${splitDays.slice(0, -1).join(', ')}, and ${splitDays.at(-1)}` : `on ${splitDays.join(' and ')}`}: the models’ highs are ${SPLIT_HI_F}°F or more apart, or their chances of rain ${SPLIT_POP} points.`)
+      : h('p', { class: 'mdl-split is-agree' }, 'The models broadly agree all ten days.'),
   );
 }
 

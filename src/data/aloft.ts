@@ -1,6 +1,6 @@
 import { OPEN_METEO_FORECAST, type LatLon } from '../config';
 import { wrapLon } from '../util/geo';
-import { fetchJson } from '../util/http';
+import { fetchJsonSaved } from '../util/http';
 
 /**
  * The air above a place, hour by hour (owner, 2026-10-29: pilot features): Open-Meteo's model data on
@@ -151,5 +151,5 @@ export async function getAloft({ lat, lon }: LatLon, signal?: AbortSignal): Prom
     timezone: 'auto',
     forecast_days: '2',
   });
-  return parseAloft(await fetchJson<{ elevation: number; hourly: Hourly }>(`${OPEN_METEO_FORECAST}?${q}`, { signal }));
+  return parseAloft(await fetchJsonSaved<{ elevation: number; hourly: Hourly }>(`${OPEN_METEO_FORECAST}?${q}`, `aloft:${lat.toFixed(2)},${lon.toFixed(2)}`, 'winds aloft', { signal }));
 }

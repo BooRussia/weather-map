@@ -1,4 +1,4 @@
-import { fetchJson } from '../util/http';
+import { fetchJsonSaved } from '../util/http';
 
 /**
  * Airport weather (owner, 2026-10-29: pilot features): METARs and TAFs from the NWS Aviation Weather
@@ -53,7 +53,7 @@ type Row = [string, number, number, number, string, string, ...(number | string 
 const fresh = () => `?t=${Math.floor(Date.now() / 300_000)}`;
 
 export async function getMetars(signal?: AbortSignal): Promise<Metars> {
-  const r = await fetchJson<{ generated: string; metars: Row[] }>(`${AVIATION_URL}/metars.json${fresh()}`, { signal, timeoutMs: 20_000 });
+  const r = await fetchJsonSaved<{ generated: string; metars: Row[] }>(`${AVIATION_URL}/metars.json${fresh()}`, 'metars', 'airport weather', { signal, timeoutMs: 20_000 });
   const cats = new Set(['VFR', 'MVFR', 'IFR', 'LIFR']);
   return {
     generated: Date.parse(r.generated),
@@ -80,7 +80,7 @@ export async function getMetars(signal?: AbortSignal): Promise<Metars> {
 }
 
 export async function getTafs(signal?: AbortSignal): Promise<{ generated: number; tafs: Record<string, Taf> }> {
-  const r = await fetchJson<{ generated: string; tafs: Record<string, [number, string]> }>(`${AVIATION_URL}/tafs.json${fresh()}`, { signal, timeoutMs: 20_000 });
+  const r = await fetchJsonSaved<{ generated: string; tafs: Record<string, [number, string]> }>(`${AVIATION_URL}/tafs.json${fresh()}`, 'tafs', 'TAFs', { signal, timeoutMs: 20_000 });
   const tafs: Record<string, Taf> = {};
   for (const [id, [issued, raw]] of Object.entries(r.tafs)) tafs[id] = { issued: issued * 1000, raw };
   return { generated: Date.parse(r.generated), tafs };
@@ -198,7 +198,7 @@ export interface Advisories {
 
 export async function getAdvisories(signal?: AbortSignal): Promise<Advisories> {
   type Raw = { generated: string; sigmets: AirSigmet[] | null; gairmets: Gairmet[] | null; pireps: [number, number, number, number | null, string, string, string, string, boolean][] | null; tfrs: Tfr[] | null };
-  const r = await fetchJson<Raw>(`${AVIATION_URL}/advisories.json${fresh()}`, { signal, timeoutMs: 20_000 });
+  const r = await fetchJsonSaved<Raw>(`${AVIATION_URL}/advisories.json${fresh()}`, 'advisories', 'advisories', { signal, timeoutMs: 20_000 });
   return {
     generated: Date.parse(r.generated),
     sigmets: r.sigmets ?? [],

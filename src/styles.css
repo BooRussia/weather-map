@@ -6882,3 +6882,21 @@ body.tv .cap-temp {
   margin: 0;
   color: var(--muted);
 }
+
+/* Days the models disagree on: a warm mark down the row's left, and a line under the table naming them. */
+.mdl-table tr.is-split th {
+  box-shadow: inset 3px 0 0 #ffd60a;
+  padding-left: 8px;
+}
+
+.mdl-split {
+  margin: 8px 0 0;
+  color: #ffd60a;
+  font-size: var(--fs-foot);
+  font-weight: 600;
+}
+
+.mdl-split.is-agree {
+  color: var(--muted);
+  font-weight: 500;
+}

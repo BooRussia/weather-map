@@ -1,4 +1,4 @@
-import { fetchJson } from '../util/http';
+import { fetchJsonSaved } from '../util/http';
 
 /**
  * Flyability (owner, 2026-10-29: pilot features): hour by hour, whether the wind, gusts, rain, and for
@@ -118,7 +118,7 @@ export interface KpBlock {
 }
 
 export async function getKp(signal?: AbortSignal): Promise<KpBlock[]> {
-  const r = await fetchJson<{ time_tag: string; kp: number; observed: string }[]>(KP_URL, { signal, timeoutMs: 15_000 });
+  const r = await fetchJsonSaved<{ time_tag: string; kp: number; observed: string }[]>(KP_URL, 'kp', 'the Kp forecast', { signal, timeoutMs: 15_000 });
   return r
     .map((x) => ({ at: Date.parse(`${x.time_tag}Z`), kp: Number(x.kp), observed: x.observed === 'observed' }))
     .filter((x) => Number.isFinite(x.at) && Number.isFinite(x.kp));
