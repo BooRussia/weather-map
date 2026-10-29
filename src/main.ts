@@ -69,7 +69,7 @@ import { getFires, getGauges } from './data/hazards';
 import { FiresLayer, GaugesLayer } from './map/hazardsLayer';
 import { firePanel, gaugePanel } from './ui/hazardPanel';
 import { glyphFor } from './data/outlook';
-import { alertMark, boltMark, cameraIcon, GLYPHS, hurricaneMark, locateIcon, routeIcon, searchIcon, warningIcon } from './ui/icons';
+import { alertMark, boltMark, cameraIcon, GLYPHS, hurricaneMark, locateIcon, routeIcon, searchIcon, shareIcon, warningIcon } from './ui/icons';
 import { BarShortcuts } from './ui/barShortcuts';
 import { LayersMenu } from './ui/layersMenu';
 import { alertDetail, alertsList, alertsOfType, type AlertsHooks } from './ui/alertsPanel';
@@ -80,6 +80,9 @@ import { showNote } from './ui/note';
 import { tempColor, WeatherPage } from './ui/page';
 import { bannerHandle, bannerSwipe, dockHandle, openSearchPop, phoneLayout, refitBar } from './ui/phoneLayout';
 import { PIN, SearchBox } from './ui/search';
+import { placeLink, shareOut } from './ui/share';
+import { canRecord, recordLoop, snapshot } from './map/capture';
+import { conditionWord, hiLoLine } from './ui/format';
 import { Sheet } from './ui/sheet';
 import { TimelineBar } from './ui/timelineBar';
 import type { TripPanel } from './ui/trip';
@@ -984,6 +987,89 @@ async function main(): Promise<void> {
     showNote(`Tagged ${name}. Its pin is on the map.`);
   });
   renderPageTag();
+
+  /* ---------- sharing ---------- */
+
+  // The weather page shares the place: its weather in a line, and a link that opens the map there.
+  const pageShare = $<HTMLButtonElement>('#page-share');
+  pageShare.prepend(svg(shareIcon));
+  pageShare.addEventListener('click', async () => {
+    const s = store.get();
+    const c = conditions;
+    const place = c?.place ?? 'this place';
+    const line = c
+      ? [`${place}: ${c.tempF != null ? formatTemp(c.tempF, s.tempUnit) : ''}${conditionWord(c) ? `, ${conditionWord(c).toLowerCase()}` : ''}.`, `${hiLoLine(c, s)}.`, $('#cap-soon').hidden ? '' : `${$('#cap-soon').textContent}.`]
+          .filter((x) => x && x !== '.')
+          .join(' ')
+          .replace(/\s+/g, ' ')
+      : `Weather at ${place}.`;
+    const result = await shareOut({ title: `Weather at ${place}`, text: line, url: placeLink(s.selected) });
+    if (result === 'copied') showNote('Copied the weather and a link to it.');
+    else if (result === 'failed') showNote('Sharing is unavailable here.');
+  });
+
+  // The bar's share button: a few seconds of the radar loop as a video (a picture where video can't be
+  // recorded, or the radar is off), shown first with its own Share button, since the system's share
+  // sheet only opens straight from a tap.
+  const shareBtn = $<HTMLButtonElement>('#share-btn');
+  shareBtn.append(svg(shareIcon));
+  const LOOP_SECONDS = 6;
+  let capturing = false;
+  shareBtn.addEventListener('click', async () => {
+    if (capturing) return;
+    capturing = true;
+    shareBtn.classList.add('busy');
+    const s = store.get();
+    const place = conditions?.place ?? 'Weather Map';
+    const caption = () => `${place} · ${$('#tl-time').textContent ?? 'Now'} · Weather Map`;
+    const overlays = [$<HTMLCanvasElement>('#wind-canvas'), $<HTMLCanvasElement>('#fx-canvas')];
+    let file: File | null = null;
+    try {
+      if (s.layers.rain && canRecord()) {
+        showNote('Recording the radar loop…');
+        // Already playing: that loop. Otherwise the last two hours up to now, then back to now.
+        const wasPlaying = bar.isPlaying;
+        const v = await recordLoop(
+          map,
+          overlays,
+          caption,
+          LOOP_SECONDS,
+          () => wasPlaying || bar.autoplay(-2, 0),
+          () => {
+            if (wasPlaying) return;
+            bar.pause();
+            bar.now();
+          },
+        );
+        if (v) file = new File([v.blob], `radar-loop.${v.type === 'video/mp4' ? 'mp4' : 'webm'}`, { type: v.type });
+      }
+      if (!file) {
+        const b = await snapshot(map, overlays, caption());
+        if (b) file = new File([b], 'weather-map.png', { type: 'image/png' });
+      }
+    } finally {
+      capturing = false;
+      shareBtn.classList.remove('busy');
+    }
+    if (!file) {
+      showNote('Couldn’t capture the map.');
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const video = file.type.startsWith('video');
+    const preview = video
+      ? h('video', { class: 'share-preview', src: url, autoplay: '', loop: '', muted: '', playsinline: '' })
+      : h('img', { class: 'share-preview', src: url, alt: 'The map' });
+    if (video) (preview as HTMLVideoElement).muted = true;
+    const go = h('button', { type: 'button', class: 'share-go' }, svg(shareIcon), video ? 'Share video' : 'Share picture');
+    const link = placeLink(s.selected, map.getZoom());
+    go.addEventListener('click', async () => {
+      const result = await shareOut({ title: `Weather at ${place}`, text: `${place} on Weather Map: ${link}`, file: file! });
+      if (result === 'saved') showNote(video ? 'Saved the video.' : 'Saved the picture.');
+      else if (result === 'shared') sheet.close();
+    });
+    sheet.open('share', video ? 'Radar loop' : 'Map picture', h('div', { class: 'share-card' }, preview, go), shareBtn, () => URL.revokeObjectURL(url));
+  });
 
   /* ---------- trip weather ---------- */
 

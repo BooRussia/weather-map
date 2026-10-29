@@ -154,6 +154,10 @@ export class TimelineBar {
     this.apply();
   }
 
+  get isPlaying(): boolean {
+    return this.playing;
+  }
+
   toggle(): void {
     if (this.playing) this.pause();
     else this.play();

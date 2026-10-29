@@ -111,6 +111,8 @@ export const GLYPHS: Record<string, string> = {
 export const cameraIcon = `${open('i-camera')}<rect x="2.5" y="7" width="13.5" height="10" rx="2.4" /><path d="m16 10.6 5.2-2.9v8.6L16 13.4z" /></svg>`;
 
 /** Corners out: show only the map. */
+/** Share: the system's box with an arrow out of it. */
+export const shareIcon = `${open('i-share')}<path d="M12 3.5v11M8.2 7.3 12 3.5l3.8 3.8M8 10.5H6.5A1.5 1.5 0 0 0 5 12v7a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-7a1.5 1.5 0 0 0-1.5-1.5H16" /></svg>`;
 export const expandIcon = `${open('i-expand')}<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>`;
 
 /** Corners in: bring the controls back. */

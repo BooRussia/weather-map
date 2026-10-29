@@ -1768,6 +1768,13 @@ body.phone.drawer-on .phone-head {
   font-variant-numeric: tabular-nums;
 }
 
+/* Tag the place the page shows, and share it, side by side under its high and low. */
+.page-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
 /* Tag the place the page shows (pressed: tagged; tap again to untag). */
 .page-tag {
   display: inline-flex;
@@ -6242,5 +6249,54 @@ body.is-gripping * {
   *::after {
     transition-duration: 0s !important;
     animation: none !important;
+  }
+}
+
+/* ---------- sharing the map (owner, 2026-10-29) ---------- */
+
+/* What will be shared, then the button that shares it. */
+.share-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-preview {
+  display: block;
+  width: 100%;
+  max-height: 52dvh;
+  object-fit: contain;
+  border-radius: var(--r-inner);
+  background: #000000;
+}
+
+.share-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-on, #ffffff);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.share-go .icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.2;
+}
+
+/* Busy (recording the loop, finding you): the icon breathes. */
+.ctrl.busy .icon {
+  animation: ctrl-busy 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes ctrl-busy {
+  to {
+    opacity: 0.35;
   }
 }

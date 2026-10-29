@@ -116,6 +116,8 @@
       <span class="ctrl-sep" aria-hidden="true"></span>
       <button id="cams-btn" class="ctrl" type="button" aria-label="Traffic cameras" aria-pressed="false" title="Traffic cameras"></button>
       <span class="ctrl-sep" aria-hidden="true"></span>
+      <button id="share-btn" class="ctrl" type="button" aria-label="Share the map" title="Share the map"></button>
+      <span class="ctrl-sep" aria-hidden="true"></span>
       <button id="full-btn" class="ctrl" type="button" aria-label="Map only" aria-pressed="false" title="Map only (F)"></button>
     </div>
     <!-- Weather switches, on the right of the bar: the hurricane tracker, lightning only, and any layer pinned from Layers (barShortcuts.ts). -->
@@ -192,7 +194,10 @@
           <p id="page-temp" class="page-temp">--°</p>
           <p id="page-cond" class="page-cond"></p>
           <p id="page-hilo" class="page-hilo"></p>
-          <button id="page-tag" class="page-tag glass" type="button" aria-pressed="false"><span id="page-tag-text">Tag this place</span></button>
+          <div class="page-actions">
+            <button id="page-tag" class="page-tag glass" type="button" aria-pressed="false"><span id="page-tag-text">Tag this place</span></button>
+            <button id="page-share" class="page-tag glass" type="button"><span>Share</span></button>
+          </div>
         </header>
         <div id="page-body" class="page-body"></div>
       </div>
