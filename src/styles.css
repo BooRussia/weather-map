@@ -7154,3 +7154,11 @@ body:has(.page-body > .is-lifted) {
 .page-body.is-editing .mode-seg {
   visibility: hidden;
 }
+
+/* The TV banner never animates: a change is drawn once, and nothing repaints after (the TV's GPU is small). */
+body.tv *,
+body.tv *::before,
+body.tv *::after {
+  transition: none !important;
+  animation: none !important;
+}
