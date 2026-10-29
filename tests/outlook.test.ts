@@ -36,10 +36,10 @@ describe('next 2 hours', () => {
 
   it('counts the banner heads-up from now, not from when the forecast was made', () => {
     // Slots from 18:00; it's 18:10 now, rain from 18:45.
-    expect(rainSoon(slots([0, 0, 0, 0.3, 0.3, 0, 0, 0]), '2026-10-05T18:10')).toEqual({ text: 'Light rain starting in about 35 min', wet: false });
-    expect(rainSoon(slots([0, 0.3, 0.3, 0, 0, 0, 0, 0]), '2026-10-05T18:13')).toEqual({ text: 'Light rain starting in a few minutes', wet: false });
-    expect(rainSoon(slots([1, 1, 1, 0, 0, 0, 0, 0]), '2026-10-05T18:05')).toEqual({ text: 'Rain stopping in about 40 min', wet: true });
-    expect(rainSoon(slots([3, 3, 3, 3, 3, 3, 3, 3]), '2026-10-05T18:20')).toEqual({ text: 'Heavy rain for the next 1 hr 45 min', wet: true });
+    expect(rainSoon(slots([0, 0, 0, 0.3, 0.3, 0, 0, 0]), '2026-10-05T18:10')).toEqual({ text: 'Light rain starting in about 35 min', wet: false, minutes: 35 });
+    expect(rainSoon(slots([0, 0.3, 0.3, 0, 0, 0, 0, 0]), '2026-10-05T18:13')).toEqual({ text: 'Light rain starting in a few minutes', wet: false, minutes: 2 });
+    expect(rainSoon(slots([1, 1, 1, 0, 0, 0, 0, 0]), '2026-10-05T18:05')).toEqual({ text: 'Rain stopping in about 40 min', wet: true, minutes: 0 });
+    expect(rainSoon(slots([3, 3, 3, 3, 3, 3, 3, 3]), '2026-10-05T18:20')).toEqual({ text: 'Heavy rain for the next 1 hr 45 min', wet: true, minutes: 0 });
   });
 
   it('says nothing in the banner when it stays dry, or the rain has passed', () => {

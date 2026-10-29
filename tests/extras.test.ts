@@ -4,6 +4,7 @@ import { stationName, tideAt, type TideEvent } from '../src/data/tides';
 import { pollenWord } from '../src/data/airQuality';
 import { fireName } from '../src/data/hazards';
 import { ovationGrid } from '../src/maps/auroraSource';
+import { whatToTell } from '../src/data/watch';
 
 describe('averages', () => {
   it('averages only real numbers', () => {
@@ -90,5 +91,40 @@ describe('fire, flood, and aurora', () => {
     expect(g.values[180]).toBe(7); // 0°E at the top row
     expect(g.values[25 * 360 + 0]).toBe(40); // 180° wraps to −180°, 65°N is row 25
     expect(g.values[180 * 360 + 179]).toBe(3); // 359°E is −1°
+  });
+});
+
+describe('alerts for my location', () => {
+  const alert = (id: string, event: string, severity: 'Severe' | 'Moderate' | 'Minor' = 'Severe') => ({
+    id,
+    event,
+    headline: `${event} until 9 PM`,
+    severity,
+    urgency: 'Immediate',
+    areaDesc: 'Marion, FL',
+    description: '',
+    instruction: '',
+    sender: 'NWS Tampa Bay',
+    effective: null,
+    ends: null,
+  });
+
+  it('tells each warning or watch once, and leaves advisories to the app', () => {
+    const first = whatToTell([alert('a', 'Tornado Warning'), alert('b', 'Wind Advisory', 'Minor')], null, { seen: [], rainTold: false });
+    expect(first.notes.map((n) => n.title)).toEqual(['Tornado Warning']);
+    const again = whatToTell([alert('a', 'Tornado Warning')], null, first.memory);
+    expect(again.notes).toEqual([]);
+  });
+
+  it('tells rain once when it is close, again only after it dries out', () => {
+    const soon = { text: 'Rain starting in about 15 min', wet: false, minutes: 15 };
+    const a = whatToTell([], soon, { seen: [], rainTold: false });
+    expect(a.notes.map((n) => n.body)).toEqual(['Rain starting in about 15 min']);
+    expect(whatToTell([], soon, a.memory).notes).toEqual([]);
+    expect(whatToTell([], { ...soon, minutes: 50 }, { seen: [], rainTold: false }).notes).toEqual([]);
+    // Dry again: the next rain is news.
+    expect(whatToTell([], null, a.memory).memory.rainTold).toBe(false);
+    // Couldn't check: nothing changes.
+    expect(whatToTell(null, undefined, a.memory).memory.rainTold).toBe(true);
   });
 });

@@ -111,6 +111,8 @@ export interface AppState {
   bannerGraphs: BannerGraphs;
   /** The small banner's row (owner, 2026-10-29): the graphs (default) or the forecast; a sideways swipe on it swaps them. */
   smallBanner: SmallBanner;
+  /** Notifications for where you are (owner, 2026-10-29): new warnings and watches, and rain about to start. */
+  notify: boolean;
   /**
    * Moving the map moves the readout to the center cross. Off (the default, the pin on the weather
    * card): the readout stays on your location, or the place it shows, while you look around.
@@ -156,6 +158,7 @@ interface Prefs {
   bannerForecast?: BannerForecast;
   bannerGraphs?: BannerGraphs;
   smallBanner?: SmallBanner;
+  notify?: boolean;
   /** The weather card's pin (2026-10-09: pinned by default; replaces the old followMap key). */
   pinned?: boolean;
   /** Which hurricane defaults `tropics` and `modelGroups` were saved under (TROPICS_PREFS_V). */
@@ -199,6 +202,7 @@ function writePrefs(s: AppState): void {
       bannerForecast: s.bannerForecast,
       bannerGraphs: s.bannerGraphs,
       smallBanner: s.smallBanner,
+      notify: s.notify,
       pinned: !s.followMap,
       tropicsV: TROPICS_PREFS_V,
       tropics: s.tropics,
@@ -240,6 +244,7 @@ export function createStore(selected: LatLon, gps: boolean) {
     bannerForecast: prefs.bannerForecast === 'hourly' ? 'hourly' : 'daily',
     bannerGraphs: prefs.bannerGraphs === 'week' ? 'week' : 'today',
     smallBanner: prefs.smallBanner === 'forecast' ? 'forecast' : 'graphs',
+    notify: prefs.notify === true,
     followMap: prefs.pinned === false,
     tropics: { ...DEFAULT_TROPICS, ...(tropicsCurrent ? prefs.tropics : {}) },
     modelGroups: tropicsCurrent && Array.isArray(prefs.modelGroups) ? prefs.modelGroups : DEFAULT_MODEL_GROUPS,
@@ -273,6 +278,7 @@ export function createStore(selected: LatLon, gps: boolean) {
         patch.bannerForecast !== undefined ||
         patch.bannerGraphs !== undefined ||
         patch.smallBanner !== undefined ||
+        patch.notify !== undefined ||
         patch.followMap !== undefined ||
         patch.tropics !== undefined ||
         patch.modelGroups !== undefined ||

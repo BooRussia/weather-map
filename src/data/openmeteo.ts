@@ -374,6 +374,20 @@ export async function getStopForecasts(
   });
 }
 
+/** The next two hours' rain at a place, in 15-minute slots, and its clock (for the rain heads-up away from the page). */
+export async function getMinutely({ lat, lon }: LatLon, signal?: AbortSignal): Promise<{ slots: MinutelyPoint[]; utcOffsetSeconds: number }> {
+  const q = new URLSearchParams({
+    latitude: c4(lat),
+    longitude: c4(wrapLon(lon)),
+    minutely_15: 'precipitation',
+    forecast_minutely_15: '8',
+    timezone: 'auto',
+  });
+  const r = await fetchJson<{ utc_offset_seconds: number; minutely_15: PointResponse['minutely_15'] }>(`${OPEN_METEO_FORECAST}?${q}`, { signal });
+  const m = r.minutely_15;
+  return { slots: (m?.time ?? []).map((time, i) => ({ time, precipitation: m.precipitation[i] ?? 0 })), utcOffsetSeconds: r.utc_offset_seconds };
+}
+
 /** A place's weather right now, for the My places list. */
 export interface PlaceNow {
   tempF: number;

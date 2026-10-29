@@ -64,16 +64,18 @@ import { wrapLon } from './util/geo';
 import { $, h, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule, renderRainSoon, setSparkOpen } from './ui/capsule';
 import type { Metric } from './data/dayDetail';
-import { getPlacesNow, weatherCodeText, type PlaceNow } from './data/openmeteo';
+import { getMinutely, getPlacesNow, weatherCodeText, type PlaceNow } from './data/openmeteo';
+import { whatToTell, type WatchMemory } from './data/watch';
+import { askToNotify, notify } from './util/notify';
 import { getFires, getGauges } from './data/hazards';
 import { FiresLayer, GaugesLayer } from './map/hazardsLayer';
 import { firePanel, gaugePanel } from './ui/hazardPanel';
-import { glyphFor } from './data/outlook';
+import { glyphFor, rainSoon } from './data/outlook';
 import { alertMark, boltMark, cameraIcon, GLYPHS, hurricaneMark, locateIcon, routeIcon, searchIcon, shareIcon, warningIcon } from './ui/icons';
 import { BarShortcuts } from './ui/barShortcuts';
 import { LayersMenu } from './ui/layersMenu';
 import { alertDetail, alertsList, alertsOfType, type AlertsHooks } from './ui/alertsPanel';
-import { getAlert, type Alert } from './data/nws';
+import { getActiveAlerts, getAlert, type Alert } from './data/nws';
 import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
@@ -1453,6 +1455,44 @@ async function main(): Promise<void> {
     void loadGauges();
   }, 5 * 60_000);
 
+  /* ---------- alerts for your location ---------- */
+
+  // Settings → Alerts for my location (owner, 2026-10-29): while the app is open (a browser tab may be
+  // in the background), new warnings and watches where you are, and rain about to start, as
+  // notifications. Every five minutes; what's been told is remembered between visits.
+  const WATCH_KEY = 'weather-map:watch';
+  const WATCH_MS = 5 * 60_000;
+  const readWatch = (): WatchMemory => {
+    try {
+      const m = JSON.parse(localStorage.getItem(WATCH_KEY) ?? 'null') as WatchMemory | null;
+      if (m && Array.isArray(m.seen)) return { seen: m.seen, rainTold: !!m.rainTold };
+    } catch {
+      // Garbled: start over.
+    }
+    return { seen: [], rainTold: false };
+  };
+  let watching = false;
+  const watchHere = async () => {
+    const p = dot.position ?? readLastFix();
+    if (!store.get().notify || !p || watching) return;
+    watching = true;
+    try {
+      const [alerts, minutely] = await Promise.all([getActiveAlerts(p.lat, p.lon).catch(() => null), getMinutely(p).catch(() => null)]);
+      const rain = minutely ? rainSoon(minutely.slots, new Date(Date.now() + minutely.utcOffsetSeconds * 1000).toISOString().slice(0, 16)) : undefined;
+      const { notes, memory } = whatToTell(alerts, rain, readWatch());
+      try {
+        localStorage.setItem(WATCH_KEY, JSON.stringify(memory));
+      } catch {
+        // Told again next visit.
+      }
+      for (const n of notes) await notify(n.title, n.body, n.tag).catch(() => {});
+    } finally {
+      watching = false;
+    }
+  };
+  setInterval(() => void watchHere(), WATCH_MS);
+  void watchHere();
+
   /* ---------- alerts in view ---------- */
 
   // The alerts button counts the warnings and watches in view; its sheet lists them by type.
@@ -1583,6 +1623,18 @@ async function main(): Promise<void> {
     if (s.layers.cams !== prev.layers.cams) {
       renderCamsBtn();
       void showCameras(s.layers.cams);
+    }
+    if (s.notify && !prev.notify) {
+      // Asked right in the tap that turned it on, as browsers require.
+      void askToNotify().then((ok) => {
+        if (!ok) {
+          store.set({ notify: false });
+          showNote('Notifications are off for this app. Turn them on in your device’s settings, then try again.');
+          return;
+        }
+        showNote('You’ll be told of new warnings here and rain about to start, while the app is open.');
+        void watchHere();
+      });
     }
     if (s.layers.fires !== prev.layers.fires) {
       firesLayer.setVisible(s.layers.fires);

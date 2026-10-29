@@ -1,4 +1,5 @@
 import { TrafficLayer } from '../map/trafficLayer';
+import { canNotify } from '../util/notify';
 import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
@@ -128,6 +129,10 @@ export class LayersMenu {
   ) {
     this.btn.append(svg(layersIcon));
     this.btn.addEventListener('click', () => this.toggle());
+    // Alerts for my location turns itself back off when notifications are refused: show it.
+    store.subscribe((s, prev) => {
+      if (s.notify !== prev.notify && this.open) this.render();
+    });
     document.addEventListener('pointerdown', (e) => {
       const t = e.target as HTMLElement;
       if (this.open && !t.closest('#layers-menu') && !t.closest('#layers-btn')) this.toggle(false);
@@ -566,6 +571,14 @@ export class LayersMenu {
         phone ? segRow('Small banner', small) : null,
         phone && s.smallBanner === 'graphs' ? segRow('Small banner graphs', graphs) : null,
         switchRow({ label: 'Thunder sound', checked: s.sound, onChange: (on) => this.store.set({ sound: on }) }),
+        canNotify()
+          ? switchRow({
+              label: 'Alerts for my location',
+              sub: 'New warnings and watches, and rain about to start, while the app is open',
+              checked: s.notify,
+              onChange: (on) => this.store.set({ notify: on }),
+            })
+          : null,
         h('div', { class: 'row' }, h('span', { class: 'row-label' }, 'Where the data comes from'), more),
         this.dataOpen ? h('div', { id: 'data-note', class: 'pop-note data-note' }, h('p', {}, DATA_NOTE), creditsNow()) : null,
         // The hosted page, opened outside the app (the iPhone app hands it to Safari).
