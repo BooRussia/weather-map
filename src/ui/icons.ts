@@ -38,6 +38,10 @@ export const thermoIcon = `${open('i-thermo')}<path d="M10 14.2V5a2 2 0 0 1 4 0v
 export const sunMark = `${open('i-sun')}<circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" /></svg>`;
 export const windIcon = `${open('i-wind')}<path d="M3 8.5h10.5a3 3 0 1 0-3-3" /><path d="M3 12.5h15a3 3 0 1 1-3 3" /><path d="M3 16.5h6.5" /></svg>`;
 export const dropIcon = `${open('i-drop')}<path d="M12 3.2c-2.6 3.6-5.6 6.6-5.6 10a5.6 5.6 0 0 0 11.2 0c0-3.4-3-6.4-5.6-10z" /></svg>`;
+/** Wildfires: a flame. */
+export const fireMark = `${open('i-fire')}<path d="M12 21.5c-3.9 0-6.5-2.6-6.5-6.2 0-3.4 2.4-5.3 3.6-8.3.5 1.6 1.4 2.6 2.4 3.1C11.6 6.4 13 4 15.6 2.5c-.4 2.9.7 4.6 2 6.6 1 1.6 1.9 3.4 1.9 5.9 0 3.9-3 6.5-7.5 6.5z" /><path d="M12 21.5c-1.7 0-2.9-1.2-2.9-2.8 0-1.8 1.4-2.7 2.3-4.4.9 1.7 3.5 2.4 3.5 4.6 0 1.5-1.2 2.6-2.9 2.6z" /></svg>`;
+/** River gauges: a staff gauge standing in water. */
+export const gaugeMark = `${open('i-gauge-staff')}<path d="M9 3.5h6v13H9zM9 7h3M9 10.5h3M9 14h3" /><path d="M2.5 19c1.6-1.4 3.2-1.4 4.8 0s3.2 1.4 4.7 0 3.2-1.4 4.8 0 3.1 1.4 4.7 0" /></svg>`;
 /** Pollen: a flower. */
 export const flowerIcon = `${open('i-flower')}<circle cx="12" cy="10" r="2.2" /><path d="M12 7.8c-1.6-2.6-.6-4.6 0-5 .6.4 1.6 2.4 0 5zM14.2 10c2.6-1.6 4.6-.6 5 0-.4.6-2.4 1.6-5 0zM12 12.2c1.6 2.6.6 4.6 0 5-.6-.4-1.6-2.4 0-5zM9.8 10c-2.6 1.6-4.6.6-5 0 .4-.6 2.4-1.6 5 0zM12 17.2V21.5M12 19.5c1.5-1.6 3.2-2 4.5-1.6M12 20.5c-1.3-1.2-2.8-1.5-4-1.1" /></svg>`;
 /** Tides: water rising and falling. */

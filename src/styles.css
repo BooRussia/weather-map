@@ -1158,6 +1158,11 @@ button {
   color: #000;
 }
 
+.row-mark.is-fire {
+  background: #ff6b2c;
+  color: #000;
+}
+
 .row-mark.is-blue {
   background: var(--accent);
 }
@@ -4387,6 +4392,14 @@ body.phone .wx-btns .ctrl {
 
 .wx-btns .ctrl[data-shortcut='outlook'][aria-pressed='true'] {
   color: var(--c-bolt);
+}
+
+.wx-btns .ctrl[data-shortcut='fires'][aria-pressed='true'] {
+  color: #ff6b2c;
+}
+
+.wx-btns .ctrl[data-shortcut='rivers'][aria-pressed='true'] {
+  color: var(--c-precip);
 }
 
 body.phone .ctrl {

@@ -3,7 +3,7 @@ import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
 import type { ShortcutId } from './barShortcuts';
-import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, hurricaneMark, layersIcon, outlookMark, rainMark, stormTrackMark, tackIcon, windIcon } from './icons';
+import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, fireMark, gaugeMark, hurricaneMark, layersIcon, outlookMark, rainMark, stormTrackMark, tackIcon, windIcon } from './icons';
 import { mapThumb } from './mapThumbs';
 
 /** Where everything on the map comes from (the credits line under the map names them too). */
@@ -160,7 +160,7 @@ export class LayersMenu {
     // Sparse maps get their thumbnails nudged toward the colored end so they read as what they are.
     const bias: Partial<Record<WeatherMapId, number>> = {
       wind: 0.32, gust: 0.4, rain: 0.34, rainTotal: 0.32, thunder: 0.4, humidity: 0.55, visibility: 0.22,
-      waves: 0.3, swell: 0.28, currents: 0.3, sst: 0.6, aqi: 0.22, snowDepth: 0.36, newSnow: 0.32, infrared: 0.6,
+      waves: 0.3, swell: 0.28, currents: 0.3, sst: 0.6, aqi: 0.22, smoke: 0.3, snowDepth: 0.36, newSnow: 0.32, infrared: 0.6, aurora: 0.3,
     };
     const tile = (id: WeatherMapId, label: string, img: string) => {
       const b = h(
@@ -636,6 +636,13 @@ export class LayersMenu {
         }),
         ...this.outlookRows(),
         ...this.tropicsRows(),
+      ),
+      h('p', { class: 'group-label' }, 'Fire and flood'),
+      h(
+        'div',
+        { class: 'group' },
+        this.layer('fires', 'Wildfires', fireMark, 'is-fire', 'Burning now, with their edges'),
+        this.layer('rivers', 'River flooding', gaugeMark, 'is-precip', 'River gauges by flood stage'),
       ),
     ];
     if (this.pins) rows.push(h('p', { class: 'group-note' }, svg(tackIcon), 'Pin a layer to keep its switch on the bar, right of the timeline.'));

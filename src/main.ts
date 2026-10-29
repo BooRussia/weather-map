@@ -48,6 +48,7 @@ import { plainLabel, weatherMap } from './maps/catalog';
 import { FieldController } from './maps/fieldController';
 import { OpenMeteoSource } from './maps/openMeteoSource';
 import { GEOMET_MAPS, GeoMetSource, RoutedSource } from './maps/geometSource';
+import { AuroraSource } from './maps/auroraSource';
 import { GibsInfraredSource } from './maps/gibsSource';
 import { renderMapLegend } from './ui/mapLegend';
 import type { TripLayer } from './map/tripLayer';
@@ -64,6 +65,9 @@ import { $, h, svg } from './ui/dom';
 import { renderAlertPill, renderCapsule, renderRainSoon, setSparkOpen } from './ui/capsule';
 import type { Metric } from './data/dayDetail';
 import { getPlacesNow, weatherCodeText, type PlaceNow } from './data/openmeteo';
+import { getFires, getGauges } from './data/hazards';
+import { FiresLayer, GaugesLayer } from './map/hazardsLayer';
+import { firePanel, gaugePanel } from './ui/hazardPanel';
 import { glyphFor } from './data/outlook';
 import { alertMark, boltMark, cameraIcon, GLYPHS, hurricaneMark, locateIcon, routeIcon, searchIcon, warningIcon } from './ui/icons';
 import { BarShortcuts } from './ui/barShortcuts';
@@ -144,6 +148,10 @@ async function main(): Promise<void> {
   const stormOutlook = new OutlookLayer(map);
   const cloudCutout = new CloudCutout(map);
   const stormCells = new StormLayer(map);
+  // Dev only: the map, for poking at its layers from the console.
+  if (import.meta.env.DEV) Object.assign(window, { __map: map });
+  const firesLayer = new FiresLayer(map);
+  const gaugesLayer = new GaugesLayer(map);
   const lightning = new LightningLayer(map);
   const borders = new Boundaries(map);
   // Phone browsers: the strip under the status bar takes the map's color instead of black, or the
@@ -176,7 +184,7 @@ async function main(): Promise<void> {
 
   // Weather maps (Windy's layers): one colored variable under borders, radar, and labels.
   const field = new FieldLayer(map);
-  const mapSource = new RoutedSource([new GeoMetSource(), new GibsInfraredSource(), new OpenMeteoSource()]);
+  const mapSource = new RoutedSource([new GeoMetSource(), new GibsInfraredSource(), new AuroraSource(), new OpenMeteoSource()]);
   let legendKey = '';
   const renderLegend = () => {
     const s = store.get();
@@ -223,6 +231,8 @@ async function main(): Promise<void> {
     lightning.setVisible(s.layers.thunder);
     stormCells.install();
     window.setTimeout(() => stormCells.set(s.layers.cells, s.stormReports), 600);
+    firesLayer.install();
+    gaugesLayer.install();
     // Tagged places over everything else.
     tagsLayer.install();
     renderTags();
@@ -702,6 +712,17 @@ async function main(): Promise<void> {
     const tower = sitesLayer.hit(e.point);
     if (tower) {
       if (tower.id !== chosenSite?.id) void chooseSite(tower, siteFrames?.product ?? 'N0B');
+      return;
+    }
+    // A wildfire or a river gauge opens its details.
+    const fire = firesLayer.hit(e.point);
+    if (fire) {
+      sheet.open('fire', fire.name, firePanel(fire, store.get()), null);
+      return;
+    }
+    const gauge = gaugesLayer.hit(e.point);
+    if (gauge) {
+      sheet.open('gauge', gauge.name, gaugePanel(gauge), null);
       return;
     }
     // A storm cell or report opens its details; the map stays put.
@@ -1298,6 +1319,54 @@ async function main(): Promise<void> {
     else sheet.open('report', reportTitle(hit.report), reportPanel(hit.report, store.get()), null);
   }
 
+  /* ---------- fire and flood ---------- */
+
+  /** Wildfires and river gauges are loaded when their switch goes on, and again this often. */
+  const HAZARDS_MS = 15 * 60_000;
+  /** Zoomed in this far, every river gauge in view; farther out, only those at or near flood stage. */
+  const ALL_GAUGES_ZOOM = 8;
+  let firesAt = 0;
+  const loadFires = async () => {
+    if (!store.get().layers.fires || Date.now() - firesAt < HAZARDS_MS) return;
+    firesAt = Date.now();
+    try {
+      firesLayer.set(await getFires());
+    } catch {
+      firesAt = 0;
+      showNote('Wildfire data is unavailable right now.');
+    }
+  };
+  let gaugesKey = '';
+  let gaugesAt = 0;
+  let gaugesCtrl: AbortController | null = null;
+  const loadGauges = async () => {
+    if (!store.get().layers.rivers) return;
+    // A half-degree grid around the view, so small pans reuse what's loaded.
+    const b = map.getBounds();
+    const snap = (v: number, up: boolean) => (up ? Math.ceil(v * 2) : Math.floor(v * 2)) / 2;
+    const area =
+      map.getZoom() >= ALL_GAUGES_ZOOM
+        ? { west: snap(b.getWest(), false) - 0.5, south: snap(b.getSouth(), false) - 0.5, east: snap(b.getEast(), true) + 0.5, north: snap(b.getNorth(), true) + 0.5 }
+        : null;
+    const key = area ? Object.values(area).join(',') : 'flooding';
+    if (key === gaugesKey && Date.now() - gaugesAt < HAZARDS_MS) return;
+    gaugesCtrl?.abort();
+    const ctrl = new AbortController();
+    gaugesCtrl = ctrl;
+    try {
+      gaugesLayer.set(await getGauges(area, ctrl.signal));
+      gaugesKey = key;
+      gaugesAt = Date.now();
+    } catch {
+      if (!ctrl.signal.aborted) showNote('River gauge data is unavailable right now.');
+    }
+  };
+  map.on('moveend', () => void loadGauges());
+  setInterval(() => {
+    void loadFires();
+    void loadGauges();
+  }, 5 * 60_000);
+
   /* ---------- alerts in view ---------- */
 
   // The alerts button counts the warnings and watches in view; its sheet lists them by type.
@@ -1428,6 +1497,14 @@ async function main(): Promise<void> {
     if (s.layers.cams !== prev.layers.cams) {
       renderCamsBtn();
       void showCameras(s.layers.cams);
+    }
+    if (s.layers.fires !== prev.layers.fires) {
+      firesLayer.setVisible(s.layers.fires);
+      void loadFires();
+    }
+    if (s.layers.rivers !== prev.layers.rivers) {
+      gaugesLayer.setVisible(s.layers.rivers);
+      void loadGauges();
     }
     if (s.layers.tropics !== prev.layers.tropics) {
       tropical.setVisible(s.layers.tropics);
@@ -1645,6 +1722,9 @@ function renderCredits(s: AppState): void {
   $('[data-credit="esri"]').hidden = s.basemap !== 'satellite';
   $('[data-credit="tomtom"]').hidden = !s.traffic;
   $('[data-credit="cams"]').hidden = !s.layers.cams;
+  $('[data-credit="nifc"]').hidden = !s.layers.fires;
+  $('[data-credit="nwps"]').hidden = !s.layers.rivers;
+  $('[data-credit="swpc"]').hidden = s.weatherMap !== 'aurora';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="glm"]').hidden = !s.layers.thunder;
   $('[data-credit="gibs"]').hidden = !((s.layers.tropics && s.tropics.sst) || s.weatherMap === 'infrared');

@@ -26,6 +26,8 @@ export type WeatherMapId =
   | 'currents'
   | 'sst'
   | 'aqi'
+  | 'smoke'
+  | 'aurora'
   | 'snowDepth'
   | 'newSnow'
   | 'infrared';
@@ -266,6 +268,33 @@ const AQI: FieldRamp = {
   ],
 };
 
+/** Wildfire smoke near the ground, µg/m³ of fine particles: clear, through haze tans and browns, to thick. */
+const SMOKE: FieldRamp = {
+  curve: 'sqrt',
+  stops: [
+    [0, 180, 170, 160, 0],
+    [2, 200, 190, 175, 0.22],
+    [12, 210, 180, 130, 0.45],
+    [35, 220, 130, 60, 0.65],
+    [55, 200, 70, 40, 0.75],
+    [150, 130, 30, 70, 0.85],
+    [250, 80, 20, 60, 0.9],
+  ],
+};
+
+/** The chance of an aurora overhead, %: the greens of a real one, to reds and pinks where it's strongest. */
+const AURORA: FieldRamp = {
+  stops: [
+    [0, 40, 255, 120, 0],
+    [5, 40, 255, 120, 0.25],
+    [20, 60, 255, 120, 0.55],
+    [40, 170, 255, 90, 0.7],
+    [60, 255, 220, 60, 0.78],
+    [80, 255, 80, 120, 0.85],
+    [100, 255, 60, 200, 0.9],
+  ],
+};
+
 /** cm of snow on the ground (or new). */
 const SNOW: FieldRamp = {
   curve: 'sqrt',
@@ -411,6 +440,8 @@ export const WEATHER_MAPS: WeatherMap[] = [
     unit: (u) => tempUnit(u, [50, 65, 75, 80, 85, 90], [10, 18, 24, 27, 29, 32]),
   },
   { id: 'aqi', label: 'Air quality', sub: 'U.S. AQI', ramp: AQI, opacity: 1, unit: () => same('AQI', [0, 50, 100, 150, 200, 300]) },
+  // Canada's FireWork forecast, North America only (owner, 2026-10-29).
+  { id: 'smoke', label: 'Wildfire smoke', sub: 'Near the ground', ramp: SMOKE, opacity: 1, unit: () => same('µg/m³', [2, 12, 35, 55, 150]) },
   {
     id: 'snowDepth',
     label: 'Snow depth',
@@ -434,6 +465,7 @@ export const WEATHER_MAPS: WeatherMap[] = [
     opacity: 1,
     unit: (u) => tempUnit(u, [-100, -60, -20, 32], [-70, -50, -30, 0]),
   },
+  { id: 'aurora', label: 'Aurora', sub: 'Chance overhead', ramp: AURORA, opacity: 1, unit: () => same('%', [10, 30, 50, 70, 90]) },
 ];
 
 export const weatherMap = (id: WeatherMapId): WeatherMap | null => WEATHER_MAPS.find((m) => m.id === id) ?? null;

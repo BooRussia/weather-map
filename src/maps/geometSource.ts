@@ -46,6 +46,8 @@ const LAYERS: Partial<Record<WeatherMapId, Layer>> = {
   waves: { coverage: 'GDWPS_25km_HTSGW_PT1H', res: 0.25, zeroIsMissing: true },
   swell: { coverage: 'GDWPS_25km_SWHFSWEL_PT1H', res: 0.25, zeroIsMissing: true },
   sst: { coverage: 'OCEAN.GIOPS.2D_TM2', res: 0.2, zeroIsMissing: true, scale: (k) => k - 273.15 },
+  // Fine particles from wildfire smoke near the ground (the FireWork model, 10 km, North America): kg/m³ → µg/m³.
+  smoke: { coverage: 'RAQDPS.Sfc_PM2.5-WildfireSmokePlume', res: 0.09, scale: (kg) => kg * 1e9 },
 };
 
 /** Maps drawn from GeoMet (for the credit line). */

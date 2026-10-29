@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { mean, parseOutlooks, windowFor } from '../src/data/climate';
 import { stationName, tideAt, type TideEvent } from '../src/data/tides';
 import { pollenWord } from '../src/data/airQuality';
+import { fireName } from '../src/data/hazards';
+import { ovationGrid } from '../src/maps/auroraSource';
 
 describe('averages', () => {
   it('averages only real numbers', () => {
@@ -66,5 +68,27 @@ describe('pollen', () => {
     expect(pollenWord(30)).toBe('Moderate');
     expect(pollenWord(120)).toBe('High');
     expect(pollenWord(400)).toBe('Very high');
+  });
+});
+
+describe('fire, flood, and aurora', () => {
+  it('names fires once, in title case', () => {
+    expect(fireName('GOLD MOUNTAIN')).toBe('Gold Mountain Fire');
+    expect(fireName('elk fire')).toBe('Elk Fire');
+  });
+
+  it('lays the aurora forecast out west to east from −180°, north to south', () => {
+    const g = ovationGrid({
+      'Forecast Time': '2026-10-29T18:14:00Z',
+      coordinates: [
+        [0, 90, 7],
+        [180, 65, 40],
+        [359, -90, 3],
+      ],
+    });
+    expect([g.cols, g.rows, g.west, g.north]).toEqual([360, 181, -180, 90]);
+    expect(g.values[180]).toBe(7); // 0°E at the top row
+    expect(g.values[25 * 360 + 0]).toBe(40); // 180° wraps to −180°, 65°N is row 25
+    expect(g.values[180 * 360 + 179]).toBe(3); // 359°E is −1°
   });
 });
