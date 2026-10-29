@@ -81,6 +81,10 @@ export interface AppState {
     fires: boolean;
     rivers: boolean;
     airports: boolean;
+    /** SIGMETs and G-AIRMETs; pilot reports; TFRs and class airspace (owner, 2026-10-29). */
+    advisories: boolean;
+    pireps: boolean;
+    airspace: boolean;
   };
   tempUnit: TempUnit;
   windUnit: WindUnit;
@@ -232,7 +236,7 @@ export function createStore(selected: LatLon, gps: boolean) {
   const linesCurrent = prefs.linesV === LINES_PREFS_V;
   let state: AppState = {
     // Hurricanes off on first load too (owner, 2026-10-23): the hurricane button turns them on.
-    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: false, outlook: false, cells: false, cams: false, fires: false, rivers: false, airports: false },
+    layers: { wind: true, rain: true, thunder: false, clouds: false, tropics: false, outlook: false, cells: false, cams: false, fires: false, rivers: false, airports: false, advisories: false, pireps: false, airspace: false },
     tempUnit: prefs.tempUnit === 'C' ? 'C' : 'F',
     windUnit: prefs.windUnit === 'kmh' || prefs.windUnit === 'kt' ? prefs.windUnit : 'mph',
     sound: prefs.sound ?? true,

@@ -5,7 +5,7 @@ import { WEATHER_MAPS, type WeatherMapId } from '../maps/catalog';
 import type { AppState, Store } from '../state';
 import { $, h, svg } from './dom';
 import type { ShortcutId } from './barShortcuts';
-import { alertMark, boltMark, chevronIcon, closeIcon, cloudMark, fireMark, gaugeMark, hurricaneMark, layersIcon, outlookMark, planeMark, rainMark, stormTrackMark, tackIcon, windIcon } from './icons';
+import { advisoryMark, airspaceMark, alertMark, boltMark, chevronIcon, closeIcon, cloudMark, fireMark, gaugeMark, hurricaneMark, layersIcon, outlookMark, pirepMark, planeMark, rainMark, stormTrackMark, tackIcon, windIcon } from './icons';
 import { mapThumb } from './mapThumbs';
 
 /** Where everything on the map comes from (the credits line under the map names them too). */
@@ -663,6 +663,9 @@ export class LayersMenu {
         'div',
         { class: 'group' },
         this.layer('airports', 'Airport weather', planeMark, 'is-blue', 'METARs and TAFs · VFR green, MVFR blue, IFR red, LIFR magenta'),
+        this.layer('advisories', 'SIGMETs and G-AIRMETs', advisoryMark, 'is-blue', 'Icing cyan, turbulence orange, IFR purple, storms red'),
+        this.layer('pireps', 'Pilot reports', pirepMark, 'is-blue', 'PIREPs · worst of turbulence and icing, urgent ringed red'),
+        this.layer('airspace', 'TFRs and airspace', airspaceMark, 'is-blue', 'TFRs in red; Class B, C, D from zoom 7'),
         switchRow({
           label: 'Winds aloft and sounding',
           sub: 'On the weather page: winds by altitude, cloudbase, thermals, freezing level',

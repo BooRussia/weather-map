@@ -1,9 +1,9 @@
 import type { AppState, Store } from '../state';
 import { h, svg } from './dom';
-import { alertMark, checkIcon, cloudMark, fireMark, gaugeMark, moreIcon, outlookMark, planeMark, rainMark, stormTrackMark, windIcon } from './icons';
+import { advisoryMark, airspaceMark, alertMark, checkIcon, cloudMark, fireMark, gaugeMark, moreIcon, outlookMark, pirepMark, planeMark, rainMark, stormTrackMark, windIcon } from './icons';
 
 /** The weather switches that can sit on the bar, in the Layers drawer's order. */
-export type ShortcutId = 'rain' | 'clouds' | 'thunder' | 'wind' | 'cells' | 'alertAreas' | 'outlook' | 'tropics' | 'fires' | 'rivers' | 'airports';
+export type ShortcutId = 'rain' | 'clouds' | 'thunder' | 'wind' | 'cells' | 'alertAreas' | 'outlook' | 'tropics' | 'fires' | 'rivers' | 'airports' | 'advisories' | 'pireps' | 'airspace';
 
 /** The switches drawn here; the hurricane tracker and lightning only are buttons of their own (main.ts). */
 const PLAIN: Partial<Record<ShortcutId, { label: string; icon: string }>> = {
@@ -16,9 +16,12 @@ const PLAIN: Partial<Record<ShortcutId, { label: string; icon: string }>> = {
   fires: { label: 'Wildfires', icon: fireMark },
   rivers: { label: 'River flooding', icon: gaugeMark },
   airports: { label: 'Airport weather', icon: planeMark },
+  advisories: { label: 'SIGMETs and G-AIRMETs', icon: advisoryMark },
+  pireps: { label: 'Pilot reports', icon: pirepMark },
+  airspace: { label: 'TFRs and airspace', icon: airspaceMark },
 };
 
-const ORDER: ShortcutId[] = ['rain', 'clouds', 'thunder', 'wind', 'cells', 'alertAreas', 'outlook', 'tropics', 'fires', 'rivers', 'airports'];
+const ORDER: ShortcutId[] = ['rain', 'clouds', 'thunder', 'wind', 'cells', 'alertAreas', 'outlook', 'tropics', 'fires', 'rivers', 'airports', 'advisories', 'pireps', 'airspace'];
 const PINS_KEY = 'weather-map:bar-pins';
 /** On the bar to start (owner, 2026-10-26): the hurricane tracker and lightning only. */
 const DEFAULT_PINS: ShortcutId[] = ['tropics', 'thunder'];

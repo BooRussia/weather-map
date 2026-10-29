@@ -70,9 +70,11 @@ import { askToNotify, notify } from './util/notify';
 import { getFires, getGauges } from './data/hazards';
 import { FiresLayer, GaugesLayer } from './map/hazardsLayer';
 import { firePanel, gaugePanel } from './ui/hazardPanel';
-import { getMetars, getTafs, type Metar, type Metars, type Taf } from './data/aviation';
+import { getAdvisories, getMetars, getTafs, type Advisories, type Metar, type Metars, type Taf } from './data/aviation';
+import { getAirspace } from './data/airspace';
 import { AirportsLayer } from './map/airportsLayer';
-import { airportPanel, airportTitle } from './ui/airportPanel';
+import { AdvisoriesLayer, PirepsLayer, RestrictionsLayer } from './map/aviationLayers';
+import { advisoryPanel, airportPanel, airportTitle, airspacePanel, pirepPanel, pirepTitle, tfrPanel } from './ui/airportPanel';
 import { glyphFor, rainSoon } from './data/outlook';
 import { alertMark, boltMark, cameraIcon, GLYPHS, hurricaneMark, locateIcon, routeIcon, searchIcon, shareIcon, warningIcon } from './ui/icons';
 import { BarShortcuts } from './ui/barShortcuts';
@@ -160,6 +162,9 @@ async function main(): Promise<void> {
   if (import.meta.env.DEV) Object.assign(window, { __map: map });
   const firesLayer = new FiresLayer(map);
   const airportsLayer = new AirportsLayer(map);
+  const advisoriesLayer = new AdvisoriesLayer(map);
+  const pirepsLayer = new PirepsLayer(map);
+  const restrictionsLayer = new RestrictionsLayer(map);
   const gaugesLayer = new GaugesLayer(map);
   const lightning = new LightningLayer(map);
   const borders = new Boundaries(map);
@@ -242,6 +247,9 @@ async function main(): Promise<void> {
     window.setTimeout(() => stormCells.set(s.layers.cells, s.stormReports), 600);
     firesLayer.install();
     gaugesLayer.install();
+    restrictionsLayer.install();
+    advisoriesLayer.install();
+    pirepsLayer.install();
     airportsLayer.install();
     // Tagged places over everything else.
     tagsLayer.install();
@@ -724,10 +732,32 @@ async function main(): Promise<void> {
       if (tower.id !== chosenSite?.id) void chooseSite(tower, siteFrames?.product ?? 'N0B');
       return;
     }
-    // An airport opens its METAR and TAF; a wildfire or a river gauge its details.
+    // An airport opens its METAR and TAF; a pilot report, TFR, advisory, or airspace what it says;
+    // a wildfire or a river gauge its details.
     const airport = airportsLayer.hit(e.point);
     if (airport) {
       openAirport(airport);
+      return;
+    }
+    const relayed = advisories?.generated ?? Date.now();
+    const pirep = pirepsLayer.hit(e.point);
+    if (pirep) {
+      sheet.open('pirep', pirepTitle(pirep), pirepPanel(pirep, relayed), null);
+      return;
+    }
+    const tfr = restrictionsLayer.hitTfr(e.point);
+    if (tfr) {
+      sheet.open('tfr', `TFR ${tfr.id}${tfr.state ? ` · ${tfr.state}` : ''}`, tfrPanel(tfr, relayed), null);
+      return;
+    }
+    const advs = advisoriesLayer.hit(e.point);
+    if (advs.length) {
+      sheet.open('advisory', advs.length > 1 ? `${advs.length} advisories here` : 'Advisory', advisoryPanel(advs, relayed), null);
+      return;
+    }
+    const shelves = restrictionsLayer.airspaceAt(e.lngLat);
+    if (shelves.length) {
+      sheet.open('airspace', 'Airspace', airspacePanel(shelves), null);
       return;
     }
     const fire = firesLayer.hit(e.point);
@@ -1494,10 +1524,50 @@ async function main(): Promise<void> {
       });
   };
 
+  // Advisories, pilot reports, and TFRs from the relay (one file); class airspace for the view from zoom 7.
+  let advisories: Advisories | null = null;
+  let advisoriesAt = 0;
+  const loadAdvisories = async () => {
+    const s = store.get().layers;
+    if (!(s.advisories || s.pireps || s.airspace) || Date.now() - advisoriesAt < AIRPORTS_MS) return;
+    advisoriesAt = Date.now();
+    try {
+      advisories = await getAdvisories();
+      advisoriesLayer.set(advisories);
+      pirepsLayer.set(advisories.pireps);
+      restrictionsLayer.setTfrs(advisories.tfrs);
+    } catch {
+      advisoriesAt = 0;
+      showNote('Aviation advisories are unavailable right now.');
+    }
+  };
+  const AIRSPACE_ZOOM = 7;
+  let airspaceKey = '';
+  let airspaceCtrl: AbortController | null = null;
+  const loadAirspace = async () => {
+    if (!store.get().layers.airspace || map.getZoom() < AIRSPACE_ZOOM) return;
+    // A one-degree grid around the view, so small pans reuse what's loaded (airspace doesn't change by the hour).
+    const b = map.getBounds();
+    const area = { west: Math.floor(b.getWest()) - 1, south: Math.floor(b.getSouth()) - 1, east: Math.ceil(b.getEast()) + 1, north: Math.ceil(b.getNorth()) + 1 };
+    const key = Object.values(area).join(',');
+    if (key === airspaceKey) return;
+    airspaceCtrl?.abort();
+    const ctrl = new AbortController();
+    airspaceCtrl = ctrl;
+    try {
+      restrictionsLayer.setAirspace(await getAirspace(area, ctrl.signal));
+      airspaceKey = key;
+    } catch {
+      if (!ctrl.signal.aborted) showNote('Airspace is unavailable right now.');
+    }
+  };
+  map.on('moveend', () => void loadAirspace());
+
   setInterval(() => {
     void loadFires();
     void loadGauges();
     void loadAirports();
+    void loadAdvisories();
   }, 5 * 60_000);
 
   /* ---------- alerts for your location ---------- */
@@ -1692,6 +1762,13 @@ async function main(): Promise<void> {
     if (s.layers.airports !== prev.layers.airports) {
       airportsLayer.setVisible(s.layers.airports);
       void loadAirports();
+    }
+    if (s.layers.advisories !== prev.layers.advisories || s.layers.pireps !== prev.layers.pireps || s.layers.airspace !== prev.layers.airspace) {
+      advisoriesLayer.setVisible(s.layers.advisories);
+      pirepsLayer.setVisible(s.layers.pireps);
+      restrictionsLayer.setVisible(s.layers.airspace);
+      void loadAdvisories();
+      void loadAirspace();
     }
     if (s.layers.tropics !== prev.layers.tropics) {
       tropical.setVisible(s.layers.tropics);
@@ -1911,7 +1988,8 @@ function renderCredits(s: AppState): void {
   $('[data-credit="cams"]').hidden = !s.layers.cams;
   $('[data-credit="nifc"]').hidden = !s.layers.fires;
   $('[data-credit="nwps"]').hidden = !s.layers.rivers;
-  $('[data-credit="awc"]').hidden = !s.layers.airports;
+  $('[data-credit="awc"]').hidden = !(s.layers.airports || s.layers.advisories || s.layers.pireps || s.layers.airspace);
+  $('[data-credit="faa"]').hidden = !s.layers.airspace;
   $('[data-credit="swpc"]').hidden = s.weatherMap !== 'aurora';
   $('[data-credit="goes"]').hidden = !s.layers.clouds;
   $('[data-credit="glm"]').hidden = !s.layers.thunder;

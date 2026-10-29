@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - name: Build metars.json and tafs.json
+      - name: Build metars.json, tafs.json, and advisories.json
         run: node scripts/aviation.mjs out
       - name: Publish to the aviation branch
         run: |
@@ -35,7 +35,7 @@ jobs:
           git init -q -b aviation
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add metars.json tafs.json
+          git add metars.json tafs.json advisories.json
           git commit -q -m "Airport weather $(date -u +%Y-%m-%dT%H:%MZ)"
           # One commit, replaced each run: the branch never grows.
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" aviation

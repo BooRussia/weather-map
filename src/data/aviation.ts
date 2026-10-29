@@ -138,3 +138,113 @@ export function ago(ms: number, now = Date.now()): string {
   if (min < 60) return `${min} min ago`;
   return `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''} ago`;
 }
+
+/* ---------- advisories, pilot reports, TFRs (step 3) ---------- */
+
+export interface AirSigmet {
+  kind: string;
+  hazard: string;
+  severity: number | null;
+  lo: number | null;
+  hi: number | null;
+  from: number | null;
+  to: number | null;
+  raw: string;
+  area: [number, number][];
+}
+
+export interface Gairmet {
+  hazard: string;
+  severity: string | null;
+  dueTo: string | null;
+  /** Hundreds of feet, or SFC / FZL. */
+  base: string | null;
+  top: string | null;
+  fzlBase: string | null;
+  fzlTop: string | null;
+  valid: number;
+  expires: number | null;
+  product: string;
+  area: [number, number][];
+}
+
+export interface Pirep {
+  time: number;
+  lat: number;
+  lon: number;
+  altFt: number | null;
+  aircraft: string;
+  turbulence: string;
+  icing: string;
+  raw: string;
+  urgent: boolean;
+}
+
+export interface Tfr {
+  id: string;
+  kind: string;
+  title: string;
+  state: string;
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+}
+
+export interface Advisories {
+  generated: number;
+  sigmets: AirSigmet[];
+  gairmets: Gairmet[];
+  pireps: Pirep[];
+  tfrs: Tfr[];
+}
+
+export async function getAdvisories(signal?: AbortSignal): Promise<Advisories> {
+  type Raw = { generated: string; sigmets: AirSigmet[] | null; gairmets: Gairmet[] | null; pireps: [number, number, number, number | null, string, string, string, string, boolean][] | null; tfrs: Tfr[] | null };
+  const r = await fetchJson<Raw>(`${AVIATION_URL}/advisories.json${fresh()}`, { signal, timeoutMs: 20_000 });
+  return {
+    generated: Date.parse(r.generated),
+    sigmets: r.sigmets ?? [],
+    gairmets: r.gairmets ?? [],
+    pireps: (r.pireps ?? []).map(([time, lat, lon, altFt, aircraft, turbulence, icing, raw, urgent]) => ({ time: time * 1000, lat, lon, altFt, aircraft, turbulence, icing, raw, urgent })),
+    tfrs: r.tfrs ?? [],
+  };
+}
+
+/** Each advisory hazard's color and name: icing cyan, turbulence orange and yellow, IFR purple, storms red. */
+export const HAZARD: Record<string, { color: string; name: string; short: string }> = {
+  IFR: { color: '#af52de', name: 'IFR conditions', short: 'IFR' },
+  MT_OBSC: { color: '#ff8fc7', name: 'Mountains obscured', short: 'MTN' },
+  ICE: { color: '#64d2ff', name: 'Icing', short: 'ICE' },
+  'TURB-HI': { color: '#ff9f0a', name: 'Turbulence, high', short: 'TURB' },
+  'TURB-LO': { color: '#ffd60a', name: 'Turbulence, low', short: 'TURB' },
+  LLWS: { color: '#ff6961', name: 'Low-level wind shear', short: 'LLWS' },
+  SFC_WND: { color: '#bf5af2', name: 'Strong surface wind', short: 'WIND' },
+  CONVECTIVE: { color: '#ff3b30', name: 'Convective SIGMET: thunderstorms', short: 'TS' },
+};
+export const SIGMET_COLOR = '#ff2d55';
+
+/** "SFC", "FZL", "180" (hundreds of ft) → words: "the surface", "the freezing level", "18,000 ft", "FL310". */
+export function levelText(v: string | number | null): string {
+  if (v == null || v === '') return '–';
+  if (v === 'SFC') return 'the surface';
+  if (v === 'FZL') return 'the freezing level';
+  const ft = typeof v === 'number' ? v : Number(v) * 100;
+  if (!Number.isFinite(ft)) return String(v);
+  return ft >= 18000 ? `FL${Math.round(ft / 100)}` : `${ft.toLocaleString()} ft`;
+}
+
+/** How bad a reported intensity is, 0 (none) to 4 (severe or worse): "NEG", "LGT", "LGT-MOD", "MOD", "SEV". */
+export function intensityRank(s: string): number {
+  const t = s.toUpperCase();
+  if (/EXTRM|SEV/.test(t)) return 4;
+  if (/MOD/.test(t)) return /LGT-MOD/.test(t) ? 2 : 3;
+  if (/LGT|SMTH|TRC/.test(t)) return 1;
+  return 0;
+}
+
+/** A pilot report's color: the worse of its turbulence and icing, none white, light green, moderate orange, severe red. */
+export function pirepColor(p: Pick<Pirep, 'turbulence' | 'icing'>): string {
+  const r = Math.max(intensityRank(p.turbulence), intensityRank(p.icing));
+  return ['#ffffff', '#30d158', '#ffd60a', '#ff9f0a', '#ff3b30'][r];
+}
+
+/** The FAA's page for a TFR. */
+export const tfrLink = (id: string) => `https://tfr.faa.gov/tfr3/?page=detail_${id.replace('/', '_')}`;

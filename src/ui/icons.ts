@@ -40,6 +40,12 @@ export const windIcon = `${open('i-wind')}<path d="M3 8.5h10.5a3 3 0 1 0-3-3" />
 export const dropIcon = `${open('i-drop')}<path d="M12 3.2c-2.6 3.6-5.6 6.6-5.6 10a5.6 5.6 0 0 0 11.2 0c0-3.4-3-6.4-5.6-10z" /></svg>`;
 /** Airport weather: a plane from above. */
 export const planeMark = `${open('i-plane')}<path d="M12 2.8c.9 0 1.5 1 1.5 2.2v4.6l7 4.1v2l-7-2.2v4l2.3 1.8v1.6L12 19.8l-3.8 1.1v-1.6l2.3-1.8v-4l-7 2.2v-2l7-4.1V5c0-1.2.6-2.2 1.5-2.2z" /></svg>`;
+/** Advisories: an area with a warning in it. */
+export const advisoryMark = `${open('i-advisory')}<path d="M4 7.5 9.5 4l9 2.5 1.5 8-5.5 5.5L5 18z" /><path d="M12 9v4M12 15.8v.2" /></svg>`;
+/** Pilot reports: a speech bubble. */
+export const pirepMark = `${open('i-pirep')}<path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H11l-4.5 3.5V15.5h0a2 2 0 0 1-2-2z" /><path d="M8.5 9.5h7M8.5 12h4.5" /></svg>`;
+/** TFRs and airspace: nested rings, as Class B is drawn. */
+export const airspaceMark = `${open('i-airspace')}<circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></svg>`;
 /** Wildfires: a flame. */
 export const fireMark = `${open('i-fire')}<path d="M12 21.5c-3.9 0-6.5-2.6-6.5-6.2 0-3.4 2.4-5.3 3.6-8.3.5 1.6 1.4 2.6 2.4 3.1C11.6 6.4 13 4 15.6 2.5c-.4 2.9.7 4.6 2 6.6 1 1.6 1.9 3.4 1.9 5.9 0 3.9-3 6.5-7.5 6.5z" /><path d="M12 21.5c-1.7 0-2.9-1.2-2.9-2.8 0-1.8 1.4-2.7 2.3-4.4.9 1.7 3.5 2.4 3.5 4.6 0 1.5-1.2 2.6-2.9 2.6z" /></svg>`;
 /** River gauges: a staff gauge standing in water. */

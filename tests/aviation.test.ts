@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { csvFields, parseMetars, parseTafs, stationNames } from '../scripts/aviation.mjs';
-import { ago, ceilingFt, tafLines, windText, zulu } from '../src/data/aviation';
+import { csvFields, joinTfrs, parseGairmets, parseMetars, parsePireps, parseTafs, stationNames } from '../scripts/aviation.mjs';
+import { ago, ceilingFt, intensityRank, levelText, pirepColor, tafLines, windText, zulu } from '../src/data/aviation';
 import { atAltitude, capeWord, cloudbaseFt, lapseRate, lapseWord, windsAloft } from '../src/data/aloft';
 
 const HEAD =
@@ -102,3 +102,48 @@ describe('the air above', () => {
     expect(capeWord(350)).toBe('Marginal');
   });
 });
+
+describe('advisories and pilot reports', () => {
+  it('keeps the G-AIRMET hazards drawn as areas, not the freezing-level lines', () => {
+    const area = [
+      { lat: '31', lon: '-78' },
+      { lat: '30', lon: '-77' },
+      { lat: '29', lon: '-78' },
+    ];
+    const got = parseGairmets([
+      { hazard: 'ICE', geometryType: 'AREA', severity: 'MOD', base: 'FZL', top: '180', validTime: '2026-10-29T18:00:00Z', coords: area },
+      { hazard: 'FZLVL', geometryType: 'LINE', coords: area },
+    ]);
+    expect(got.map((g) => g.hazard)).toEqual(['ICE']);
+    expect(got[0].area[0]).toEqual([-78, 31]);
+  });
+
+  it('keeps pilot reports, not airline position reports, and marks urgent ones', () => {
+    const head = 'receipt_time,observation_time,latitude,longitude,altitude_ft_msl,aircraft_ref,turbulence_type,turbulence_intensity,icing_type,icing_intensity,report_type,raw_text';
+    const csv = [
+      head,
+      '2026-10-29T18:57:17Z,2026-10-29T18:53:00Z,45.27,-123.68,6000,M20P,,,RIME,LGT,PIREP,UA /OV UBG240030/TM 1853/FL060/TP M20P/IC LGT RIME',
+      '2026-10-29T18:57:17Z,2026-10-29T18:52:00Z,40.35,-79.93,3000,C172,,SEV,,,PIREP,UUA /OV KAGC/TM 1852/FL030/TP C172/TB SEV',
+      '2026-10-29T18:59:31Z,2026-10-29T18:59:00Z,51.8,-30.8,40000,VJT993,,,,,AIREP,ARP VJT993 5148N03049W',
+    ].join('\n');
+    const got = parsePireps(csv);
+    expect(got).toHaveLength(2);
+    expect(got[0][6]).toBe('LGT RIME');
+    expect(got[1][8]).toBe(true);
+  });
+
+  it('joins TFR shapes to their kind by NOTAM number', () => {
+    const shapes = { features: [{ properties: { NOTAM_KEY: '6/4240-1-FDC-F', STATE: 'TX', TITLE: 'X' }, geometry: { type: 'Polygon', coordinates: [[[-100.47335512, 31.2], [-100.4, 31.3], [-100.3, 31.2], [-100.47335512, 31.2]]] } }] };
+    const got = joinTfrs(shapes, [{ notam_id: '6/4240', type: 'SECURITY', description: 'SAN ANGELO, TX' }]);
+    expect(got[0]).toMatchObject({ id: '6/4240', kind: 'SECURITY', title: 'SAN ANGELO, TX', state: 'TX' });
+  });
+
+  it('words levels and colors reports by the worst they met', () => {
+    expect(levelText('SFC')).toBe('the surface');
+    expect(levelText('180')).toBe('FL180');
+    expect(levelText('090')).toBe('9,000 ft');
+    expect(intensityRank('LGT-MOD')).toBe(2);
+    expect(pirepColor({ turbulence: 'NEG', icing: 'MOD RIME' })).toBe('#ff9f0a');
+  });
+});
+
