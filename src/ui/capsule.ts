@@ -192,10 +192,18 @@ function sparkline(values: number[], stroke: string | [string, string], minSpan:
   if (days) {
     const flat = typeof stroke === 'string' ? stroke : stroke[0];
     values.forEach((v, i) => {
-      if (i !== days.peak) s.append(dot(x(i), y(v), days.colors?.[i] ?? flat, 4));
+      if (i !== days.peak && i !== 0) s.append(dot(x(i), y(v), days.colors?.[i] ?? flat, 4));
     });
+    // Today, the first dot, a hollow white ring (owner, 2026-10-29: so you can count the days to the
+    // peak); ringed around the white dot when today is the peak.
+    const hole = (at: number, ring: number, gap: number) => {
+      s.append(dot(x(0), y(values[0]), '#ffffff', ring), dot(x(0), y(values[0]), 'rgba(28, 28, 30, 0.95)', gap));
+      if (at) s.append(dot(x(0), y(values[0]), '#ffffff', at));
+    };
+    if (days.peak === 0) hole(6.5, 11, 8.5);
+    else hole(0, 7.5, 3.5);
     if (days.peak != null) {
-      s.append(dot(x(days.peak), y(values[days.peak]), '#ffffff', 6.5));
+      if (days.peak !== 0) s.append(dot(x(days.peak), y(values[days.peak]), '#ffffff', 6.5));
       // The line's points and the peak, for setting its letter clear of the line once it's laid out.
       s.dataset.points = values.map((v, i) => `${(x(i) / W).toFixed(4)},${(y(v) / H).toFixed(4)}`).join(' ');
       s.dataset.peak = String(days.peak);
@@ -257,6 +265,9 @@ const LETTER_GAP = 2;
 const LINE_REACH = 1;
 const DOT_REACH = 2;
 const PEAK_REACH = 3.5;
+/** Today's ring reaches further: on its own, and around the peak's dot when today is the peak. */
+const TODAY_REACH = 3.75;
+const TODAY_PEAK_REACH = 5.5;
 
 /**
  * Where a peak's letter goes (owner, 2026-10-29: close under its dot, but never on the line): centered
@@ -269,10 +280,12 @@ export function letterSpot(points: [number, number][], peak: number, w: number, 
   const cx = px[peak][0];
   const a = cx - halfWidth;
   const b = cx + halfWidth;
-  let low = px[peak][1] + PEAK_REACH;
+  // Today is the first point, drawn as a ring.
+  const reach = (i: number) => (i === 0 ? (i === peak ? TODAY_PEAK_REACH : TODAY_REACH) : i === peak ? PEAK_REACH : DOT_REACH);
+  let low = px[peak][1] + reach(peak);
   for (let i = 0; i < px.length; i++) {
     const [x, y] = px[i];
-    if (x >= a && x <= b) low = Math.max(low, y + (i === peak ? PEAK_REACH : DOT_REACH));
+    if (x >= a && x <= b) low = Math.max(low, y + reach(i));
     const next = px[i + 1];
     if (!next || next[0] < a || x > b) continue;
     // A straight segment is lowest at one end of the stretch that's under the letter.
