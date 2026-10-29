@@ -4349,7 +4349,7 @@ body.phone .ctrl-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
   margin: 0 -6px 6px;
   padding-bottom: 2px;
   border-bottom: 1px solid var(--hairline);
@@ -4363,16 +4363,90 @@ body.phone .ctrl-row .controls {
   border-bottom: 0;
 }
 
+/* As many switches as fit, never scrolling; the rest are under More (barShortcuts.ts). */
 body.phone .wx-btns {
   display: flex;
   align-items: center;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-body.phone .wx-btns::-webkit-scrollbar {
+body.phone .wx-btns .ctrl[hidden] {
   display: none;
+}
+
+/* More, in the accent while a switch under it is on. */
+.wx-btns .wx-more.has-on {
+  color: var(--accent);
+}
+
+/* What's under More: a short list over the bar, each switch with its icon, name, and a check when on. */
+.wx-tray {
+  position: fixed;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+
+.wx-tray[hidden] {
+  display: none;
+}
+
+.wx-tray-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg);
+  font-size: var(--fs-callout);
+  text-align: left;
+}
+
+.wx-tray-row:hover,
+.wx-tray-row:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+
+.wx-tray-icon .icon {
+  display: block;
+  width: 21px;
+  height: 21px;
+}
+
+.wx-tray-row[aria-checked='true'] .wx-tray-icon {
+  color: var(--accent);
+}
+
+.wx-tray-check .icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
+  color: var(--accent);
+}
+
+.wx-tray-row[aria-checked='false'] .wx-tray-check {
+  visibility: hidden;
+}
+
+.wx-tray-note {
+  margin: 4px 0 0;
+  padding: 10px 10px 6px;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-foot);
+  text-align: left;
 }
 
 body.phone .wx-btns[hidden] {
@@ -4409,9 +4483,10 @@ body.phone .wx-btns .ctrl {
   color: var(--c-precip);
 }
 
+/* A touch narrower than they were (owner, 2026-10-29), so a phone's row fits a third pinned switch. */
 body.phone .ctrl {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
 }
 
 /* The header (owner, 2026-10-23: the footer was too crammed): the place and today's weather on glass,
