@@ -25,8 +25,6 @@ const ORDER: ShortcutId[] = ['rain', 'clouds', 'thunder', 'wind', 'cells', 'aler
 const PINS_KEY = 'weather-map:bar-pins';
 /** On the bar to start (owner, 2026-10-26): the hurricane tracker and lightning only. */
 const DEFAULT_PINS: ShortcutId[] = ['tropics', 'thunder'];
-/** On the one-row bar of wide screens, at most this many beside the timeline; the rest are under More. */
-const WIDE_MAX = 4;
 
 function readPins(): ShortcutId[] {
   try {
@@ -46,9 +44,9 @@ const isOn = (s: AppState, id: ShortcutId): boolean => (id === 'alertAreas' ? s.
  * beside them from Layers (the thumbtack on its row), and unpinned the same way. The pins are
  * remembered, in the order they were added.
  *
- * As many as fit stay on the bar, in that order; the rest go under a More button at the row's end, a
- * short labeled list (owner, 2026-10-29: more pins made the row scroll and look cluttered). More is in
- * the accent while something under it is on.
+ * On a phone, as many as fit stay on the bar, in that order; the rest go under a More button at the
+ * row's end, a short labeled list (owner, 2026-10-29: more pins made the row scroll and look
+ * cluttered). More is in the accent while something under it is on. The wide bar shows them all.
  */
 export class BarShortcuts {
   private pins = readPins();
@@ -127,7 +125,8 @@ export class BarShortcuts {
 
   /**
    * Keep as many pins on the bar as fit, the rest under More. On a phone the row's room is what the
-   * tools leave; on the wide one-row bar, at most WIDE_MAX, so the timeline keeps its length.
+   * tools leave; the wide one-row bar shows them all beside the timeline, no More (owner, 2026-10-29:
+   * on desktop the icons were fine).
    */
   fit(): void {
     const row = this.box.parentElement;
@@ -137,7 +136,7 @@ export class BarShortcuts {
     if (!row || !buttons.length || !buttons[0].offsetWidth) return;
     const slot = buttons[0].offsetWidth + (parseFloat(getComputedStyle(this.box).columnGap) || 0);
     let room: number;
-    if (getComputedStyle(row).display === 'contents') room = WIDE_MAX;
+    if (getComputedStyle(row).display === 'contents') room = Infinity;
     else {
       const tools = row.querySelector<HTMLElement>('.controls');
       const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
