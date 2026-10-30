@@ -2926,6 +2926,113 @@ body.trip-open .left-stack {
   color: var(--faint);
 }
 
+/* Buy the devs a coffee: the cup in the sunrise's colors, its steam rising for a moment when it's shown. */
+.row-mark.is-coffee,
+.support-cup {
+  background: linear-gradient(160deg, #ffc15c, #ff7a45);
+  color: #fff;
+}
+
+@keyframes steam-rise {
+  from {
+    opacity: 0;
+    transform: translateY(2.5px);
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.is-steaming .steam {
+  animation: steam-rise 1.1s var(--ease) 3 backwards;
+}
+
+.is-steaming .steam:nth-of-type(2) {
+  animation-delay: 0.2s;
+}
+
+.is-steaming .steam:nth-of-type(3) {
+  animation-delay: 0.4s;
+}
+
+/* The third-open card: over the middle of the map, closable right away. */
+.support {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 30;
+  width: min(330px, calc(100vw - 32px));
+  padding: 26px 20px 12px;
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  opacity: 0;
+  transform: translate(-50%, -46%) scale(0.96);
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.support.open {
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+
+.support-cup {
+  width: 60px;
+  height: 60px;
+  margin-bottom: 6px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+}
+
+.support-cup .icon {
+  width: 36px;
+  height: 36px;
+}
+
+.support-title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
+.support-text {
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.support-go {
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #ff9a3c, #ff5e7e);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.support-later {
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
 /* A disclosure inside a row (Hurricanes → what it shows). */
 .row-more {
   flex: none;

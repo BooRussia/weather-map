@@ -59,6 +59,12 @@ export const trafficTileUrl = (style: 'relative0' | 'relative0-dark') =>
 /** The same flow as vector tiles (layer "Traffic flow": road_type, traffic_level as a share of free-flow speed). */
 export const trafficVectorUrl = () => `https://api.tomtom.com/traffic/map/4/tile/flow/relative/{z}/{x}/{y}.pbf?key=${encodeURIComponent(TOMTOM_KEY)}`;
 
+/**
+ * Where "Buy the devs a coffee" goes: the owner's Buy Me a Coffee or Ko-fi page (owner, 2026-10-30).
+ * Empty until there is one; while it's empty the coffee row and the third-open card stay hidden.
+ */
+export const SUPPORT_URL = '';
+
 /** Open-Meteo grid: at most this many points per request (each point counts as one API call). */
 export const GRID_TARGET_POINTS = 140;
 /** Never fetch a new grid more often than this, unless the view left the old grid. */

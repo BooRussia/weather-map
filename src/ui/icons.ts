@@ -22,6 +22,9 @@ export const closeIcon = `${open('i-close')}<path d="M6.5 6.5l11 11M17.5 6.5l-11
 
 export const chevronIcon = `${open('i-chevron')}<path d="m9 5 7 7-7 7" /></svg>`;
 
+/** A cup of coffee on its saucer, three wisps of steam over it (they rise in .is-steaming; styles.css). */
+export const coffeeMark = `${open('i-coffee')}<path class="steam" d="M8.4 2.8c-.9 1 .9 1.8 0 3" /><path class="steam" d="M11.6 2.3c-.9 1 .9 1.8 0 3" /><path class="steam" d="M14.8 2.8c-.9 1 .9 1.8 0 3" /><path d="M4.6 8.8h13.2v4.6a5 5 0 0 1-5 5h-3.2a5 5 0 0 1-5-5z" /><path d="M17.8 10.4h1a2.3 2.3 0 0 1 0 4.6h-1.3" /><path d="M4 21h14.4" /></svg>`;
+
 export const playIcon = `${open('i-play')}<path d="M8 5.2v13.6c0 .8.9 1.3 1.6.9l10.6-6.8c.6-.4.6-1.4 0-1.8L9.6 4.3C8.9 3.9 8 4.4 8 5.2z" /></svg>`;
 
 export const pauseIcon = `${open('i-pause')}<rect x="6.5" y="5" width="3.6" height="14" rx="1.2" /><rect x="13.9" y="5" width="3.6" height="14" rx="1.2" /></svg>`;

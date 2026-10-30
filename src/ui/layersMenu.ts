@@ -7,6 +7,7 @@ import { $, h, svg } from './dom';
 import type { ShortcutId } from './barShortcuts';
 import { advisoryMark, airspaceMark, alertMark, boltMark, chevronIcon, closeIcon, cloudMark, fireMark, gaugeMark, hurricaneMark, layersIcon, outlookMark, pirepMark, planeMark, rainMark, stormTrackMark, tackIcon, windIcon } from './icons';
 import { mapThumb } from './mapThumbs';
+import { canSupport, supportRow } from './support';
 
 /** Where everything on the map comes from (the credits line under the map names them too). */
 const DATA_NOTE =
@@ -119,6 +120,8 @@ export class LayersMenu {
   private radarOpen = false;
   /** Which part of the drawer shows (owner, 2026-10-23: one long list had too much going on). */
   private tab: 'weather' | 'map' | 'settings' = 'weather';
+  /** The coffee cup steams the next time Settings is drawn: when the drawer opens, or the tab is picked. */
+  private steam = false;
 
   constructor(
     private readonly store: Store,
@@ -153,7 +156,10 @@ export class LayersMenu {
   /** Slides in from the right; closed, it's inert (CSS hides it once the slide ends). */
   toggle(force?: boolean): void {
     const on = force ?? !this.open;
-    if (on) this.render();
+    if (on) {
+      this.steam = true;
+      this.render();
+    }
     this.el.classList.toggle('open', on);
     this.el.inert = !on;
     this.btn.setAttribute('aria-expanded', String(on));
@@ -498,7 +504,7 @@ export class LayersMenu {
   }
 
   /** Settings: every look in one place (the app's and the radar's), then units, sound, and the data. */
-  private settingsTab(s: AppState): HTMLElement[] {
+  private settingsTab(s: AppState): (HTMLElement | null)[] {
     const temp = segmented('Temperature', [{ value: 'F', label: '°F' }, { value: 'C', label: '°C' }], s.tempUnit, (v) =>
       this.store.set({ tempUnit: v }),
     );
@@ -559,7 +565,11 @@ export class LayersMenu {
     );
     small.classList.add('seg-compact');
     const phone = document.body.classList.contains('phone');
+    const steaming = this.steam;
+    this.steam = false;
     return [
+      // Buy the devs a coffee (owner, 2026-10-30): first, its cup steaming for a moment as Settings opens.
+      canSupport ? h('div', { class: 'group' }, supportRow(steaming)) : null,
       h('p', { class: 'group-label' }, 'Look'),
       h('div', { class: 'group' }, segRow('App', theme), segRow('Radar colors', radar)),
       h('p', { class: 'group-label' }, 'General'),
@@ -608,6 +618,7 @@ export class LayersMenu {
       this.tab,
       (v) => {
         this.tab = v;
+        this.steam = true;
         this.render();
         const b = this.el.querySelector('.popover-body');
         if (b) b.scrollTop = 0;

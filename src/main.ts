@@ -85,6 +85,7 @@ import { getActiveAlerts, getAlert, type Alert } from './data/nws';
 import type { AlertItem } from './map/alertAreas';
 import { MapOnly } from './ui/mapOnly';
 import { showNote } from './ui/note';
+import { supportOnOpen } from './ui/support';
 import { tempColor, WeatherPage } from './ui/page';
 import { bannerHandle, bannerSwipe, dockHandle, openSearchPop, phoneLayout, refitBar } from './ui/phoneLayout';
 import { PIN, SearchBox } from './ui/search';
@@ -1911,6 +1912,8 @@ async function main(): Promise<void> {
   };
   const hintWatch = new MutationObserver(hintSwipe);
   hintWatch.observe(capWrap, { attributes: true, attributeFilter: ['class'] });
+  // On the third open, the one ask for a coffee.
+  supportOnOpen();
   // The little graphs along the banner's foot do the same, one per metric: today's, or the ten
   // days' on their peak day.
   for (const graphs of [$('#cap-sparks'), $('#cap-trend')]) {
