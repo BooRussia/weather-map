@@ -1,6 +1,6 @@
 {
   "appId": "com.boorussia.weathermap",
-  "appName": "Weather Map",
+  "appName": "Wethr",
   "webDir": "dist",
   "backgroundColor": "#000000",
   "ios": {

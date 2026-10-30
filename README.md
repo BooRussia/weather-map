@@ -1,4 +1,4 @@
-# Weather Map
+# Wethr
 
 Live radar, wind, and forecasts over a satellite map, phone first. One screen: the map is the app.
 

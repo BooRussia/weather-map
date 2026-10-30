@@ -1071,8 +1071,8 @@ async function main(): Promise<void> {
     capturing = true;
     shareBtn.classList.add('busy');
     const s = store.get();
-    const place = conditions?.place ?? 'Weather Map';
-    const caption = () => `${place} · ${$('#tl-time').textContent ?? 'Now'} · Weather Map`;
+    const place = conditions?.place ?? 'Wethr';
+    const caption = () => `${place} · ${$('#tl-time').textContent ?? 'Now'} · Wethr`;
     const overlays = [$<HTMLCanvasElement>('#wind-canvas'), $<HTMLCanvasElement>('#fx-canvas')];
     let file: File | null = null;
     try {
@@ -1115,7 +1115,7 @@ async function main(): Promise<void> {
     const go = h('button', { type: 'button', class: 'share-go' }, svg(shareIcon), video ? 'Share video' : 'Share picture');
     const link = placeLink(s.selected, map.getZoom());
     go.addEventListener('click', async () => {
-      const result = await shareOut({ title: `Weather at ${place}`, text: `${place} on Weather Map: ${link}`, file: file! });
+      const result = await shareOut({ title: `Weather at ${place}`, text: `${place} on Wethr: ${link}`, file: file! });
       if (result === 'saved') showNote(video ? 'Saved the video.' : 'Saved the picture.');
       else if (result === 'shared') sheet.close();
     });

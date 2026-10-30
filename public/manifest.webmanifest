@@ -1,6 +1,6 @@
 {
-  "name": "Weather Map",
-  "short_name": "Weather",
+  "name": "Wethr",
+  "short_name": "Wethr",
   "description": "Live wind and rain over a dark map.",
   "start_url": ".",
   "scope": ".",
